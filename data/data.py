@@ -238,7 +238,7 @@ class DataSet():
 		sql = ''.join(sql_arr)
 
 		# connect to db and execute sql
-		print(sql)
+		logging.debug('DataSet::create_sqlite_table %s' % sql)
 		with sqlite3.connect(fname) as con:
 			con.execute(sql, [])
 
@@ -514,3 +514,34 @@ class DataSet():
 
 	def __str__(self):
 		return self.for_str_out()
+
+	def as_arr(self, dict_rows=True):
+		"""
+			use this method if going to pass the contents as json
+			default is [
+				[heads,,], use to determine offset to access data
+				[data,,,]
+			]
+
+			if dict_rows is true then
+				[{
+					col_name : data
+				}]
+			obvs this will be a lot larger
+
+			NOTE there are no checks that the data in the cells is of a type that can be transferred as json
+
+		"""
+		ret = {
+			'heads': self.Heads,
+			'contacts': self.Data
+		}
+		if dict_rows:
+			ret = []
+			for c_r in self.Data:
+				to_add = {}
+				for c_h in self.Heads:
+					to_add[c_h] = c_r[self._get_col_index(c_h)]
+				ret.append(to_add)
+		return ret
+

@@ -5,16 +5,19 @@ and contact lists as NIP2
 FIXME: the import methods should be moved to persist, this will allow us to add typehints there which we can't do
 at the moment because of circular references
 
+FIXME: methods that we have as from_db are actually just sql lite... eventually would want to be able to sub a
+different db/persistance layer with min code changes
+
 """
 import json
 from json import JSONDecodeError
 import secp256k1
 import logging
-from persist import Store
+from nostr.persist import Store
 from data.data import DataSet
-from network import Event
+from nostr.network import Event
 from datetime import datetime
-from util import util_funcs
+from nostr.util import util_funcs
 from db.db import Database
 
 
@@ -43,11 +46,11 @@ class Profile:
         keys = Profile.get_new_key_pair()
         p = Profile(priv_k=keys['priv_k'],
                     pub_k=keys['pub_k'],
-                    name=name,
+                    profile_name=name,
                     attrs=attrs)
 
         # because we load using the name it needs to be unique, in future we might have versions
-        exists = DataSet.from_sqlite(db_file, 'select name from profiles where name=?', [name])
+        exists = DataSet.from_sqlite(db_file, 'select profile_name from profiles where profile_name=?', [name])
         if exists:
             raise Exception('Profile:new_profile %s already exists' % name)
 
@@ -104,12 +107,12 @@ class Profile:
         return Profile(
             priv_k=p['priv_k'],
             pub_k=p['pub_k'],
-            name=name,
+            profile_name=name,
             attrs=p['attrs'],
             update_at=p['updated_at']
         )
 
-    def __init__(self, priv_k=None, pub_k=None, attrs=None, name='', update_at=None):
+    def __init__(self, priv_k=None, pub_k=None, attrs=None, profile_name='', update_at=None):
         """
             create a new ident/person that posts can be followed etc.
             having the priv key means we can sign and so post (it's us)
@@ -123,7 +126,7 @@ class Profile:
 
         """
 
-        self._name = name
+        self._profile_name = profile_name
         self._priv_k = priv_k
         self._pub_k = pub_k
 
@@ -147,8 +150,8 @@ class Profile:
         any name attr defined in tag 
     """
     @property
-    def name(self):
-        return self._name
+    def profile_name(self):
+        return self._profile_name
 
     # only exists if us
     @property
@@ -162,6 +165,13 @@ class Profile:
     @property
     def attrs(self):
         return self._attrs
+
+    def get_attr(self, name):
+        # returns vale for named atr, None if it isn't defined
+        ret = None
+        if name in self._attrs:
+            ret = self._attrs[name]
+        return ret
 
     @property
     def update_at(self):
@@ -181,6 +191,13 @@ class Profile:
 
         return '%s %s %s can sign=%s' % (name, self.public_key, self.attrs, can_sign)
 
+    def as_dict(self):
+        ret = {
+            'pub_k': self.public_key,
+            'attrs': self.attrs
+        }
+        return ret
+
     def sign_event(self, e: Event):
         """
             signs a given event, note this will set the events pub_key, if the pub_key has been previously set it'll
@@ -194,6 +211,44 @@ class Profile:
         e.pub_key = self.public_key
         e.sign(self.private_key)
         return e
+
+
+class ProfileList:
+    """
+        collection of profiles, for now were using this for profiles other than us,
+        but the user could also have multiple profiles -  that is those profiles for which
+        they have the private keep i.e. they can create events
+
+        TODO: change this to be subclass of basic list see https://docs.python.org/3/reference/datamodel.html#emulating-container-types
+        actually probbly just implemnt the special methods we need rather than subclass...
+
+    """
+
+    @classmethod
+    def create_others_profiles_from_db(cls, db_file):
+        data = DataSet.from_sqlite(db_file, 'select * from profiles where priv_k isnull')
+        profiles = []
+        for c_r in data:
+            profiles.append(Profile(
+                None,                   # don't have as not us
+                pub_k=c_r['pub_k'],
+                profile_name=None,      # only defined for our profiles
+                attrs=c_r['attrs'],
+                update_at=c_r['updated_at']
+            ))
+
+        return ProfileList(profiles)
+
+    def __init__(self, profiles):
+        self._profiles = profiles
+
+    def as_arr(self):
+        ret = []
+        for c_p in self._profiles:
+            ret.append(c_p.as_dict())
+        return ret
+
+
 
 
 class Contact:
@@ -302,11 +357,18 @@ class ContactList:
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
-    nostr_db_file = '/home/shaun/PycharmProjects/new_bitcoin/nostr/storage/nostr.db'
-    # s = Store(nostr_db_file)
+    nostr_db_file = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr.db'
+    s = Store(nostr_db_file)
     # s.create('contacts')
+    # s.drop('profiles')
+
 
     # p = Profile.new_profile('firedragon888',{},nostr_db_file)
     # Profile.import_from_events(nostr_db_file, since=None)
-    ContactList.import_from_events(nostr_db_file)
+    # ContactList.import_from_events(nostr_db_file)
+
+    pl = ProfileList.create_others_profiles_from_db(nostr_db_file)
+    for c_p in pl:
+        print(c_p.as_dict())
+
 

@@ -1,15 +1,12 @@
 """
     basic persistance layer for our nostr stuff
 """
-
+from __future__ import annotations
 import json
 from datetime import datetime
 from data.data import DataSet
 from db.db import Database
-from util import util_funcs
-# can't do unless we get rid of circular refs
-# from ident import Profile, Contact
-
+from nostr.util import util_funcs
 
 class Store:
 
@@ -59,7 +56,8 @@ class Store:
             TODO: add create_at and version fields?     
         """
         if 'profiles' in tables:
-            profile_tmpl = DataSet(heads=['priv_k','pub_k', 'name', 'attrs', 'updated_at'])
+            # name and picture are extracted from tags if they exist
+            profile_tmpl = DataSet(heads=['priv_k','pub_k', 'profile_name', 'attrs', 'name','picture','updated_at'])
             profile_tmpl.create_sqlite_table(self._db_file, 'profiles',{
                 # because we alway have to have
                 'pub_k' : {
@@ -117,20 +115,32 @@ class Store:
 
         return DataSet.from_sqlite(self._db_file, event_sql, args)
 
-    def add_profile(self, profile):
-        sql = 'insert into profiles(priv_k, pub_k, name, attrs, updated_at) values(?,?,?,?, ?)'
+    def add_profile(self, profile: 'Profile'):
+        sql = """
+            insert into 
+                profiles (priv_k, pub_k, profile_name, attrs, name, picture, updated_at) 
+                        values(?,?,?,?,?,?,?)
+            """
         args = [
             profile.private_key, profile.public_key,
-            profile.name, json.dumps(profile.attrs),
+            profile.profile_name, json.dumps(profile.attrs),
+            profile.get_attr('name'), profile.get_attr('picture'),
             util_funcs.date_as_ticks(profile.update_at)
         ]
 
         self._db.execute_sql(sql, args)
 
     def update_profile(self,profile):
-        sql = 'update profiles set name=?, attrs=?, updated_at=? where pub_k=?'
+        sql = """
+                update profiles 
+                    set profile_name=?, attrs=?, name=? picture=?, updated_at=?
+                    where pub_k=?
+                    
+            
+            """
         args = [
             profile.name, json.dumps(profile.attrs),
+            profile.get_attr('name'), profile.get_attr('picture'),
             util_funcs.date_as_ticks(profile.update_at),
             profile.public_key
         ]
@@ -170,15 +180,13 @@ class Store:
                 # finally insert
                 self._db.executemany_sql(insert_sql,insert_data)
 
-
-
-
-
-
-
-    def delete(self):
+    def drop(self, tables=['events','profiles','contacts']):
         """
             removes tbls as created in create
         """
-        self._db.execute_sql('drop table events')
-
+        if 'events' in tables:
+            self._db.execute_sql('drop table events')
+        if 'profiles' in tables:
+            self._db.execute_sql('drop table profiles')
+        if 'contacts' in tables:
+            self._db.execute_sql('drop table contacts')

@@ -1,14 +1,8 @@
-import _thread
-import time
 import rel
 import logging
-import json
-
 import secp256k1
-
-from data.data import DataSet
 from nostr.persist import Store
-from nostr.network import Network
+from nostr.network import Client,Event
 import datetime
 
 rel.safe_read()
@@ -33,7 +27,7 @@ if __name__ == "__main__":
     # my_store.delete()
     # my_store.create('profiles')
 
-    my_network = Network(relay)
+    my_network = Client(relay)
 
     def event(evt):
         logging.debug('event: %s' % evt)
@@ -54,7 +48,6 @@ if __name__ == "__main__":
         # probably we should just do a minimal lookback?
         print('subscribing, looks like db is empty, non since filter applied')
 
-    from network import Event
     from ident import Profile
 
     me = Profile.load_from_db('firedragon888', nostr_db_file)

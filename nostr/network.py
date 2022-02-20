@@ -1,15 +1,15 @@
 """
     web socket netork stuff for our nostr client
 """
+from __future__ import annotations
 import logging
-
 import secp256k1
 import websocket
 import rel
 import json
 import hashlib
 from datetime import datetime
-from util import util_funcs
+from nostr.util import util_funcs
 
 
 class Event:
@@ -112,7 +112,7 @@ class Event:
         self._pub_key = pub_key
 
 
-class Network:
+class Client:
 
     def __init__(self, relay_url):
         self._url = relay_url
@@ -136,20 +136,18 @@ class Network:
 
         the_req = json.dumps(the_req)
 
-        logging.debug('Network::subscribe - %s', the_req)
+        logging.debug('Client::subscribe - %s', the_req)
         self._handlers[sub_id] = handler
         self._ws.send(the_req)
         return sub_id
 
     def publish(self, evt: Event):
-        logging.debug('Network::publish - %s', evt.event_data())
+        logging.debug('Client::publish - %s', evt.event_data())
 
 
         to_pub = json.dumps([
             'EVENT', evt.event_data()
         ])
-
-        print(to_pub)
 
         self._ws.send(to_pub)
 
