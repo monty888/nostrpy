@@ -3,6 +3,7 @@
 """
 from __future__ import annotations
 import json
+import logging
 from datetime import datetime
 from data.data import DataSet
 from db.db import Database
@@ -133,18 +134,18 @@ class Store:
     def update_profile(self,profile):
         sql = """
                 update profiles 
-                    set profile_name=?, attrs=?, name=? picture=?, updated_at=?
+                    set profile_name=?, attrs=?, name=?, picture=?, updated_at=?
                     where pub_k=?
                     
             
             """
         args = [
-            profile.name, json.dumps(profile.attrs),
+            profile.profile_name, json.dumps(profile.attrs),
             profile.get_attr('name'), profile.get_attr('picture'),
             util_funcs.date_as_ticks(profile.update_at),
             profile.public_key
         ]
-
+        logging.debug('Store::update profile sql: %s args: %s' % (sql, args))
         self._db.execute_sql(sql, args)
 
     def update_contact_list(self, owner_pub_k, contacts):

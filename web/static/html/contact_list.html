@@ -16,16 +16,33 @@
 
     </style>
 </head>
-<body>
+<body style="height:100vh;">
 
- <div class="container">
-  <h1>Hello World!</h1>
-  <div class="row">
-    <div class="col-sm-6" style="background-color:black;color:white" id="contacts-con">
-        Loading...
+ <div class="container" style="height:100%">
+  <div class="row" style="height:100%">
+    <div class="col-sm-6" style="height:100%;overflow:auto;">
+        <div>
+            Search<input id="contact_search_in"/>
+        </div>
+        <div id="list-con" style="background-color:black;color:white;overflow:auto;max-height:500px">
+            Loading...
+        </div>
     </div>
-    <div class="col-sm-6" style="background-color:pink;">
-      <p>Sed ut perspiciatis...</p>
+    <div class="col-sm-6" style="background-color:black;color:white;">
+        <div id="profile-con" style="height:192px; overflow:auto;">
+            Select Someone
+        </div>
+        <div style="color:black">
+            <!-- TODO: change this to a bootstrap tab-->
+            <div>
+                <button type="button" class="btn btn-primary">Following</button>
+                <button type="button" class="btn btn-primary">Followers</button>
+                <button type="button" class="btn btn-primary">Notes</button>
+            </div>
+            <div id="feed-con" style="color:white">
+
+            </div>
+        </div>
     </div>
   </div>
 </div>

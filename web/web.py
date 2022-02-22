@@ -95,7 +95,7 @@ class NostrWeb(StaticServer):
     def _add_routes(self):
         self._app.route('/profiles',callback=self._profiles_list)
         self._app.route('/contact_list',callback=self._contact_list)
-
+        self._app.route('/notes', callback=self._notes)
 
         # obvs improve this and probably move to StaticServer
         def my_internal(e):
@@ -113,14 +113,52 @@ class NostrWeb(StaticServer):
 
     def _contact_list(self):
         pub_k = request.query.pub_k
+        # we only need information from contacts, we already have what we need to link to profile
+        sql = 'select pub_k_contact, relay, petname, updated_at from contacts where pub_k_owner=?'
+
+        # get the profile info too
+        if request.query.include_profile.lower()=='true':
+            sql = """
+                select 
+                    c.pub_k_contact, c.relay, c.petname, c.updated_at,
+                    p.attrs, p.name, p.picture
+                    
+                    from contacts c
+                    inner join profiles p on c.pub_k_contact = p.pub_k
+                    where pub_k_owner=?
+            """
+
         if not pub_k:
             raise Exception('pub_k is required')
 
-        contacts = DataSet.from_sqlite(self._db_file,sql='select * from contacts where pub_k_owner=?',
+        contacts = DataSet.from_sqlite(self._db_file,sql=sql,
                                        args=[pub_k])
         return {
+            'pub_k_owner' : pub_k,
             'contacts' : contacts.as_arr(dict_rows=True)
         }
+
+    def _notes(self):
+        pub_k = request.query.pub_k
+        sql = """
+            select id,created_at,contents,tags
+                from events 
+                where kind=1 and pubkey=?
+                order by created_at desc 
+        """
+        if not pub_k:
+            raise Exception('pub_k is required')
+
+        notes = DataSet.from_sqlite(self._db_file,
+                                    sql=sql,
+                                    args=[pub_k])
+        return {
+            'pub_k_owner': pub_k,
+            'notes': notes.as_arr(dict_rows=True)
+        }
+
+
+
 
 
 

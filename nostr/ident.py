@@ -100,7 +100,7 @@ class Profile:
         """
             used to load out local profiles which we name
         """
-        profiles = DataSet.from_sqlite(db_file, 'select * from profiles where name=? order by updated_at desc', [name])
+        profiles = DataSet.from_sqlite(db_file, 'select * from profiles where profile_name=? order by updated_at desc', [name])
         if not profiles:
             raise Exception('Profile::load_from_db profile not found %s' % name)
         p = profiles[0]
@@ -351,10 +351,6 @@ class ContactList:
                 except JSONDecodeError as e:
                     logging.debug('ContactList::import_from_events error with tags %s' % e)
 
-    def __init__(self, pub_k):
-        pass
-
-
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
     nostr_db_file = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr.db'
@@ -364,11 +360,11 @@ if __name__ == "__main__":
 
 
     # p = Profile.new_profile('firedragon888',{},nostr_db_file)
-    # Profile.import_from_events(nostr_db_file, since=None)
-    # ContactList.import_from_events(nostr_db_file)
+    Profile.import_from_events(nostr_db_file, since=None)
+    ContactList.import_from_events(nostr_db_file)
 
-    pl = ProfileList.create_others_profiles_from_db(nostr_db_file)
-    for c_p in pl:
-        print(c_p.as_dict())
+    # pl = ProfileList.create_others_profiles_from_db(nostr_db_file)
+    # for c_p in pl:
+    #     print(c_p.as_dict())
 
 

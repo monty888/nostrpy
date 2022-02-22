@@ -15,11 +15,11 @@ if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
 
 
-    nostr_db_file = '/home/shaun/PycharmProjects/new_bitcoin/nostr/storage/nostr.db'
+    nostr_db_file = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr.db'
     relay = 'wss://nostr-pub.wellorder.net'
     # relay = 'wss://relayer.fiatjaf.com'
 
-    relay = 'ws://127.0.0.1:7000'
+    # relay = 'ws://127.0.0.1:7000'
     # websocket.enableTrace(True)
 
 
