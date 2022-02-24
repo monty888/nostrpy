@@ -24,8 +24,11 @@ from db.db import Database
 class Profile:
 
     @classmethod
-    def get_new_key_pair(cls):
-        pk = secp256k1.PrivateKey()
+    def get_new_key_pair(cls, priv_key=None):
+        if priv_key is None:
+            pk = secp256k1.PrivateKey()
+        else:
+            pk =secp256k1.PrivateKey(priv_key)
 
         return {
             'priv_k' : pk.serialize(),
@@ -33,7 +36,7 @@ class Profile:
         }
 
     @classmethod
-    def new_profile(cls, name, attrs, db_file):
+    def new_profile(cls, name, db_file, attrs=None, priv_key=None):
         """
         creates a new profile and adds it to the db
         TODO: we should probably check that name+pubkey doesn't already exists
@@ -43,7 +46,7 @@ class Profile:
         :return:
         """
         s = Store(db_file)
-        keys = Profile.get_new_key_pair()
+        keys = Profile.get_new_key_pair(priv_key=priv_key)
         p = Profile(priv_k=keys['priv_k'],
                     pub_k=keys['pub_k'],
                     profile_name=name,
@@ -63,16 +66,13 @@ class Profile:
         :param since: ticks or datetime
         :return:
 
-        TODO: we probably want to have create_at in profile so we don't end up rolling back if we get data from older
-        source. Also this would allow update of local profile if pushed from somewhere else
-
         """
         s = Store(db_file)
 
         # profiles from events
         profile_updates = s.load_events(Event.KIND_META, since)
         # profile info as we have it, ignore are local profiles
-        profiles = DataSet.from_sqlite(db_file, 'select * from profiles where priv_k isNull')
+        profiles = DataSet.from_sqlite(db_file, 'select * from profiles --where priv_k isNull')
 
         """
             now cycle through either adding or inserting only the most recent profile update
@@ -100,7 +100,14 @@ class Profile:
         """
             used to load out local profiles which we name
         """
-        profiles = DataSet.from_sqlite(db_file, 'select * from profiles where profile_name=? order by updated_at desc', [name])
+        sql = """
+            select * from profiles 
+                -- see why we have profiles that are emptystr? anyway we want one with a priv_k if its us to sign key 
+                where profile_name=? and priv_k NOTNULL
+                order by updated_at desc
+        """
+
+        profiles = DataSet.from_sqlite(db_file, sql, [name])
         if not profiles:
             raise Exception('Profile::load_from_db profile not found %s' % name)
         p = profiles[0]
@@ -136,7 +143,10 @@ class Profile:
         else:
             # if is str rep e.g. directly from event turn it to {}
             if isinstance(self._attrs, str):
-                self._attrs = json.loads(self._attrs)
+                try:
+                    self._attrs = json.loads(self._attrs)
+                except JSONDecodeError as e:
+                    logging.debug(e)
 
         # we'll always want a date when this profile was valid, if its not provided then its now
         self._update_at = update_at
@@ -241,11 +251,23 @@ class ProfileList:
 
     def __init__(self, profiles):
         self._profiles = profiles
+        self._key_lookup = {}
+        for c_p in self._profiles:
+            self._key_lookup[c_p.public_key] = c_p
 
     def as_arr(self):
         ret = []
         for c_p in self._profiles:
             ret.append(c_p.as_dict())
+        return ret
+
+    def lookup(self, pub_key):
+        """
+            return profile obj for pubkey if we have it
+        """
+        ret = None
+        if pub_key in self._key_lookup:
+            ret = self._key_lookup[pub_key]
         return ret
 
 
@@ -359,9 +381,13 @@ if __name__ == "__main__":
     # s.drop('profiles')
 
 
-    # p = Profile.new_profile('firedragon888',{},nostr_db_file)
+    # p = Profile.new_profile('message_to',{},nostr_db_file)
     Profile.import_from_events(nostr_db_file, since=None)
     ContactList.import_from_events(nostr_db_file)
+
+    Profile.new_profile(name='anonmailbox',
+                        db_file=nostr_db_file,
+                        priv_key=bytes.fromhex('13bad4c07bdea3a3397e7f52824d77c8a01b8edcc328f0ca5dd8e2540df5efb5'))
 
     # pl = ProfileList.create_others_profiles_from_db(nostr_db_file)
     # for c_p in pl:

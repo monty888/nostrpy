@@ -10,7 +10,9 @@ import json
 import hashlib
 from datetime import datetime
 from nostr.util import util_funcs
+from threading import Thread
 
+rel.safe_read()
 
 class Event:
     """
@@ -23,6 +25,7 @@ class Event:
     KIND_TEXT_NOTE = 1
     KIND_RELAY_REC = 2
     KIND_CONTACT_LIST = 3
+    KIND_ENCRYPT = 4
 
     def __init__(self, id=None, sig=None, kind=None, content=None, tags=None, pub_key=None):
         self._id = id
@@ -121,10 +124,19 @@ class Client:
                                           on_message=self._on_message,
                                           on_error=self._on_error,
                                           on_close=self._on_close)
+        self._handlers = {}
 
         self._ws.run_forever(dispatcher=rel)  # Set dispatcher to automatic reconnection
 
-        self._handlers = {}
+        # not sure about this at all!?...
+        # rel.signal(2, rel.abort)  # Keyboard Interrupt
+        def my_thread():
+            rel.dispatch()
+        Thread(target=my_thread).start()
+
+    @property
+    def url(self):
+        return self._url
 
     def subscribe(self, sub_id, handler, filters={}):
         the_req = ['REQ']

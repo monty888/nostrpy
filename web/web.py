@@ -158,10 +158,6 @@ class NostrWeb(StaticServer):
         }
 
 
-
-
-
-
 def nostr_web():
     nostr_db_file = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr.db'
     my_server = NostrWeb(file_root='/home/shaun/PycharmProjects/nostrpy/web/static/',
