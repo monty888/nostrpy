@@ -84,6 +84,18 @@ class Store:
                 }
             })
 
+    def destroy(self, tables=['events','profiles','contacts']):
+        """
+            removes tbls as created in create - currently no key constraints so any table can be droped
+        """
+        if 'events' in tables:
+            self._db.execute_sql('drop table events')
+        if 'profiles' in tables:
+            self._db.execute_sql('drop table profiles')
+        if 'contacts' in tables:
+            self._db.execute_sql('drop table contacts')
+
+
     def add_event(self, evt):
         sql = 'insert into events(id, pubkey, created_at, kind, tags, contents,sig) values(?,?,?,?,?,?,?)'
         args = [
@@ -181,13 +193,3 @@ class Store:
                 # finally insert
                 self._db.executemany_sql(insert_sql,insert_data)
 
-    def drop(self, tables=['events','profiles','contacts']):
-        """
-            removes tbls as created in create
-        """
-        if 'events' in tables:
-            self._db.execute_sql('drop table events')
-        if 'profiles' in tables:
-            self._db.execute_sql('drop table profiles')
-        if 'contacts' in tables:
-            self._db.execute_sql('drop table contacts')

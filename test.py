@@ -6,7 +6,9 @@ import cmd
 import hashlib
 import base64
 
-from nostr.network import Client,Event
+import rel
+
+from nostr.network import Client, Event, PrintEventHandler,PersistEventHandler
 from nostr.persist import Store
 from nostr.util import util_funcs
 from nostr.ident import ProfileList, Profile
@@ -71,7 +73,7 @@ def test_client_publish_with_persist(relay_url, db_file):
             created_by = c_profile.get_attr('name')
 
         kind = evt['kind']
-        if kind == Event.KIND_TEXT_NOTE:
+        if kind == Event.KIND_TEXT_NOTE or kind == Event.KIND_ENCRYPT:
             print('%s: %s - %s' % (util_funcs.ticks_as_date(evt['created_at']),
                                    created_by,
                                    evt['content']))
@@ -88,30 +90,6 @@ def test_client_publish_with_persist(relay_url, db_file):
 
     my_client.subscribe('test_sub', do_event, filter)
 
-def get_event_handler(db_file):
-    def do_event(evt):
-        print('%s: %s - %s' % (util_funcs.ticks_as_date(evt['created_at']),
-                               evt['pubkey'],
-                               evt['content']))
-    return do_event
-
-class EventHandler:
-
-    def __init__(self, view_on=False):
-        self._view_on = view_on
-
-    def view_on(self):
-        self._view_on = True
-
-    def view_off(self):
-        self._view_on = False
-
-    def do_event(self, evt):
-        if self._view_on:
-            print('%s: %s - %s' % (util_funcs.ticks_as_date(evt['created_at']),
-                                   evt['pubkey'],
-                                   evt['content']))
-
 def command_line(relay_url, db_file):
     """
         do some basics from the cmd line
@@ -126,18 +104,18 @@ def command_line(relay_url, db_file):
             self._db_file = db_file
             self._store = Store(db_file)
 
-            self._event_handler = EventHandler()
+            self._event_handler = PrintEventHandler()
             self._set_relay()
             super().__init__()
 
         def _set_relay(self):
-            self._relay = Client(relay_url)
+            self._relay = Client(relay_url).start()
             filter = {
                 'since': self._store.get_oldest(),
                 'kinds': [Event.KIND_TEXT_NOTE]
             }
 
-            self._relay.subscribe('testid',self._event_handler.do_event,filter)
+            self._relay.subscribe('testid',self._event_handler,filter)
 
         def do_post(self, arg):
             'Post text as not to relay'
@@ -233,53 +211,68 @@ FIXME: needs to support quoting for strings with spaces!
 
     MyShell().cmdloop()
 
+def test_encrypt():
+    """
+        TO come back to, getting encrypted messages working and compatable with CLUST
+    """
+    from nostr.encrypt import SharedEncrypt
+    a_priv = '9b0d918c24fd415f5dc3e9d65656dc0d75734ac9aa19df9a5d3775e62768813d'
+    b_priv = 'c3c8d77bcc8bd0d1942a965848432c110cfaa896c08db6f888b5ce7fc8b5a3e9'
+
+    sea = SharedEncrypt(a_priv)
+    seb = SharedEncrypt(b_priv)
+    sea.derive_shared_key(seb.public_key_hex)
+    seb.derive_shared_key(sea.public_key_hex)
+
+    print(sea.shared_key())
+
+    # encrypted = sea.encrypt_message(b'i am master of all I survey', pub_key_hex=seb.public_key_hex)
+    # print(seb.decrypt_message(encrypted['text'],encrypted['iv'], pub_key_hex=sea.public_key_hex))
+
+
+    print(hashlib.sha256(sea.shared_key().encode()).hexdigest())
+    print(hashlib.sha256(seb.shared_key().encode()).hexdigest())
+
+    # decode our messages
+    full_enc_message = '12G/rN2/w4orzQ7U7TyLXw==?iv=ovjfKmTNe+fGDH61orkZiQ=='
+    #full_enc_message = 'whHAIP8olIEOJmfBComxdw==?iv=mkkwrgCPT4CIdVZ+7p90yA=='
+
+    msg_split = full_enc_message.split('?iv')
+    text = base64.b64decode(msg_split[0])
+    iv = base64.b64decode(msg_split[1])
+
+    enc = sea.encrypt_message(b'wtf')
+
+    print(seb.decrypt_message(enc['text'], enc['iv']))
+    print(seb.decrypt_message(text, iv))
+
+
+def events_backup(relay_url, filename, since=None):
+    Client.relay_events_to_file(relay_url, filename)
+
+def events_import(relay_url, filename):
+    Client.post_events_from_file(relay_url, filename)
+
+
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
     nostr_db_file = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr.db'
     relay_url = 'wss://nostr-pub.wellorder.net'
     # relay_url = 'wss://rsslay.fiatjaf.com'
     # relay_url = 'wss://nostr.bitcoiner.social'
-    # relay_url = 'ws://localhost:7000'
+    relay_url = 'ws://localhost:7000'
+    backup_dir = '/home/shaun/.nostrpy/'
 
     # test_client_publish(relay_url)
     # test_client_publish_with_persist(relay_url, nostr_db_file)
     # command_line(relay_url, nostr_db_file)
+    # NOTE: each event is json but the file structure isn't correct json there are \n between each event
+    # events_backup(relay_url, backup_dir+'events.json')
+    events_import(relay_url, backup_dir+'events.json')
 
-    from nostr.encrypt import SharedEncrypt
-    a_priv = '5c7102135378a5223d74ce95f11331a8282ea54905d61018c7f1bc166994a1d9'
-    b_priv = 'c3c8d77bcc8bd0d1942a965848432c110cfaa896c08db6f888b5ce7fc8b5a3e9'
-
-    sea = SharedEncrypt(a_priv)
-    seb = SharedEncrypt(b_priv)
-    # encrypted = sea.encrypt_message(b'i am master of all I survey', pub_key_hex=seb.public_key_hex)
-    # print(seb.decrypt_message(encrypted['text'],encrypted['iv'], pub_key_hex=sea.public_key_hex))
-
-
-    sea.derive_shared_key(seb.public_key_hex)
-    seb.derive_shared_key(sea.public_key_hex)
-
-    print(hashlib.sha256(sea.shared_key().encode()).hexdigest())
-    print(hashlib.sha256(seb.shared_key().encode()).hexdigest())
-
-    # take a message and encode ready to send
-    message = b'this is a test'
-    crypt_message = sea.encrypt_message(message)
-    enc_message = base64.b64encode(crypt_message['text'])
-    iv_env = base64.b64encode(crypt_message['iv'])
-    full_enc_message = '%s?iv=%s' % (enc_message.decode(), iv_env.decode())
-    print(full_enc_message)
-
-    # reverse of the above by seb
-
-    full_enc_message = 'xjAGoFXSlnF3y7xuZb7VwJqvzvw0Ra/jECY6DUiMTXU21bRUsWcACxw4cxc90eFN?iv=qXuXHJ9C1f/mFPb1iqVuyw=='
-    msg_split = full_enc_message.split('?iv')
-    text = base64.b64decode(msg_split[0])
-    iv = base64.b64decode(msg_split[1])
-
-    print(crypt_message['text'], '<>', text)
-    print(crypt_message['iv'],'<>',iv)
-
-    print(seb.decrypt_message(text, iv))
+    with Client(relay_url) as c:
+        c.subscribe('xx', [PersistEventHandler(nostr_db_file),PrintEventHandler()],{})
+        time.sleep(100)
 
 
     # import secp256k1

@@ -545,3 +545,13 @@ class DataSet():
 				ret.append(to_add)
 		return ret
 
+	def save_csv(self, filename, include_heads=True):
+		if include_heads:
+			to_output = [self._heads] + self._data
+		else:
+			to_output = self._data
+
+		with open(filename, 'w', newline='\n') as csvfile:
+			my_csv = csv.writer(csvfile, delimiter=',')
+			my_csv.writerows(to_output)
+
