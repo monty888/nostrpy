@@ -80,7 +80,7 @@ class Profile:
         updated = set()
 
         for c_p in profile_updates:
-            p = Profile(pub_k=c_p['pubkey'],attrs=c_p['contents'],update_at=c_p['created_at'])
+            p = Profile(pub_k=c_p['pubkey'],attrs=c_p['content'],update_at=c_p['created_at'])
             if p.public_key not in updated:
 
                 exists = profiles.matches('pub_k', p.public_key)
@@ -118,6 +118,43 @@ class Profile:
             attrs=p['attrs'],
             update_at=p['updated_at']
         )
+
+    @classmethod
+    def export_from_db(cls, filename, db_file, names=None):
+        """
+        export local profiles to backup file in csv format
+
+        :param filename:    csv export file
+        :param db_file:     sql_lite db file
+        :param names:       if supplied only these profiles will be exported
+        :return:
+        """
+        sql = 'select priv_k,pub_k,profile_name,attrs from profiles where priv_k is not null'
+        profiles = DataSet.from_sqlite(db_file, sql)
+        if names:
+            profiles = profiles.value_in('profile_name', names)
+
+        profiles.save_csv(filename)
+
+    @classmethod
+    def import_from_file(cls, filename, db_file, names=None):
+        profiles = DataSet.from_CSV(filename)
+        if names:
+            profiles = profiles.value_in('profile_name', names)
+
+        s = Store(db_file)
+        for p in profiles:
+            try:
+                s.add_profile(Profile(
+                    priv_k=p['priv_k'],
+                    pub_k=p['pub_k'],
+                    profile_name=p['profile_name'],
+                    attrs=p['attrs'],
+                    update_at=util_funcs.date_as_ticks(datetime.now())
+                ))
+            except Exception as e:
+                # already exists?
+                logging.debug('Profile::import_from_file - profile: %s - %s' % (p['profile_name'], e))
 
     def __init__(self, priv_k=None, pub_k=None, attrs=None, profile_name='', update_at=None):
         """
@@ -376,6 +413,7 @@ class ContactList:
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
     nostr_db_file = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr.db'
+    backup_dir = '/home/shaun/.nostrpy/'
     s = Store(nostr_db_file)
     # s.create('contacts')
     # s.drop('profiles')
@@ -383,14 +421,5 @@ if __name__ == "__main__":
 
     # p = Profile.new_profile('message_to',{},nostr_db_file)
     Profile.import_from_events(nostr_db_file, since=None)
-    ContactList.import_from_events(nostr_db_file)
-
-    Profile.new_profile(name='anonmailbox',
-                        db_file=nostr_db_file,
-                        priv_key=bytes.fromhex('13bad4c07bdea3a3397e7f52824d77c8a01b8edcc328f0ca5dd8e2540df5efb5'))
-
-    # pl = ProfileList.create_others_profiles_from_db(nostr_db_file)
-    # for c_p in pl:
-    #     print(c_p.as_dict())
-
-
+    # Profile.import_from_file(backup_dir+'local_profiles.csv',nostr_db_file)
+    # ContactList.import_from_events(nostr_db_file)

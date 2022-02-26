@@ -48,9 +48,10 @@ class SharedEncrypt:
     def derive_shared_key(self, pub_key_hex):
         pk = secp256k1.PublicKey()
         # pk.deserialize(bytes.fromhex('02' + pub_key_hex))
+        print(pub_key_hex)
         pk.deserialize(bytes.fromhex(pub_key_hex))
         pub_key = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), pk.serialize(False))
-        self._shared_key  = self._key.exchange(ec.ECDH(), pub_key)
+        self._shared_key = self._key.exchange(ec.ECDH(), pub_key)
 
     def shared_key(self, as_type=KeyEnc.HEX):
         if self._shared_key is None:
@@ -78,7 +79,7 @@ class SharedEncrypt:
 
     def decrypt_message(self, encrypted_data,iv, pub_key_hex=None):
         if pub_key_hex is not None:
-            self.get_shared_key(pub_key_hex)
+            self.derive_shared_key(pub_key_hex)
 
         key = secp256k1.PrivateKey().deserialize(self.shared_key(as_type=KeyEnc.HEX))
         cipher = AES.new(key, AES.MODE_CBC, iv)

@@ -14,8 +14,20 @@ class util_funcs:
     def date_as_ticks(cls, dt: datetime):
         return int(dt.timestamp())
 
-if __name__ == "__main__":
+    def sql_lite_destroy(self, db_file, export_profiles=None):
+        """
+            completely removes the sql_lite db that we're currently using for our nostr client
+            if supplied export_profiles is filename to export profiles that we use - This are the ones that
+            we have priv keys for
+        """
+        pass
+    def sql_lite_create(self, db_file, import_profiles=None):
+        """
+            creates empty db for use by our nostr client
+            import profiles is filename of previously exported profiles to impotr on create
+        """
+        pass
 
-    print(util_funcs.date_as_ticks(datetime.now()))
-    print(util_funcs.ticks_as_date(1645067085))
-    print(util_funcs.ticks_as_date(1645049579))
+
+if __name__ == "__main__":
+    print('monkies')

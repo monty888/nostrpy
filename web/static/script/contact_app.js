@@ -1,26 +1,4 @@
 'use strict';
-var APP = {}
-
-APP.remote = function(){
-    return {
-        'load_profiles' : function(callback){
-            $.ajax({
-                url: '/profiles'
-            }).done(callback);
-        },
-        'load_profile_contacts' : function(pub_k,callback){
-            $.ajax({
-                url: '/contact_list?pub_k=' + pub_k
-            }).done(callback);
-        },
-        'load_profile_notes' : function(pub_k,callback){
-            $.ajax({
-                url: '/notes?pub_k=' + pub_k
-            }).done(callback);
-        }
-
-    }
-}();
 
 !function(){
     // max matching contacts we'll show
@@ -175,7 +153,7 @@ APP.remote = function(){
         let tmpl_str = [
             '{{#notes}}',
                 '<div style="border: 1px dashed white;cursor:pointer;">',
-                '{{contents}}',
+                '{{content}}',
                 '</div>',
             '{{/notes}}'
         ].join('');

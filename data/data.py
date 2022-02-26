@@ -36,30 +36,32 @@ class DataSet():
 		the sqllite should be easy to mod to general sql methods just passing dbcon
 
 	"""
-	class Row():
+	class Row:
 		"""
 			row data for example from __init__ is returned as Row object
 			so that we can get data by col n or name 
 		"""
-		def __init__(self, data, head_map, ignore_head_case):
+		def __init__(self, data, head_map, ignore_head_case, alias):
 			self._data = data
 			self._head_map = head_map
 			self._ignore_head_case = ignore_head_case
-			
-		def __getitem__(self, col):
+			self._alias = alias
+
+		def _get_col_index(self, col):
 			if type(col) is str:
 				if self._ignore_head_case:
 					col = col.lower()
-				col = self._head_map[col]
-			return self._data[col]
+				if col in self._alias:
+					col = self._alias[col]
+				else:
+					col = self._head_map[col]
+			return col
+
+		def __getitem__(self, col):
+			return self._data[self._get_col_index(col)]
 
 		def __setitem__(self, col, value):
-			if type(col) is str:
-				if self._ignore_head_case:
-					col = col.lower()
-
-				col = self._head_map[col]
-			self._data[col] = value
+			self._data[self._get_col_index(col)] = value
 
 		def __str__(self):
 			return str(self._data)
@@ -163,6 +165,9 @@ class DataSet():
 		# [col_n][col_val] = [rows that have this value, don't rely on the order]
 
 		self._indexs = {}
+
+		# using set alias cols can be accessed via another name
+		self._alias = {}
 
 	def create_sqlite_table(self, fname, tbl_name, col_attrs={}):
 		"""
@@ -278,6 +283,14 @@ class DataSet():
 				self._indexs[col_i][c_row[col_i]].append(c_row)
 
 		return self._indexs[col_i]
+
+	def set_alias(self, alias_name, for_col):
+		"""
+		:param alias_name: alt name for col
+		:param for_col: n or name of col that will be reference by alias_name
+		:return:
+		"""
+		self._alias[alias_name] = self._get_col_index(for_col)
 
 	@property
 	def Data(self):
@@ -431,11 +444,11 @@ class DataSet():
 
 	def __iter__(self):
 		for c_row_data in self._data:
-			yield DataSet.Row(c_row_data, self._head_map, self._ignore_head_case)
+			yield DataSet.Row(c_row_data, self._head_map, self._ignore_head_case, self._alias)
 			
 	def __getitem__(self, i):
 		# row at i
-		return DataSet.Row(self._data[i], self._head_map, self._ignore_head_case)
+		return DataSet.Row(self._data[i], self._head_map, self._ignore_head_case, self._alias)
 			
 	def __len__(self):
 		return len(self._data)
@@ -446,7 +459,7 @@ class DataSet():
 		self._make_headmap()
 		
 		for i,c_row in enumerate(self._data):
-			c_row.append(data_func(DataSet.Row(c_row,self._head_map, self._ignore_head_case)))
+			c_row.append(data_func(DataSet.Row(c_row,self._head_map, self._ignore_head_case, self._alias)))
 
 	def __copy__(self):
 		return DataSet(deepcopy(self.Heads), deepcopy(self._data))
@@ -544,4 +557,14 @@ class DataSet():
 					to_add[c_h] = c_r[self._get_col_index(c_h)]
 				ret.append(to_add)
 		return ret
+
+	def save_csv(self, filename, include_heads=True):
+		if include_heads:
+			to_output = [self._heads] + self._data
+		else:
+			to_output = self._data
+
+		with open(filename, 'w', newline='\n') as csvfile:
+			my_csv = csv.writer(csvfile, delimiter=',')
+			my_csv.writerows(to_output)
 

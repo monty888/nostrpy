@@ -20,10 +20,13 @@ class Store:
             get the oldest event in the db, this can then be used in filter queries as since
             will return none if we don't have any events yet
         """
-        ret = None
+        ret = 0
         created_by = DataSet.from_sqlite(self._db_file, 'select created_at from events order by created_at desc limit 1')
         if created_by:
             ret = created_by[0]['created_at']
+        else:
+            logging.debug('Store::get_oldest - no created_at found, db empty?')
+
         return ret
 
     def create(self, tables=['events','profiles','contacts']):
@@ -33,7 +36,7 @@ class Store:
 
         if 'events' in tables:
             evt_tmpl = DataSet(heads=[
-                'id', 'pubkey', 'created_at', 'kind', 'tags', 'contents', 'sig'
+                'id', 'pubkey', 'created_at', 'kind', 'tags', 'content', 'sig'
             ],data=[])
 
             evt_tmpl.create_sqlite_table(self._db_file, 'events', {
@@ -84,8 +87,20 @@ class Store:
                 }
             })
 
+    def destroy(self, tables=['events','profiles','contacts']):
+        """
+            removes tbls as created in create - currently no key constraints so any table can be droped
+        """
+        if 'events' in tables:
+            self._db.execute_sql('drop table events')
+        if 'profiles' in tables:
+            self._db.execute_sql('drop table profiles')
+        if 'contacts' in tables:
+            self._db.execute_sql('drop table contacts')
+
+
     def add_event(self, evt):
-        sql = 'insert into events(id, pubkey, created_at, kind, tags, contents,sig) values(?,?,?,?,?,?,?)'
+        sql = 'insert into events(id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)'
         args = [
             evt['id'], evt['pubkey'], evt['created_at'],
             evt['kind'], str(evt['tags']), evt['content'], evt['sig']
@@ -181,13 +196,3 @@ class Store:
                 # finally insert
                 self._db.executemany_sql(insert_sql,insert_data)
 
-    def drop(self, tables=['events','profiles','contacts']):
-        """
-            removes tbls as created in create
-        """
-        if 'events' in tables:
-            self._db.execute_sql('drop table events')
-        if 'profiles' in tables:
-            self._db.execute_sql('drop table profiles')
-        if 'contacts' in tables:
-            self._db.execute_sql('drop table contacts')

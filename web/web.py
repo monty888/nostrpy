@@ -1,11 +1,16 @@
-import bottle
-from bottle import request, Bottle, static_file,route
-import logging
 import json
+
+import rel
+from bottle import request, Bottle, static_file,route,abort
+import logging
 from nostr.ident import ProfileList
 from data.data import DataSet
-from io import BytesIO
-import base64
+from gevent.pywsgi import WSGIServer
+from geventwebsocket import WebSocketError
+from geventwebsocket.handler import WebSocketHandler
+from nostr.network import Client
+from nostr.event import Event, PersistEventHandler
+from nostr.persist import Store
 
 class StaticServer():
     """
@@ -42,18 +47,21 @@ class StaticServer():
 
         # html
         html_method = get_for_ftype('html')
+
         @self._app.route('/html/<name>')
         def html(name):
             return html_method(name)
 
         # js
         js_method = get_for_ftype('script','js')
+
         @self._app.route('/script/<name>')
         def js(name):
             return js_method(name)
 
         # css
         css_method = get_for_ftype('css','css')
+
         @self._app.route('/css/<name>')
         def css(name):
             return css_method(name)
@@ -75,14 +83,27 @@ class StaticServer():
                 raise Exception('arrrgh font type not accepted')
             return ret
 
-
     def start(self, host='localhost', port=8080):
-        bottle.run(self._app, host=host, port=port)
+        server = WSGIServer((host, port), self._app, handler_class=WebSocketHandler)
+        server.serve_forever()
+
 
 class NostrWeb(StaticServer):
 
     def __init__(self, file_root, db_file):
         self._db_file = db_file
+        self._store = Store(self._db_file)
+        self._persist_event = PersistEventHandler(self._db_file)
+
+        # this should be passed in and probably will be a ClientPool
+        self._nostr_client = Client('wss://nostr-pub.wellorder.net')
+        self._nostr_client.start()
+
+        self._nostr_client.subscribe('web', self, {
+            'since' : self._store.get_oldest()-100000
+        })
+
+        self._web_sockets = {}
 
         # initial load of profiles, after that shoudl track events
         # obvs at some point keeping all profiles in mem might not work so well
@@ -96,6 +117,7 @@ class NostrWeb(StaticServer):
         self._app.route('/profiles',callback=self._profiles_list)
         self._app.route('/contact_list',callback=self._contact_list)
         self._app.route('/notes', callback=self._notes)
+        self._app.route('/websocket', callback=self._handle_websocket)
 
         # obvs improve this and probably move to StaticServer
         def my_internal(e):
@@ -140,22 +162,68 @@ class NostrWeb(StaticServer):
 
     def _notes(self):
         pub_k = request.query.pub_k
-        sql = """
-            select id,created_at,contents,tags
-                from events 
-                where kind=1 and pubkey=?
-                order by created_at desc 
-        """
-        if not pub_k:
-            raise Exception('pub_k is required')
+        sql_arr = [
+            'select',
+            ' id,created_at,content,tags,pubkey',
+            ' from events',
+            ' where kind=?'
+        ]
+        args = [Event.KIND_TEXT_NOTE]
+        if pub_k:
+            sql_arr.append(' and pubkey=?')
+            args.append(pub_k)
+        sql_arr.append(' order by created_at desc limit 1000')
+        sql = ''.join(sql_arr)
+
+        # if not pub_k:
+        #     raise Exception('pub_k is required')
 
         notes = DataSet.from_sqlite(self._db_file,
                                     sql=sql,
-                                    args=[pub_k])
-        return {
-            'pub_k_owner': pub_k,
+                                    args=args)
+
+        ret = {
             'notes': notes.as_arr(dict_rows=True)
         }
+
+        # if pub_k was handed in then we strip from each row and give at top level
+        if pub_k:
+            ret = {'notes': notes.of_heads(['id', 'created_at', 'content', 'tags']).as_arr(dict_rows=True),
+                   'pub_k_owner': pub_k}
+        else:
+            ret = {
+                'notes': notes.as_arr(dict_rows=True)
+            }
+
+
+        return ret
+
+
+    def do_event(self, evt, relay):
+        # store event to db, no err handling...
+        self._persist_event.do_event(evt, relay)
+
+        for c_sock in self._web_sockets:
+            ws = self._web_sockets[c_sock]
+            try:
+                ws.send(json.dumps(evt))
+            except Exception as e:
+                print(e, ws)
+                print('kill this guy?')
+
+    def _handle_websocket(self):
+        logging.debug('Websocket opened')
+        wsock = request.environ.get('wsgi.websocket')
+        if not wsock:
+            abort(400, 'Expected WebSocket request.')
+
+        self._web_sockets[str(wsock)] = wsock
+        while True:
+            try:
+                # this is just to keep alive, currently we're doing nothing with dead sockets....
+                wsock.receive()
+            except WebSocketError:
+                break
 
 
 def nostr_web():
@@ -164,7 +232,21 @@ def nostr_web():
                          db_file=nostr_db_file)
     my_server.start()
 
+    # my_socket = NostrWebsocket()
+    # my_socket.start()
+
 
 if __name__ == '__main__':
     logging.getLogger().setLevel(logging.DEBUG)
+
+    # example clean exit... need to look into more though
+    import signal
+    import sys
+    def sigint_handler(signal, frame):
+        rel.abort()
+        sys.exit(0)
+
+
+    signal.signal(signal.SIGINT, sigint_handler)
+
     nostr_web()
