@@ -251,7 +251,7 @@ class PersistEventHandler:
 
         # store the actual event
         try:
-            self._store.add_event(evt)
+            self._store.add_event(evt, relay)
         except:
             # most likely because we already have, we could though add a table that
             # linking evets with every relay we saw them from

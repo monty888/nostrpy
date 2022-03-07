@@ -5,10 +5,9 @@ import time
 import cmd
 import hashlib
 import base64
-
 import rel
-
-from nostr.network import Client, Event, PrintEventHandler,PersistEventHandler,DecryptPrintEventHandler
+from nostr.network import Client, Event
+from nostr.event import Event, PrintEventHandler
 from nostr.persist import Store
 from nostr.util import util_funcs
 from nostr.ident import ProfileList, Profile
@@ -257,10 +256,10 @@ def events_import(relay_url, filename):
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
     nostr_db_file = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr.db'
-    relay_url = 'wss://nostr-pub.wellorder.net'
+    # relay_url = 'wss://nostr-pub.wellorder.net'
     # relay_url = 'wss://rsslay.fiatjaf.com'
-    # relay_url = 'wss://nostr.bitcoiner.social'
-    relay_url = 'ws://localhost:7000'
+    relay_url = 'wss://nostr.bitcoiner.social'
+    # relay_url = 'ws://localhost:7000'
     backup_dir = '/home/shaun/.nostrpy/'
 
     # test_client_publish(relay_url)
@@ -282,3 +281,11 @@ if __name__ == "__main__":
     #
     # from threading import Thread
     # Thread(target=check_ping()).start()
+
+    from nostr.event import PersistEventHandler
+    with Client(relay_url) as c:
+        c.subscribe('x',PersistEventHandler(nostr_db_file),{
+            'since' : util_funcs.date_as_ticks(datetime.now())-1000000
+        })
+        time.sleep(100)
+

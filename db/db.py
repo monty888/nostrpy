@@ -74,6 +74,36 @@ class Database:
         if not catch_err and was_err:
             raise was_err
 
+    def execute_batch(self, batch, catch_err=False):
+        """
+        :param batch: array of {
+            'sql' : str,
+            'args' : [] optional
+        }
+        :return: True on success
+        """
+        ret = False
+
+        try:
+            with sqlite3.connect(self._f_name) as c:
+                curs = c.cursor()
+                curs.execute('begin')
+                for c_cmd in batch:
+                    args = []
+                    if 'args' in c_cmd:
+                        args = c_cmd['args']
+                    curs.execute(c_cmd['sql'],args)
+                c.commit()
+                ret = True
+        except Error as e:
+            logging.log(logging.WARN, e)
+            if not catch_err:
+                raise e
+
+        return ret
+
+
+
     def select_sql(self, sql, args=None)->DataSet:
         return DataSet.from_sqlite(self._f_name, sql, args)
 
