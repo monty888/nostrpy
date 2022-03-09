@@ -10,7 +10,8 @@ import json
 from json import JSONDecodeError
 from datetime import datetime, timedelta
 from nostr.util import util_funcs
-from nostr.event import Event, EventTimeHandler, FileEventHandler
+from nostr.event import Event
+from nostr.event_handlers import EventTimeHandler, FileEventHandler
 from threading import Thread
 
 rel.safe_read()
@@ -132,6 +133,7 @@ class Client:
             'EVENT', evt.event_data()
         ])
         self._ws.send(to_pub)
+        time.sleep(0.2)
 
     def _get_sub_id(self):
         pass

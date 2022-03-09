@@ -7,7 +7,8 @@ import hashlib
 import base64
 import rel
 from nostr.network import Client, Event
-from nostr.event import Event, PrintEventHandler
+from nostr.event import Event
+from nostr.event_handlers import PrintEventHandler
 from nostr.persist import Store
 from nostr.util import util_funcs
 from nostr.ident import ProfileList, Profile
@@ -256,15 +257,17 @@ def events_import(relay_url, filename):
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
     nostr_db_file = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr.db'
+    # nostr_db_file = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr-relay.db'
     # relay_url = 'wss://nostr-pub.wellorder.net'
     # relay_url = 'wss://rsslay.fiatjaf.com'
     relay_url = 'wss://nostr.bitcoiner.social'
     # relay_url = 'ws://localhost:7000'
+    relay_url = 'ws://localhost:8081/websocket'
     backup_dir = '/home/shaun/.nostrpy/'
 
     # test_client_publish(relay_url)
     # test_client_publish_with_persist(relay_url, nostr_db_file)
-    # command_line(relay_url, nostr_db_file)
+    command_line(relay_url, nostr_db_file)
     # NOTE: each event is json but the file structure isn't correct json there are \n between each event
     # events_backup(relay_url, backup_dir+'events.json')
     # from nostr.network import ClientPool
@@ -282,10 +285,19 @@ if __name__ == "__main__":
     # from threading import Thread
     # Thread(target=check_ping()).start()
 
-    from nostr.event import PersistEventHandler
-    with Client(relay_url) as c:
-        c.subscribe('x',PersistEventHandler(nostr_db_file),{
-            'since' : util_funcs.date_as_ticks(datetime.now())-1000000
-        })
-        time.sleep(100)
+    # from nostr.event import PersistEventHandler
+    # with Client(relay_url) as c:
+    #     c.subscribe('x',PersistEventHandler(nostr_db_file),{
+    #         'since' : util_funcs.date_as_ticks(datetime.now())-1000000
+    #     })
+    #     time.sleep(100)
+
+    # Client.post_events_from_file(relay_url, backup_dir+'events.json')
+    # my_filter = {'since': util_funcs.date_as_ticks(datetime.now())-100000, 'kinds': [4]}
+    #
+    # from nostr.persist import RelayStore
+    # rs = RelayStore(nostr_db_file)
+    # for c_e in rs.get_filter(my_filter):
+    #     print(c_e)
+
 

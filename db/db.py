@@ -1,5 +1,8 @@
 """
-    nothing specific to races just methods to execute and query db
+    Simple database access class
+    probably we'll subclass where you just need to supply the getcon and __init__ methods
+    this would allow easy swap of db
+
 """
 import sqlite3
 from sqlite3 import Error
@@ -51,9 +54,10 @@ class Database:
 
     def executemany_sql(self, str, args=None, catch_err=False):
         """
-            execute some SQL, currently we'll just fall over on
-            errors
+            execute some SQL, returns True/False on success if catch_err is False
+            then errors will raise an exception
         """
+        ret = False
         if args is None:
             args = []
 
@@ -64,6 +68,7 @@ class Database:
             c = self._get_con()
             c.executemany(str,args)
             c.commit()
+            ret = True
         except Error as e:
             logging.log(logging.WARN, e)
             was_err = e
@@ -74,6 +79,8 @@ class Database:
         if not catch_err and was_err:
             raise was_err
 
+        return ret
+
     def execute_batch(self, batch, catch_err=False):
         """
         :param batch: array of {
@@ -83,29 +90,67 @@ class Database:
         :return: True on success
         """
         ret = False
+        was_err = None
 
         try:
-            with sqlite3.connect(self._f_name) as c:
-                curs = c.cursor()
-                curs.execute('begin')
-                for c_cmd in batch:
-                    args = []
-                    if 'args' in c_cmd:
-                        args = c_cmd['args']
-                    curs.execute(c_cmd['sql'],args)
-                c.commit()
-                ret = True
+            c = self._get_con()
+            curs = c.cursor()
+            curs.execute('begin')
+            for c_cmd in batch:
+                args = []
+                if 'args' in c_cmd:
+                    args = c_cmd['args']
+                curs.execute(c_cmd['sql'],args)
+            c.commit()
+            ret = True
         except Error as e:
             logging.log(logging.WARN, e)
-            if not catch_err:
-                raise e
+            was_err = e
+        finally:
+            if c:
+                c.close()
+
+        if not catch_err and was_err:
+            raise was_err
 
         return ret
 
+    def select_sql(self, sql, args=None) -> DataSet:
+        """
+        excutes query against database con
+        :param sql: query str
+        :param args: query args
+        :return: results as DataSet
+        """
+        logging.debug('Database::select_sql - SQL: %s \n ARGS: %s' % (sql,args))
 
+        if args is None:
+            args = []
 
-    def select_sql(self, sql, args=None)->DataSet:
-        return DataSet.from_sqlite(self._f_name, sql, args)
+        # create con
+        con = self._get_con()
+
+        # get result set of query
+        rs = con.execute(sql, args)
+
+        # extract the heads
+        heads = []
+        for c_h in rs.description:
+            # col name in 0 the rest are always None and contain no useful info for us
+            heads.append(c_h[0])
+
+        # now extract the data
+        data = []
+        for c_r in rs:
+            # we change to [] as there are some places where being a turple will be a problem
+            data.append(list(c_r))
+
+        # clean up, not sure require to close rs if closing con
+        # but what the hell
+        rs.close()
+        con.close()
+        # now return as a dataset
+        return DataSet(heads, data)
 
     def _insert_tbl(self, t_name, data: DataSet):
         # nothing to insert
@@ -115,6 +160,5 @@ class Database:
         pcount = ['?'] * len(data.Heads)
         fields = '(%s) values (%s)' % (','.join(data.Heads),
                                        ','.join(pcount))
-
 
         self.execute_sql(sql+fields,data.Data)

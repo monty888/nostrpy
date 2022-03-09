@@ -8,6 +8,7 @@ from datetime import datetime
 from data.data import DataSet
 from db.db import Database
 from nostr.util import util_funcs
+from nostr.event import Event
 
 class Store:
 
@@ -241,3 +242,160 @@ class Store:
                 # finally insert
                 self._db.executemany_sql(insert_sql,insert_data)
 
+
+class RelayStore:
+    """
+        persistence for the relay implementation, the relay only really needs to store events and
+        structure (for example seperate table for tags) as best we can for querying.
+        Note that it's unlikely that an sqlite base persistence layer will be ok if the relay is
+        really being hit
+    """
+
+    @classmethod
+    def make_filter_sql(cls, filters):
+        """
+        creates the sql to select events from a db given nostr filter
+        NOTE tags are currently not dealt with so if needed this will have to be done in
+        2nd pass on whats returned use the TODO: event filter on each
+        :param filter:
+        :return:
+        """
+        def for_single_filter(filter):
+            def prefix_split(arr):
+                prefix = []
+                full = []
+                for i in arr:
+                    if len(i)==64:
+                        full.append(i)
+                    else:
+                        prefix.append(i)
+
+                return {
+                    'full' : full,
+                    'prefix' : prefix
+                }
+
+            sql_arr = ['select * from events']
+            join = 'where'
+            args = []
+            if 'since' in filter:
+                sql_arr.append(' %s created_at>=?' % join)
+                args.append(filter['since'])
+                join = 'and'
+            if 'until' in filter:
+                sql_arr.append(' %s created_at<=?' % join)
+                args.append(filter['until'])
+                join = 'and'
+            if 'kind' in filter:
+                kind_arr = filter['kind']
+                if not hasattr(kind_arr,'__iter__')or isinstance(kind_arr,str):
+                    kind_arr = [kind_arr]
+                arg_str = ','.join(['?']*len(kind_arr))
+                sql_arr.append(' %s kind in(%s)' % (join, arg_str))
+                args = args + kind_arr
+            if 'authors' in filter:
+                auth_arr = filter['authors']
+                if not hasattr(auth_arr,'__iter__') or isinstance(auth_arr,str):
+                    auth_arr = [auth_arr]
+
+                arg_str = 'or '.join(['pubkey like ?'] * len(auth_arr))
+                sql_arr.append(' %s (%s)' % (join, arg_str))
+                for c_arg in auth_arr:
+                    args.append(c_arg + '%')
+
+            if 'ids' in filter:
+                ids_arr = filter['ids']
+                if not hasattr(ids_arr,'__iter__') or isinstance(ids_arr,str):
+                    ids_arr = [ids_arr]
+
+                arg_str = 'or '.join(['event_id like ?']*len(ids_arr))
+                sql_arr.append(' %s (%s)' % (join, arg_str))
+                for c_arg in ids_arr:
+                    args.append(c_arg+'%')
+
+
+            return {
+                'sql' : ''.join(sql_arr),
+                'args' : args
+            }
+
+        # only been passed a single, put into list
+        if isinstance(filters, dict):
+            filters = [filters]
+
+        sql = ''
+        args = []
+        for c_filter in filters:
+            q = for_single_filter(c_filter)
+            if sql:
+                sql += ' union '
+            sql = sql + q['sql']
+            args = args + q['args']
+
+        return {
+            'sql': sql,
+            'args': args
+        }
+
+    def __init__(self, db_file):
+        self._db_file = db_file
+        self._db = Database(db_file)
+
+    def create(self, tables=['events']):
+
+        if 'events' in tables:
+            evt_tmpl = DataSet(heads=[
+                'id', 'event_id', 'pubkey', 'created_at', 'kind', 'tags', 'content', 'sig'
+            ], data=[])
+            evt_tmpl.create_sqlite_table(self._db_file, 'events', {
+                'id': {
+                    'type': 'INTEGER PRIMARY KEY '
+                },
+                'event_id': {
+                    # not a type but all the underlying does is concat str so will do
+                    'type': 'UNIQUE'
+                },
+                'created_at': {
+                    'type': 'int'
+                },
+                'kind': {
+                    'type': 'int'
+                }
+            })
+
+    def add_event(self, evt):
+        batch = [
+            {
+                'sql': 'insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)',
+                'args': [
+                    evt['id'], evt['pubkey'], evt['created_at'],
+                    evt['kind'], str(evt['tags']), evt['content'], evt['sig']
+                ]
+            }
+        ]
+
+        self._db.execute_batch(batch)
+
+    def get_filter(self, filter):
+        """
+        from database returns events that match filter/s
+        doesn't do #e and #p filters yet (maybe never)
+        also author and ids are currently exact only, doesn't support prefix
+        :param filter: {} or [{},...] or filters
+        :return:
+        """
+        filter_query = RelayStore.make_filter_sql(filter)
+        data = self._db.select_sql(sql=filter_query['sql'],
+                                   args=filter_query['args'])
+        ret = []
+        for c_r in data:
+            # we could actually do extra filter here
+            ret.append(Event(
+                id=c_r['event_id'],
+                pub_key=c_r['pubkey'],
+                kind=c_r['kind'],
+                content=c_r['content'],
+                tags=c_r['tags'],
+                created_at=util_funcs.ticks_as_date(c_r['created_at'])
+            ))
+        return ret

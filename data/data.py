@@ -1,10 +1,15 @@
 """
 	Generic data handaling stuff
 """
+from __future__ import annotations
+from typing import TYPE_CHECKING
 import csv
 import logging
 import sqlite3
 from copy import deepcopy
+
+if TYPE_CHECKING:
+	from db.db import Database
 
 
 def fix_width(the_str, width):
@@ -28,7 +33,8 @@ def exist_in_arr(name, arr, ignore_case=True):
 
 	return ret
 
-class DataSet():
+
+class DataSet:
 	"""
 		utility class for spreadsheet style data
 
@@ -66,7 +72,6 @@ class DataSet():
 		def __str__(self):
 			return str(self._data)
 
-		
 	@classmethod
 	def from_CSV(cls, fname, has_heads=True):
 		"""
@@ -140,6 +145,16 @@ class DataSet():
 
 		# now return as a dataset
 		return DataSet(heads, data)
+
+	@classmethod
+	def from_db(cls, db: Database, sql, args=[]):
+		"""
+		TODO: from_sqlite to be removed as this will replace and make it easier to switch databases
+		creates a dataset from a query using our database helper - unlike from_CSV col data will be typed
+		maybe for both methods which should allow caller to supply col/type mapping to change if required
+		probably more important for csv though...
+		"""
+		return db.select_sql(sql, args)
 
 	def __init__(self, heads=None, data=None, ignore_head_case=True):
 
