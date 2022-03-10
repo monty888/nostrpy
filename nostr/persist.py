@@ -10,6 +10,7 @@ from db.db import Database
 from nostr.util import util_funcs
 from nostr.event import Event
 
+
 class Store:
 
     def __init__(self, db_file):
@@ -151,9 +152,6 @@ class Store:
                 self._db.execute_sql('insert into event_relay values (?, ?)',
                                      args=[data[0]['id'], relay_url])
 
-
-
-
     def load_events(self, kind, since=None):
         """
             :param kind: int type of event
@@ -286,8 +284,8 @@ class RelayStore:
                 sql_arr.append(' %s created_at<=?' % join)
                 args.append(filter['until'])
                 join = 'and'
-            if 'kind' in filter:
-                kind_arr = filter['kind']
+            if 'kinds' in filter:
+                kind_arr = filter['kinds']
                 if not hasattr(kind_arr,'__iter__')or isinstance(kind_arr,str):
                     kind_arr = [kind_arr]
                 arg_str = ','.join(['?']*len(kind_arr))
@@ -363,18 +361,56 @@ class RelayStore:
                 }
             })
 
-    def add_event(self, evt):
+            tag_tmp = DataSet(heads=['id','type','value'])
+            tag_tmp.create_sqlite_table(self._db_file, 'event_tags', {
+                'id': {
+                    'type' : 'int'
+                }
+            })
+
+    def destroy(self, tables=['events']):
+        """
+            removes tbls as created in create - currently no key constraints so any table can be droped
+        """
+        if 'events' in tables:
+            batch = [
+                {
+                    'sql': 'drop table event_tags'
+                },
+                {
+                    'sql' : 'drop table events'
+                }
+            ]
+            self._db.execute_batch(batch)
+
+    def add_event(self, evt: Event, catch_err=False):
+        """
+        store event to db, maybe allow [] of events that will be done in batch?
+        :param evt: Event obj
+        :param catch_err: set to True if don't want to raise exception on err
+        :return: True/False, you'll only get False when catch_err is True
+        """
         batch = [
             {
                 'sql': 'insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)',
                 'args': [
-                    evt['id'], evt['pubkey'], evt['created_at'],
-                    evt['kind'], str(evt['tags']), evt['content'], evt['sig']
+                    evt.id, evt.pub_key, evt.created_at_ticks,
+                    evt.kind, str(evt.tags), evt.content, evt.sig
                 ]
             }
         ]
+        # currently we only put in the tags table the bits needed to suport query [2:] could go in an extra field
+        # but as we already have the full info in events tbl probably don't need
+        for c_tag in evt.tags:
+            if len(c_tag) >= 2:
+                tag_type = c_tag[0]
+                tag_value = c_tag[1]
+                batch.append({
+                    'sql': 'insert into event_tags SELECT last_insert_rowid(),?,?',
+                    'args': [tag_type, tag_value]
+                })
 
-        self._db.execute_batch(batch)
+        return self._db.execute_batch(batch, catch_err=catch_err)
 
     def get_filter(self, filter):
         """
@@ -396,6 +432,7 @@ class RelayStore:
                 kind=c_r['kind'],
                 content=c_r['content'],
                 tags=c_r['tags'],
-                created_at=util_funcs.ticks_as_date(c_r['created_at'])
+                created_at=util_funcs.ticks_as_date(c_r['created_at']),
+                sig=c_r['sig']
             ))
         return ret

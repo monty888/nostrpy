@@ -7,6 +7,8 @@ import time
 import websocket
 import rel
 import json
+import random
+from hashlib import md5
 from json import JSONDecodeError
 from datetime import datetime, timedelta
 from nostr.util import util_funcs
@@ -81,11 +83,6 @@ class Client:
                     while l:
                         try:
                             evt = Event.create_from_JSON(json.loads(l))
-                            # when we get events from relay the key extension is missing because nostr only uses keys as
-                            # 02 type. we add 2 extra chars which will be ignored and striped when the event data is sent
-                            if(len(evt.pub_key)==64):
-                                evt.pub_key = 'XX' + evt.pub_key
-
                             my_client.publish(evt)
                         except JSONDecodeError as je:
                             logging('Client::post_events_from_file - problem loading event data %s - %s' % (l, je))
@@ -95,7 +92,6 @@ class Client:
                 except Exception as e:
                     print(e)
 
-
     def __init__(self, relay_url):
         self._url = relay_url
         self._handlers = {}
@@ -104,9 +100,18 @@ class Client:
     def url(self):
         return self._url
 
-    def subscribe(self, sub_id, handler=None, filters={}):
+    def subscribe(self, sub_id=None, handler=None, filters={}):
+        """
+        :param sub_id: if none a rndish 4digit hex sub_id will be given
+        :param handler: single or [] of handlers that'll get called for events on sub
+        :param filters: filter to be sent to relay for matching events were interested in
+        see https://github.com/fiatjaf/nostr/blob/master/nips/01.md
+        :return: sub_id
+        """
+
         the_req = ['REQ']
 
+        # no sub given, ok we'll generate one
         if sub_id is None:
             sub_id = self._get_sub_id()
         the_req.append(sub_id)
@@ -127,6 +132,19 @@ class Client:
         self._ws.send(the_req)
         return sub_id
 
+    def _get_sub_id(self):
+        """
+        :return: creates a randomish 4digit hex to be used as sub_id if nothing supplied
+        should be plenty as should only be using a few subs at most and relay will probbaly be
+        restricting any more
+        """
+        ret = str(random.randrange(1, 1000)) + str(util_funcs.date_as_ticks(datetime.now()))
+        ret = md5(ret.encode('utf8')).hexdigest()[:4]
+        return ret
+
+    def unsubscribe(self, sub_id):
+        self._ws.send(json.dumps(['CLOSE', sub_id]))
+
     def publish(self, evt: Event):
         logging.debug('Client::publish - %s', evt.event_data())
         to_pub = json.dumps([
@@ -134,9 +152,6 @@ class Client:
         ])
         self._ws.send(to_pub)
         time.sleep(0.2)
-
-    def _get_sub_id(self):
-        pass
 
     def _do_events(self, for_sub, message):
         if for_sub in self._handlers:

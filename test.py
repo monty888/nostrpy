@@ -120,7 +120,7 @@ def command_line(relay_url, db_file):
         def do_post(self, arg):
             'Post text as not to relay'
             if self._c_profile:
-                n_event = Event(kind=Event.KIND_TEXT_NOTE,content=arg, pub_key=self._c_profile.public_key)
+                n_event = Event(kind=Event.KIND_TEXT_NOTE,content=arg, pub_key=self._c_profile.public_key[2:])
                 n_event.sign(self._c_profile.private_key)
                 self._relay.publish(n_event)
             else:
@@ -150,7 +150,7 @@ encrypt_post <pubkey> <msg>
                 n_evt = Event(kind=Event.KIND_ENCRYPT,
                               tags=shared,
                               content=full_enc_message,
-                              pub_key=public_box.public_key)
+                              pub_key=public_box.public_key[2:])
 
                 n_evt.sign(public_box.private_key)
                 self._relay.publish(n_evt)
@@ -199,7 +199,7 @@ FIXME: needs to support quoting for strings with spaces!
         def do_view_all(self, arg):
             self._event_handler.view_on()
             input('press any key to exit view\n')
-            self._event_handler.view_on()
+            self._event_handler.view_off()
             print('exit view_all')
 
 
@@ -260,7 +260,7 @@ if __name__ == "__main__":
     # nostr_db_file = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr-relay.db'
     # relay_url = 'wss://nostr-pub.wellorder.net'
     # relay_url = 'wss://rsslay.fiatjaf.com'
-    relay_url = 'wss://nostr.bitcoiner.social'
+    # relay_url = 'wss://nostr.bitcoiner.social'
     # relay_url = 'ws://localhost:7000'
     relay_url = 'ws://localhost:8081/websocket'
     backup_dir = '/home/shaun/.nostrpy/'
@@ -292,12 +292,14 @@ if __name__ == "__main__":
     #     })
     #     time.sleep(100)
 
-    # Client.post_events_from_file(relay_url, backup_dir+'events.json')
+    # Client.post_events_from_file(relay_url, backup_dir+'events2.json')
+
+
+
     # my_filter = {'since': util_funcs.date_as_ticks(datetime.now())-100000, 'kinds': [4]}
     #
+    # Client.relay_events_to_file(relay_url,backup_dir+'events2.json')
     # from nostr.persist import RelayStore
     # rs = RelayStore(nostr_db_file)
-    # for c_e in rs.get_filter(my_filter):
-    #     print(c_e)
-
+    # rs.create()
 

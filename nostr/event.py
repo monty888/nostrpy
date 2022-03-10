@@ -48,6 +48,7 @@ class Event:
         self._content = content
         self._tags = tags
         self._pub_key = pub_key
+
         if tags is None:
             self._tags = []
 
@@ -60,7 +61,7 @@ class Event:
 
         ret = json.dumps([
             0,
-            self._pub_key[2:],
+            self._pub_key,
             util_funcs.date_as_ticks(self._created_at),
             self._kind,
             self._tags,
@@ -114,13 +115,53 @@ class Event:
     def event_data(self):
         return {
             'id': self._id,
-            'pubkey': self._pub_key[2:],
+            'pubkey': self._pub_key,
             'created_at': util_funcs.date_as_ticks(self._created_at),
             'kind': self._kind,
             'tags': self._tags,
             'content': self._content,
             'sig': self._sig
         }
+
+    def test(self, filter):
+        if isinstance(filter, dict):
+            filter = [filter]
+        for c_filter in filter:
+            ret = True
+            if 'since' in filter and self.created_at_ticks <= c_filter['since']:
+                ret = False
+            if 'until' in filter and self.created_at_ticks >= c_filter['until']:
+                ret = False
+            if 'kinds' in c_filter:
+                fkinds = c_filter['kinds']
+                if hasattr(fkinds, '__iter__'):
+                    if self.kind not in fkinds:
+                        ret = False
+                elif fkinds != self.kind:
+                    ret = False
+            if 'authors' in c_filter:
+                auth_match = False
+                for c_author in c_filter['authors']:
+                    if c_author in self.pub_key:
+                        auth_match = True
+                        break
+                if not auth_match:
+                    ret = False
+            if 'ids' in c_filter:
+                id_match = False
+                for c_author in c_filter['ids']:
+                    if c_author in self.pub_key:
+                        id_match = True
+                        break
+                if not id_match:
+                    ret = False
+            # TODO: #e and #p
+
+            # multiple filters are joined so a pass on any and we're out of here
+            if ret:
+                break
+
+        return ret
 
     """
         get/set various event properties
@@ -140,6 +181,30 @@ class Event:
     @property
     def id(self):
         return self._id
+
+    @property
+    def tags(self):
+        return self._tags
+
+    @property
+    def created_at(self):
+        return self._created_at
+
+    @property
+    def created_at_ticks(self):
+        return util_funcs.date_as_ticks(self._created_at)
+
+    @property
+    def kind(self):
+        return self._kind
+
+    @property
+    def content(self):
+        return self._content
+
+    @property
+    def sig(self):
+        return self._sig
 
     def __str__(self):
         ret = super(Event, self).__str__()

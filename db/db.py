@@ -98,14 +98,19 @@ class Database:
             curs.execute('begin')
             for c_cmd in batch:
                 args = []
+                sql = c_cmd['sql']
                 if 'args' in c_cmd:
                     args = c_cmd['args']
-                curs.execute(c_cmd['sql'],args)
+                curs.execute(sql,args)
+                logging.debug('Database::execute_batch SQL: %s\n ARGS: %s' % (sql,
+                                                                              args))
             c.commit()
+            logging.debug('Database::execute_batch commit done')
             ret = True
         except Error as e:
             logging.log(logging.WARN, e)
             was_err = e
+            logging.debug('Database::execute_batch error - not committed')
         finally:
             if c:
                 c.close()
