@@ -101,9 +101,10 @@ class Database:
                 sql = c_cmd['sql']
                 if 'args' in c_cmd:
                     args = c_cmd['args']
-                curs.execute(sql,args)
                 logging.debug('Database::execute_batch SQL: %s\n ARGS: %s' % (sql,
                                                                               args))
+                curs.execute(sql,args)
+
             c.commit()
             logging.debug('Database::execute_batch commit done')
             ret = True

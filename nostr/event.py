@@ -124,6 +124,29 @@ class Event:
         }
 
     def test(self, filter):
+        # where ttype is [e]vent or [p]ubkey
+        def _test_tag_match(t_type):
+            ismatch = False
+            # create lookup of out type tags
+            t_lookup = set()
+            for c_tag in self._tags:
+                if c_tag[0] == t_type:
+                    t_lookup.add(c_tag[1])
+            # if there are any p tags on this event
+            if t_lookup:
+                # just incase has been passed as str
+                t_filter = c_filter['#'+t_type]
+                if isinstance(t_filter, str):
+                    t_filter = [t_filter]
+
+                for c_t in t_filter:
+                    if c_t in t_lookup:
+                        ismatch = True
+                        break
+
+            return ismatch
+
+
         if isinstance(filter, dict):
             filter = [filter]
         for c_filter in filter:
@@ -155,6 +178,13 @@ class Event:
                         break
                 if not id_match:
                     ret = False
+            if '#e' in c_filter:
+                if not _test_tag_match('e'):
+                    ret = False
+            if '#p' in c_filter:
+                if not _test_tag_match('p'):
+                    ret = False
+
             # TODO: #e and #p
 
             # multiple filters are joined so a pass on any and we're out of here

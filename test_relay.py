@@ -38,7 +38,7 @@ def start_relay():
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(LOG_LEVEL)
-    test_relay_limit_post_time()
+    start_relay()
 
 
 

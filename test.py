@@ -8,7 +8,7 @@ import base64
 import rel
 from nostr.network import Client, Event
 from nostr.event import Event
-from nostr.event_handlers import PrintEventHandler
+from nostr.event_handlers import PrintEventHandler, PersistEventHandler
 from nostr.persist import Store
 from nostr.util import util_funcs
 from nostr.ident import ProfileList, Profile
@@ -104,7 +104,7 @@ def command_line(relay_url, db_file):
             self._db_file = db_file
             self._store = Store(db_file)
 
-            self._event_handler = PrintEventHandler()
+            self._event_handler = [PersistEventHandler(self._db_file)]
             self._set_relay()
             super().__init__()
 
@@ -255,7 +255,7 @@ def events_import(relay_url, filename):
 
 
 if __name__ == "__main__":
-    logging.getLogger().setLevel(logging.DEBUG)
+    # logging.getLogger().setLevel(logging.DEBUG)
     nostr_db_file = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr.db'
     # nostr_db_file = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr-relay.db'
     # relay_url = 'wss://nostr-pub.wellorder.net'

@@ -9,7 +9,8 @@ from gevent.pywsgi import WSGIServer
 from geventwebsocket import WebSocketError
 from geventwebsocket.handler import WebSocketHandler
 from nostr.network import Client
-from nostr.event import Event, PersistEventHandler
+from nostr.event import Event
+from nostr.event_handlers import PersistEventHandler
 from nostr.persist import Store
 
 class StaticServer():

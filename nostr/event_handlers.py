@@ -31,8 +31,12 @@ class PrintEventHandler:
 
     def do_event(self, evt, relay):
         if self._view_on:
+            pubkey = evt['pubkey']
+            pubkey = '%s...%s' % (pubkey[:4],
+                                  pubkey[len(pubkey)-4:])
+
             print('%s: %s - %s' % (util_funcs.ticks_as_date(evt['created_at']),
-                                   evt['pubkey'],
+                                   pubkey,
                                    evt['content']))
 
 

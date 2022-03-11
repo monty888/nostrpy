@@ -131,6 +131,7 @@ class Store:
                     evt['kind'], str(evt['tags']), evt['content'], evt['sig']
                 ]
             },
+            # TODO  rem last_insert_rowid() make like we did for relay event_tags
             {
                 'sql' : 'insert into event_relay SELECT last_insert_rowid(), ?',
                 'args' : [relay_url]
@@ -259,19 +260,21 @@ class RelayStore:
         :return:
         """
         def for_single_filter(filter):
-            def prefix_split(arr):
-                prefix = []
-                full = []
-                for i in arr:
-                    if len(i)==64:
-                        full.append(i)
-                    else:
-                        prefix.append(i)
-
-                return {
-                    'full' : full,
-                    'prefix' : prefix
-                }
+            def do_tags(tag_type):
+                nonlocal args
+                t_filter = filter['#'+tag_type]
+                if isinstance(t_filter, str):
+                    t_filter = [t_filter]
+                e_sql = """
+                %s id in 
+                    (
+                        select id from event_tags where type = '%s' and value in(%s)
+                    )
+                                """ % (join,
+                                       tag_type,
+                                       ','.join(['?'] * len(t_filter)))
+                sql_arr.append(e_sql)
+                args = args + t_filter
 
             sql_arr = ['select * from events']
             join = 'where'
@@ -306,11 +309,15 @@ class RelayStore:
                 if not hasattr(ids_arr,'__iter__') or isinstance(ids_arr,str):
                     ids_arr = [ids_arr]
 
-                arg_str = 'or '.join(['event_id like ?']*len(ids_arr))
+                arg_str = ' or '.join(['event_id like ?']*len(ids_arr))
                 sql_arr.append(' %s (%s)' % (join, arg_str))
                 for c_arg in ids_arr:
                     args.append(c_arg+'%')
-
+            # add other tags e.g. shared that appears on encrypted tags?
+            if '#e' in filter:
+                do_tags('e')
+            if '#p' in filter:
+                do_tags('p')
 
             return {
                 'sql' : ''.join(sql_arr),
@@ -406,8 +413,14 @@ class RelayStore:
                 tag_type = c_tag[0]
                 tag_value = c_tag[1]
                 batch.append({
-                    'sql': 'insert into event_tags SELECT last_insert_rowid(),?,?',
-                    'args': [tag_type, tag_value]
+                    # 'sql': 'insert into event_tags SELECT last_insert_rowid(),?,?',
+                    'sql' : """
+                        insert into event_tags values (
+                        (select id from events where event_id=?),
+                        ?,
+                        ?)
+                    """,
+                    'args': [evt.id,tag_type, tag_value]
                 })
 
         return self._db.execute_batch(batch, catch_err=catch_err)

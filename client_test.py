@@ -14,6 +14,7 @@ def db_create():
     my_store = Store(DB_FILE)
     my_store.create()
 
+
 def test_unsubscribe():
     my_client = Client(RELAY_URL).start()
     # filter to print everything for this sub to screen
@@ -25,11 +26,14 @@ def test_unsubscribe():
     # at if you open another con and post to client you should see anything anymore
     time.sleep(20)
 
+
 def test_import_taged_event():
-    Client.post_events_from_file(RELAY_URL,BASE_DIR+'event_with_tag.json')
+    Client.post_events_from_file(RELAY_URL,BASE_DIR+'event_with_e_tag.json')
+
 
 def test_import_import_events():
     Client.post_events_from_file(RELAY_URL, BASE_DIR+'events.json')
+
 
 def test_max_subscribe():
     my_client = Client(RELAY_URL).start()
@@ -42,12 +46,49 @@ def test_max_subscribe():
     time.sleep(10)
     my_client.end()
 
+
 def test_filter_match(filter):
     my_client = Client(RELAY_URL).start()
     my_client.subscribe(handler=PrintEventHandler(), filters=filter)
 
+def test_events_to_file():
+    Client.relay_events_to_file('wss://nostr.bitcoiner.social',BASE_DIR+'wtf.json')
+
+def test_postings():
+    import random
+    from nostr.util import util_funcs
+    from datetime import datetime
+    from hashlib import md5
+    from nostr.event import Event
+    my_client = Client(RELAY_URL).start()
+    while True:
+        msg = str(random.randrange(1, 1000)) + str(util_funcs.date_as_ticks(datetime.now()))
+        msg = md5(msg.encode('utf8')).hexdigest()
+
+        n_Event = Event(kind=Event.KIND_TEXT_NOTE,
+                        content=msg,
+                        pub_key='40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486')
+        n_Event.sign('5c7102135378a5223d74ce95f11331a8282ea54905d61018c7f1bc166994a1d9')
+
+        my_client.publish(n_Event)
+        time.sleep(.1)
+
+
+
 if __name__ == "__main__":
     logging.getLogger().setLevel(LOG_LEVEL)
-    test_filter_match({
-        'kinds': 4
-    })
+    # test_filter_match([{
+    #         '#p': ['3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d']
+    #     },
+    #     {
+    #         'ids' : ['03da578a8b3c9c6a51', '8a05a9825e6a9447c6e50d01d92289cabb8e0f0e48e4e9bb3324dbdafa236280']
+    #     },
+    #     {
+    #         'kinds' : 4
+    #     }])
+
+    # test_filter_match({
+    #     'author' : '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486'
+    # })
+
+    test_postings()
