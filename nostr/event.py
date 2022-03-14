@@ -213,6 +213,11 @@ class Event:
         return self._id
 
     @property
+    def short_id(self):
+        # shorter version of id for display, note id doesn't until signing
+        return util_funcs.str_tails(self.id, 4)
+
+    @property
     def tags(self):
         return self._tags
 

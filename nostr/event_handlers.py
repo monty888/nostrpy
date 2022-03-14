@@ -10,6 +10,8 @@ import json
 from nostr.persist import Store
 from nostr.encrypt import SharedEncrypt
 from nostr.util import util_funcs
+from nostr.event import Event
+from nostr.ident import ProfileList
 
 
 class PrintEventHandler:
@@ -134,16 +136,5 @@ class PersistEventHandler:
             # linking evets with every relay we saw them from
             pass
 
-        # pubkey = evt['pubkey']
-        #
-        # # if meta then add/update profile as required
-        # if evt['kind'] == Event.KIND_META:
-        #     c_profile = self._profiles.value_in('pub_k',pubkey)
-        #     if c_profile:
-        #         my_store.update_profile(c_profile)
-        #     else:
-        #         c_profile = Profile(pub_k=pubkey,attrs=evt['content'],update_at=evt['created_at'])
-        #         my_store.add_profile(c_profile)
-        #
-        #     # for now we just reload the whole lot from db rather then just updating what we have
-        #     profiles = ProfileList.create_others_profiles_from_db(db_file)
+
+

@@ -345,6 +345,7 @@ class RelayStore:
     def __init__(self, db_file):
         self._db_file = db_file
         self._db = Database(db_file)
+        logging.debug('RelayStore::__init__ db_file=%s', self._db_file)
 
     def create(self, tables=['events']):
 

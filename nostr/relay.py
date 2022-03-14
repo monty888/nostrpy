@@ -58,6 +58,8 @@ class LengthAcceptReqHandler(AcceptReqHandler):
         elif msg_len > self._max:
             self.raise_err('REQ content > accepted max %s got %s' % (self._max, msg_len))
 
+    def __str__(self):
+        return 'LengthAcceptReqHandler (%s-%s)' % (self._min, self._max)
 
 class ThrottleAcceptReqHandler(AcceptReqHandler):
     """
@@ -127,8 +129,10 @@ class Relay:
         if not hasattr(self._accept_req,'__iter__'):
             self._accept_req = [self._accept_req]
 
+        logging.info('Relay::__init__ maxsub=%s' % self._max_sub)
+
     def start(self, host='localhost', port=8080):
-        logging.debug('Relay::start host=%s port=%s' % (host, port))
+        logging.info('Relay::start host=%s port=%s' % (host, port))
         server = WSGIServer((host, port), self._app, handler_class=WebSocketHandler)
         server.serve_forever()
 
@@ -194,7 +198,10 @@ class Relay:
 
         try:
             self._store.add_event(evt)
-            logging.debug('Relay::_do_event persisted event - %s' % evt.id)
+            logging.info('Relay::_do_event persisted event - %s - %s (%s)' % (evt.short_id,
+                                                                             util_funcs.str_tails(evt.content, 6),
+                                                                             # give str mapping of kind where we can in future
+                                                                             evt.kind))
             # now post to any interested subscribers
             self._check_subs(evt)
         except IntegrityError as ie:
@@ -244,7 +251,7 @@ class Relay:
                     self._send_event(ws, c_sub_id, evt)
 
     def _do_sub(self, req_json, ws: WebSocket):
-        logging.debug('subscription requested')
+        logging.info('subscription requested')
         if len(req_json) <= 1:
             raise NostrCommandException('REQ command missing sub_id')
         if len(req_json) <= 2:
@@ -266,7 +273,7 @@ class Relay:
             'id': sub_id,
             'filter': filter
         }
-        logging.debug('Relay::_do_sub subscription added %s (%s)' % (sub_id, filter))
+        logging.info('Relay::_do_sub subscription added %s (%s)' % (sub_id, filter))
 
         # post back the pre existing
         evts = self._store.get_filter(filter)
@@ -274,10 +281,9 @@ class Relay:
             self._send_event(ws, sub_id, c_evt)
 
     def _do_unsub(self, req_json, ws: WebSocket):
-        logging.debug('un-subscription requested')
+        logging.info('un-subscription requested')
         if len(req_json) <= 1:
             raise NostrCommandException('REQ command missing sub_id')
-        print(ws.environ)
 
         # get sub_id from json
         sub_id = req_json[1]
@@ -299,7 +305,7 @@ class Relay:
             ]
             ws.send(json.dumps(to_send))
         except Exception as e:
-            logging.debug('Relay::_send_event %s' % e)
+            logging.info('Relay::_send_event error: %s' % e)
 
 def start_relay():
     nostr_db_file = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr.db'

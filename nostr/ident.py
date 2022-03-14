@@ -18,8 +18,6 @@ from data.data import DataSet
 from nostr.network import Event
 from datetime import datetime
 from nostr.util import util_funcs
-from db.db import Database
-
 
 class Profile:
 
@@ -200,6 +198,13 @@ class Profile:
     def profile_name(self):
         return self._profile_name
 
+    @property
+    def name(self):
+        ret = None
+        if 'name' in self.attrs:
+            ret = self.attrs['name']
+        return ret
+
     # only exists if us
     @property
     def private_key(self):
@@ -226,11 +231,9 @@ class Profile:
         return self._update_at
 
     def __str__(self):
-        name = self.name
+        name = self._profile_name
         if not name:
-            name = 'remote'
-            if 'name' in self.attrs:
-                name = '%s/%s' % (name, self.attrs['name'])
+            name = '%s/%s' % ('remote', self.name)
 
         can_sign = False
         if self.private_key:
@@ -272,8 +275,14 @@ class ProfileList:
     """
 
     @classmethod
-    def create_others_profiles_from_db(cls, db_file):
-        data = DataSet.from_sqlite(db_file, 'select * from profiles where priv_k isnull')
+    def create_profiles_from_db(cls, db_file):
+        """
+        loads all profiles from db, at somepoint this might not be a good idea but OK for now
+        includes local profiles also
+        :param db_file:
+        :return:
+        """
+        data = DataSet.from_sqlite(db_file, 'select * from profiles --where priv_k isnull')
         profiles = []
         for c_r in data:
             profiles.append(Profile(
@@ -307,7 +316,22 @@ class ProfileList:
             ret = self._key_lookup[pub_key]
         return ret
 
+    def matches(self, m_str):
+        # simple text text lookup against name/pubkey
+        ret = []
+        # we're going to ignore case
+        m_str = m_str.lower()
+        for c_p in self._profiles:
+            # pubkey should be lowercase but name we convert
+            if m_str in c_p.public_key or c_p.name and m_str in c_p.name.lower():
+                ret.append(c_p)
+        return ret
 
+    def __getitem__(self, item):
+        return self._profiles[item]
+
+    def __len__(self):
+        return len(self._profiles)
 
 
 class Contact:
@@ -410,16 +434,35 @@ class ContactList:
                 except JSONDecodeError as e:
                     logging.debug('ContactList::import_from_events error with tags %s' % e)
 
+# here pr in event_handlers.py????
+class ProfileEventHandler:
+    """
+        loads all profiles from db and then keeps that mem copy up to date whenever any meta events are recieved
+        obvs at some point keeping all profiles in memory might not work so well but OK at the moment....
+        TODO: check and verify NIP05 if profile has it
+    """
+
+    def __init__(self, db_file, on_update):
+        self._profiles = ProfileList.create_others_profiles_from_db(db_file)
+
+    def do_event(self, evt: Event, relay):
+        if evt.kind == Event.KIND_META:
+            print('we should do something....meta event!!!!!!')
+
+    @property
+    def profiles(self):
+        return self._profiles
+
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
     nostr_db_file = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr.db'
     backup_dir = '/home/shaun/.nostrpy/'
     s = Store(nostr_db_file)
-    # s.create('contacts')
-    # s.drop('profiles')
+
+    from nostr.network import Client
+    from nostr.event_handlers import ProfileEventHandler
+
+    c = Client('ws://localhost:8081').start()
+    c.subscribe()
 
 
-    # p = Profile.new_profile('message_to',{},nostr_db_file)
-    Profile.import_from_events(nostr_db_file, since=None)
-    # Profile.import_from_file(backup_dir+'local_profiles.csv',nostr_db_file)
-    # ContactList.import_from_events(nostr_db_file)

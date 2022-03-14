@@ -97,7 +97,7 @@ class NostrWeb(StaticServer):
         self._persist_event = PersistEventHandler(self._db_file)
 
         # this should be passed in and probably will be a ClientPool
-        self._nostr_client = Client('wss://nostr-pub.wellorder.net')
+        self._nostr_client = Client('ws://localhost:8081/websocket')
         self._nostr_client.start()
 
         self._nostr_client.subscribe('web', self, {
