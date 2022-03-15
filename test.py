@@ -195,15 +195,29 @@ FIXME: needs to support quoting for strings with spaces!
             else:
                 print('no profile, use set_profile %name%')
 
-
         def do_view_all(self, arg):
             self._event_handler.view_on()
             input('press any key to exit view\n')
             self._event_handler.view_off()
             print('exit view_all')
 
+        def do_delete(self, arg):
+            'send delete event for event_ids'
+            if self._c_profile:
+                tags = []
+                for c_id in arg.split(' '):
+                    tags.append(['e', c_id])
 
+                n_evt = Event(kind=Event.KIND_DELETE,
+                              tags=tags,
+                              content='delete from nostrpy shell',
+                              pub_key=self._c_profile.public_key[2:])
 
+                n_evt.sign(self._c_profile.private_key)
+                self._relay.publish(n_evt)
+
+            else:
+                print('no profile, use set_profile %name%')
 
         def do_exit(self, arg):
             'exit back to shell'
@@ -268,6 +282,7 @@ if __name__ == "__main__":
     # test_client_publish(relay_url)
     # test_client_publish_with_persist(relay_url, nostr_db_file)
     command_line(relay_url, nostr_db_file)
+
     # NOTE: each event is json but the file structure isn't correct json there are \n between each event
     # events_backup(relay_url, backup_dir+'events.json')
     # from nostr.network import ClientPool

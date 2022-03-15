@@ -10,6 +10,7 @@ different db/persistance layer with min code changes
 
 """
 import json
+import time
 from json import JSONDecodeError
 import secp256k1
 import logging
@@ -301,6 +302,9 @@ class ProfileList:
         for c_p in self._profiles:
             self._key_lookup[c_p.public_key] = c_p
 
+    def append(self, profile: Profile):
+        self._profiles.append(profile)
+
     def as_arr(self):
         ret = []
         for c_p in self._profiles:
@@ -442,16 +446,33 @@ class ProfileEventHandler:
         TODO: check and verify NIP05 if profile has it
     """
 
-    def __init__(self, db_file, on_update):
-        self._profiles = ProfileList.create_others_profiles_from_db(db_file)
+    def __init__(self, db_file, on_update=None):
+        self._profiles = ProfileList.create_profiles_from_db(db_file)
+        self._store = Store(db_file)
+        self._on_update = on_update
 
-    def do_event(self, evt: Event, relay):
-        if evt.kind == Event.KIND_META:
-            print('we should do something....meta event!!!!!!')
+    def do_event(self, evt, relay):
+        if evt['kind'] == Event.KIND_META:
+            pubkey = evt['pubkey']
+            c_profile = self._profiles.lookup(pubkey)
+            evt_profile = Profile(pub_k=pubkey, attrs=evt['content'], update_at=evt['created_at'])
+            # not sure about this... probably OK most of the time...
+            if c_profile:
+                self._store.update_profile(evt_profile)
+            else:
+                self._store.add_profile(evt_profile)
+                self._profiles.append(evt_profile)
+
+            # if owner gave us an on_update call with pubkey that has changed, they may want to do something...
+            if self._on_update:
+                self._on_update(evt_profile, c_profile)
 
     @property
     def profiles(self):
         return self._profiles
+
+    def set_on_update(self, on_update):
+        self._on_update = on_update
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
@@ -460,9 +481,16 @@ if __name__ == "__main__":
     s = Store(nostr_db_file)
 
     from nostr.network import Client
-    from nostr.event_handlers import ProfileEventHandler
 
-    c = Client('ws://localhost:8081').start()
-    c.subscribe()
+    c = Client('ws://localhost:8081/websocket').start()
+    peh = ProfileEventHandler(nostr_db_file)
+
+    def my_update(profile, pre_profile):
+        print(len(peh.profiles))
+
+    peh.set_on_update(my_update)
+
+
+    c.subscribe(handler=peh)
 
 

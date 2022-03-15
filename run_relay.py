@@ -33,6 +33,7 @@ def usage():
 usage: python run_relay.py --host=localhost --port=8081
 
 -h --help   -   show this message
+-w --wipe   -   delete all data from db and exit
 --config    -   config file if any
 --host      -   host relay will listen websocket at, default %s
 --port      -   port relay will listen websocket on, default %s
@@ -90,17 +91,19 @@ def load_toml(filename):
 
 
 def main():
+    is_wipe = False
     create_work_dir()
 
     try:
-        opts, args = getopt.getopt(sys.argv[1:], 'hs:', ['help',
-                                                         'host=',
-                                                         'port=',
-                                                         'config=',
-                                                         'store=',
-                                                         'dbfile=',
-                                                         'maxsub=',
-                                                         'maxlength='])
+        opts, args = getopt.getopt(sys.argv[1:], 'hs:w', ['help',
+                                                          'host=',
+                                                          'port=',
+                                                          'config=',
+                                                          'store=',
+                                                          'dbfile=',
+                                                          'maxsub=',
+                                                          'maxlength=',
+                                                          'wipe'])
     except getopt.GetoptError as e:
         print(e)
         usage()
@@ -133,6 +136,8 @@ def main():
         if o in ('-h', '--help'):
             usage()
             sys.exit(0)
+        elif o in ('-w','--wipe'):
+            is_wipe = True
         elif o == '--host':
             config['host'] = a
         elif o == '--port':
@@ -164,6 +169,10 @@ def main():
     else:
         print('--store most be sqlite or postgres')
         sys.exit(2)
+
+    if is_wipe:
+        my_store.destroy()
+        sys.exit(0)
 
     # optional message accept handlers
     accept_handlers = []

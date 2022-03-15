@@ -9,7 +9,7 @@ from data.data import DataSet
 from db.db import Database
 from nostr.util import util_funcs
 from nostr.event import Event
-
+import os
 
 class Store:
 
@@ -191,13 +191,11 @@ class Store:
 
         self._db.execute_sql(sql, args)
 
-    def update_profile(self,profile):
+    def update_profile(self,profile: 'Profile'):
         sql = """
                 update profiles 
                     set profile_name=?, attrs=?, name=?, picture=?, updated_at=?
                     where pub_k=?
-                    
-            
             """
         args = [
             profile.profile_name, json.dumps(profile.attrs),
@@ -276,17 +274,17 @@ class RelayStore:
                 sql_arr.append(e_sql)
                 args = args + t_filter
 
-            sql_arr = ['select * from events']
-            join = 'where'
+            # deleted isnull to filter deleted if in flag delete mode
+            sql_arr = ['select * from events where deleted isnull']
+            # join not really required anymore because its always and
+            join = 'and'
             args = []
             if 'since' in filter:
                 sql_arr.append(' %s created_at>=?' % join)
                 args.append(filter['since'])
-                join = 'and'
             if 'until' in filter:
                 sql_arr.append(' %s created_at<=?' % join)
                 args.append(filter['until'])
-                join = 'and'
             if 'kinds' in filter:
                 kind_arr = filter['kinds']
                 if not hasattr(kind_arr,'__iter__')or isinstance(kind_arr,str):
@@ -313,6 +311,7 @@ class RelayStore:
                 sql_arr.append(' %s (%s)' % (join, arg_str))
                 for c_arg in ids_arr:
                     args.append(c_arg+'%')
+
             # add other tags e.g. shared that appears on encrypted tags?
             if '#e' in filter:
                 do_tags('e')
@@ -351,7 +350,7 @@ class RelayStore:
 
         if 'events' in tables:
             evt_tmpl = DataSet(heads=[
-                'id', 'event_id', 'pubkey', 'created_at', 'kind', 'tags', 'content', 'sig'
+                'id', 'event_id', 'pubkey', 'created_at', 'kind', 'tags', 'content', 'sig','deleted'
             ], data=[])
             evt_tmpl.create_sqlite_table(self._db_file, 'events', {
                 'id': {
@@ -366,6 +365,10 @@ class RelayStore:
                 },
                 'kind': {
                     'type': 'int'
+                },
+                # will only ever be set if flagged deletes
+                'deleted' : {
+                    'type' : 'int'
                 }
             })
 
@@ -390,6 +393,9 @@ class RelayStore:
                 }
             ]
             self._db.execute_batch(batch)
+        # also remove the file, this make it easy for us to
+        # know db needs creating without looking for tbls or something
+        os.remove(self._db_file)
 
     def add_event(self, evt: Event, catch_err=False):
         """
@@ -449,4 +455,35 @@ class RelayStore:
                 created_at=util_funcs.ticks_as_date(c_r['created_at']),
                 sig=c_r['sig']
             ))
+        return ret
+
+    def delete_events(self, ids, flag=False):
+        if not ids:
+            return True
+        if isinstance(ids, str):
+            ids = [ids]
+        if isinstance(ids[0], Event):
+            ids = [evt.id for evt in ids]
+
+        # only flag as deleted
+        if flag:
+            ret = self._db.execute_sql(sql='update events set deleted=true where event_id in (%s) and kind<>?' %
+                                           ','.join(['?'] * len(ids)),
+                                       args=ids + [Event.KIND_DELETE])
+        # actually delete
+        else:
+            batch = [
+                {
+                    'sql': 'delete from event_tags where id in (select id from events '
+                           'where event_id in (%s) and kind<>?)' % ','.join(
+                        ['?'] * len(ids)),
+                    'args': ids + [Event.KIND_DELETE]
+                },
+                {
+                    'sql' : 'delete from events where event_id in (%s) and kind<>?' % ','.join(['?']*len(ids)),
+                    'args': ids + [Event.KIND_DELETE]
+                }
+            ]
+            ret = self._db.execute_batch(batch)
+
         return ret

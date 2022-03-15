@@ -18,7 +18,7 @@ class Database:
     def _get_con(self):
         return sqlite3.connect(self._f_name)
 
-    def execute_sql(self, str, args=None, catch_err=False):
+    def execute_sql(self, sql, args=None, catch_err=False):
         """
             execute some SQL, currently we'll just fall over on
             errors
@@ -32,12 +32,13 @@ class Database:
 
         try:
             c = self._get_con()
-
+            logging.debug('Database::execute_batch SQL: %s\n ARGS: %s' % (sql,
+                                                                          args))
             # if [[]] then we're doing a multi insert, not sure this is a perfect test...
             if args and isinstance(args[0], list):
-                c.executemany(str, args)
+                c.executemany(sql, args)
             else:
-                c.execute(str,args)
+                c.execute(sql,args)
             c.commit()
             success = True
         except Error as e:
@@ -52,7 +53,7 @@ class Database:
 
         return success
 
-    def executemany_sql(self, str, args=None, catch_err=False):
+    def executemany_sql(self, sql, args=None, catch_err=False):
         """
             execute some SQL, returns True/False on success if catch_err is False
             then errors will raise an exception
@@ -66,7 +67,7 @@ class Database:
 
         try:
             c = self._get_con()
-            c.executemany(str,args)
+            c.executemany(sql,args)
             c.commit()
             ret = True
         except Error as e:

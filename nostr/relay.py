@@ -13,6 +13,7 @@ from nostr.persist import RelayStore
 from sqlite3 import IntegrityError
 from datetime import datetime
 from nostr.util import util_funcs
+from enum import Enum
 
 class NostrCommandException(Exception):
     # define elsewhere so easier to import...
@@ -93,6 +94,16 @@ class ThrottleAcceptReqHandler(AcceptReqHandler):
         self._track[evt.pub_key] = util_funcs.date_as_ticks(datetime.now())
 
 
+class DeleteMode(Enum):
+    # what will the relay do on receiving delete event
+
+    # delete any events we can from db
+    DEL_DELETE = 1
+    # mark as deleted any events from db - to client this would look exactly same as DEL_DELETE
+    DEL_FLAG = 2
+    # nothing, ref events will still be returned to clients
+    DEL_NO_ACTION = 3
+
 class Relay:
     """
         implements nostr relay protocol
@@ -100,7 +111,7 @@ class Relay:
     """
     VALID_CMDS = ['EVENT', 'REQ', 'CLOSE']
 
-    def __init__(self, store: RelayStore, accept_req_handler=None, max_sub=3):
+    def __init__(self, store: RelayStore, accept_req_handler=None, max_sub=3, delete_mode=DeleteMode.DEL_DELETE):
         self._app = Bottle()
         self._app.route('/websocket', callback=self._handle_websocket)
         # self._web_sockets = {}
@@ -126,8 +137,10 @@ class Relay:
             # accepts everything
             self._accept_req = [AcceptReqHandler()]
         # convert to array of only single class handed in
-        if not hasattr(self._accept_req,'__iter__'):
+        if not hasattr(self._accept_req, '__iter__'):
             self._accept_req = [self._accept_req]
+
+        self._delete_mode = delete_mode
 
         logging.info('Relay::__init__ maxsub=%s' % self._max_sub)
 
@@ -202,12 +215,29 @@ class Relay:
                                                                              util_funcs.str_tails(evt.content, 6),
                                                                              # give str mapping of kind where we can in future
                                                                              evt.kind))
+            if evt.kind == Event.KIND_DELETE:
+                self._do_delete(evt)
+
             # now post to any interested subscribers
             self._check_subs(evt)
         except IntegrityError as ie:
             msg = str(ie)
             if 'events.event_id' in msg and 'UNIQUE' in msg:
                 raise NostrCommandException('event already exists %s' % evt.id)
+
+    def _do_delete(self, evt: Event):
+        logging.debug('Relay::_do_delete - %s' % evt.tags)
+        if evt.kind == DeleteMode.DEL_DELETE or DeleteMode.DEL_FLAG:
+            e_tags = []
+            for c_e in evt.tags:
+                if len(c_e) >= 2 and c_e[0] == 'e' and len(c_e[1])==64:
+                    e_tags.append(c_e[1])
+            if e_tags:
+                to_delete = self._store.get_filter({
+                    'authors': evt.pub_key,
+                    'ids': e_tags
+                })
+                self._store.delete_events(to_delete, self._delete_mode == DeleteMode.DEL_FLAG)
 
     def _clean_ws(self):
         """

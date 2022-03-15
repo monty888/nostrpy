@@ -17,6 +17,7 @@ class Event:
     KIND_RELAY_REC = 2
     KIND_CONTACT_LIST = 3
     KIND_ENCRYPT = 4
+    KIND_DELETE = 5
 
     @classmethod
     def create_from_JSON(cls, evt_json):

@@ -91,4 +91,5 @@ if __name__ == "__main__":
     #     'author' : '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486'
     # })
 
-    test_postings()
+    # test_postings()
+    test_import_import_events()
