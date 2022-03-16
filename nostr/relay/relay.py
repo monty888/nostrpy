@@ -9,109 +9,46 @@ from gevent.lock import BoundedSemaphore
 import json
 from json import JSONDecodeError
 from nostr.event import Event
-from nostr.persist import RelayStore
+from nostr.relay.persist import RelayStore
+from nostr.relay.accepthandlers import AcceptReqHandler
+from nostr.exception import NostrCommandException
 from sqlite3 import IntegrityError
-from datetime import datetime
 from nostr.util import util_funcs
 from enum import Enum
-
-class NostrCommandException(Exception):
-    # define elsewhere so easier to import...
-    pass
-
-
-class AcceptReqHandler:
-    """
-        request handler for relay, a request handler just has to have
-        accept_post(self, ws: WebSocket, evt: Event) method that throws
-        NostrCommandException if we don't want to accept message
-    """
-    def __init__(self, descriptive_msg=True):
-        self._desc_msg = descriptive_msg
-
-    def raise_err(self, err_msg):
-        if self._desc_msg:
-            raise NostrCommandException(err_msg)
-        else:
-            raise NostrCommandException('post not accepted')
-
-    def accept_post(self, ws: WebSocket, evt: Event):
-        pass
-
-
-class LengthAcceptReqHandler(AcceptReqHandler):
-    """
-    use to only accept messages of set lengths, most likely upto a max size
-    """
-    def __init__(self, max=10, min=0, descriptive_msg=True):
-        """
-        :param max: accept no longer then this
-        :param min: - would this ever be useful? Probably not
-        """
-        self._min = min
-        self._max = max
-        super().__init__(descriptive_msg)
-
-    def accept_post(self, ws: WebSocket, evt: Event):
-        msg_len = len(evt.content)
-        if msg_len < self._min:
-            self.raise_err('REQ content < accepted min %s got %s' % (self._min, msg_len))
-        elif msg_len > self._max:
-            self.raise_err('REQ content > accepted max %s got %s' % (self._max, msg_len))
-
-    def __str__(self):
-        return 'LengthAcceptReqHandler (%s-%s)' % (self._min, self._max)
-
-class ThrottleAcceptReqHandler(AcceptReqHandler):
-    """
-    keeps track of time of messages for each pub_key and only lets repost if enough time has passed since
-    last post
-    maybe secs is too long change to use dt.timestamp() directly and then can do decimal point for parts of sec?
-
-    """
-    def __init__(self, tick_min=1, descriptive_msg=True):
-        """
-        :param tick_min: secs before a post is allowed per pub key
-        :param descriptive_msg:
-        """
-        self._tickmin = tick_min
-        # pub_key to last eventtime, NOTE never cleaned down at the moment
-        self._track = {}
-        super().__init__(descriptive_msg)
-
-    def accept_post(self, ws: WebSocket, evt: Event):
-        # pubkey posted before
-        if evt.pub_key in self._track:
-            # time since last post
-            dt = util_funcs.date_as_ticks(datetime.now())-self._track[evt.pub_key]
-            # time since last event is not enough msg not accepted
-            if dt<self._tickmin:
-                # update time anyway, this means if keep posting will keep failing...
-                self._track[evt.pub_key] = util_funcs.date_as_ticks(datetime.now())
-                self.raise_err('REQ pubkey %s posted to recently, posts most be %ss apart' % (evt.pub_key, self._tickmin))
-
-        # update last post for pubkey
-        self._track[evt.pub_key] = util_funcs.date_as_ticks(datetime.now())
 
 
 class DeleteMode(Enum):
     # what will the relay do on receiving delete event
 
-    # delete any events we can from db
+    # delete any events we can from db - note that once deleted there is no check that it's not reposted, which
+    # anyone would be able to do... not just the creator.
+    # TODO: write accept handler that will block reinserts of previously deleted events
     DEL_DELETE = 1
     # mark as deleted any events from db - to client this would look exactly same as DEL_DELETE
     DEL_FLAG = 2
     # nothing, ref events will still be returned to clients
     DEL_NO_ACTION = 3
 
+
 class Relay:
     """
         implements nostr relay protocol
-        NIPs....
+        NIP-01      -   basic protocol
+                        https://github.com/fiatjaf/nostr/blob/master/nips/01.md
+        NIP-02      -   contact list
+                        https://github.com/fiatjaf/nostr/blob/master/nips/02.md
+                        TODO: del old and check newer on add
+        NIP-09      -   event deletions
+                        delete_mode=DeleteMode.DEL_FLAG probbably best option as this will mark the event as deleted
+                        but also it won't be possible to repost.
+                        https://github.com/fiatjaf/nostr/blob/master/nips/09.md
+        NIP-12          generic querie tags, todo but should be easy.... test with shared
+                        https://github.com/fiatjaf/nostr/blob/master/nips/12.md
+
     """
     VALID_CMDS = ['EVENT', 'REQ', 'CLOSE']
 
-    def __init__(self, store: RelayStore, accept_req_handler=None, max_sub=3, delete_mode=DeleteMode.DEL_DELETE):
+    def __init__(self, store: RelayStore, accept_req_handler=None, max_sub=3, delete_mode=DeleteMode.DEL_FLAG):
         self._app = Bottle()
         self._app.route('/websocket', callback=self._handle_websocket)
         # self._web_sockets = {}
@@ -212,9 +149,9 @@ class Relay:
         try:
             self._store.add_event(evt)
             logging.info('Relay::_do_event persisted event - %s - %s (%s)' % (evt.short_id,
-                                                                             util_funcs.str_tails(evt.content, 6),
-                                                                             # give str mapping of kind where we can in future
-                                                                             evt.kind))
+                                                                              util_funcs.str_tails(evt.content, 6),
+                                                                              # give str mapping of kind where we can in future
+                                                                              evt.kind))
             if evt.kind == Event.KIND_DELETE:
                 self._do_delete(evt)
 
@@ -338,7 +275,7 @@ class Relay:
             logging.info('Relay::_send_event error: %s' % e)
 
 def start_relay():
-    nostr_db_file = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr.db'
+    nostr_db_file = '/nostr/storage/nostr.db'
     my_server = Relay()
     my_server.start(port=8081)
 

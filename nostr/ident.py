@@ -304,6 +304,7 @@ class ProfileList:
 
     def append(self, profile: Profile):
         self._profiles.append(profile)
+        self._key_lookup[profile.public_key] = profile
 
     def as_arr(self):
         ret = []
@@ -491,6 +492,8 @@ if __name__ == "__main__":
     peh.set_on_update(my_update)
 
 
-    c.subscribe(handler=peh)
+    c.subscribe(handler=peh,filters={
+        'authors' : 'ab5d1908507df1ccc8597ecb3153bf471a93215be3acfa1f7625c9d0b17a84ba'
+    })
 
 

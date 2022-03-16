@@ -1,8 +1,9 @@
 import logging
+import time
+from datetime import datetime
 from nostr.network import Client
 from nostr.event_handlers import PrintEventHandler
 from nostr.persist import Store
-import time
 
 # stuff that eventually should be config/come from cmdline
 DB_FILE = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr.db'
@@ -31,8 +32,11 @@ def test_import_taged_event():
     Client.post_events_from_file(RELAY_URL,BASE_DIR+'event_with_e_tag.json')
 
 
-def test_import_import_events():
-    Client.post_events_from_file(RELAY_URL, BASE_DIR+'events.json')
+def test_import_events(filename=None):
+    if filename is None:
+        filename = BASE_DIR + 'events.json'
+
+    Client.post_events_from_file(RELAY_URL, filename)
 
 
 def test_max_subscribe():
@@ -51,8 +55,15 @@ def test_filter_match(filter):
     my_client = Client(RELAY_URL).start()
     my_client.subscribe(handler=PrintEventHandler(), filters=filter)
 
-def test_events_to_file():
-    Client.relay_events_to_file('wss://nostr.bitcoiner.social',BASE_DIR+'wtf.json')
+
+def test_events_to_file(relay=None, filename=None, filter={}):
+    if relay is None:
+        relay = RELAY_URL
+    if filename is None:
+        filename = '%s%s_events.json' % (BASE_DIR, f'{datetime.now():%Y%m%d%H%M%S}')
+    print(filename)
+    Client.relay_events_to_file(relay, filename, filter)
+
 
 def test_postings():
     import random
@@ -91,5 +102,10 @@ if __name__ == "__main__":
     #     'author' : '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486'
     # })
 
-    # test_postings()
-    test_import_import_events()
+    # test_events_to_file(filter={
+    #     'authors' : 'ab5d1908507df1ccc8597ecb3153bf471a93215be3acfa1f7625c9d0b17a84ba',
+    #     'kinds' : 0
+    # })
+    # test_import_events(BASE_DIR+'20220316091228_events.json')
+    # from nostr.ident import Profile
+    # Profile.import_from_file('/home/shaun/.nostrpy/local_profiles.csv',DB_FILE)

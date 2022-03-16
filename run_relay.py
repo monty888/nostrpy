@@ -13,8 +13,9 @@ from pathlib import Path
 import toml
 from toml import TomlDecodeError
 
-from nostr.relay import Relay, LengthAcceptReqHandler
-from nostr.persist import RelayStore
+from nostr.relay.relay import Relay
+from nostr.relay.accepthandlers import LengthAcceptReqHandler
+from nostr.relay.persist import RelayStore
 
 # default values when nothing is specified either from cmd line or config file
 HOST = 'localhost'

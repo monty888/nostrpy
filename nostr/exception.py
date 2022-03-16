@@ -1,0 +1,3 @@
+class NostrCommandException(Exception):
+    # define elsewhere so easier to import...
+    pass
