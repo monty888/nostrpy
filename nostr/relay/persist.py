@@ -1,5 +1,7 @@
 import logging
 import os
+from abc import ABC, abstractmethod
+from enum import Enum
 from db.db import Database
 from data.data import DataSet
 from nostr.event import Event
@@ -7,13 +9,100 @@ from nostr.util import util_funcs
 from nostr.exception import NostrCommandException
 
 
-class RelayStore:
+class RelayStoreInterface(ABC):
+
+    @abstractmethod
+    def add_event(self, evt: Event):
+        """
+        add given event to store should throw NostrCommandException if can't for some reason
+        e.g. duplicate event, already newer contact/meta, or db insert err etc.
+
+        :param evt: nostr.Event
+        :return: None, as long as it returns it should have been success else it should throw
+        """
+
+    @abstractmethod
+    def do_delete(self, evt: Event):
+        """
+        :param evt: the delete event
+        :return: None, as long as it returns it should have been success else it should throw
+        """
+
+    @abstractmethod
+    def get_filter(self, filter):
+        """
+        :param filter: [{filter}...] nostr filter
+        :return: all evts in store that passed the filter
+        """
+
+
+    @abstractmethod
+    def is_NIP09(self):
+        """
+        store with current params implementing NIP09
+        :return: True/False
+        """
+
+class DeleteMode(Enum):
+    # what will the relay do on receiving delete event
+
+    # delete any events we can from db - note that once deleted there is no check that it's not reposted, which
+    # anyone would be able to do... not just the creator.
+    # TODO: write accept handler that will block reinserts of previously deleted events
+    DEL_DELETE = 1
+    # mark as deleted any events from db - to client this would look exactly same as DEL_DELETE
+    DEL_FLAG = 2
+    # nothing, ref events will still be returned to clients
+    DEL_NO_ACTION = 3
+
+
+class MemoryStore(RelayStoreInterface):
     """
-        persistence for the relay implementation, the relay only really needs to store events and
-        structure (for example seperate table for tags) as best we can for querying.
-        Note that it's unlikely that an sqlite base persistence layer will be ok if the relay is
-        really being hit
+        Basic event store implemented in mem using {}
+        could be improved to purge old evts or at set size/number if evts
+        and to pickle events on stop and load for some sort of persistence when re-run
+
     """
+    def __init__(self, delete_mode=DeleteMode.DEL_FLAG):
+        self._delete_mode = delete_mode
+        self._evts = {}
+
+    def add_event(self, evt: Event):
+        self._evts[evt.id] = {
+            'is_deleted': False,
+            'evt': evt
+        }
+
+    def do_delete(self, evt: Event):
+        if self._delete_mode == DeleteMode.DEL_NO_ACTION:
+            return
+        to_delete = evt.e_tags
+        if self._delete_mode == DeleteMode.DEL_FLAG:
+            for c_id in to_delete:
+                if c_id in self._evts:
+                    self._evts[c_id]['is_deleted'] = True
+        elif self._delete_mode == DeleteMode.DEL_DELETE:
+            for c_id in to_delete:
+                if c_id in self._evts:
+                    del self._evts[c_id]
+
+    def get_filter(self, filter):
+        ret = []
+
+        c_evt: Event
+        for evt_id in self._evts:
+            r = self._evts[evt_id]
+            if not r['is_deleted']:
+                c_evt = r['evt']
+                if c_evt.test(filter):
+                    ret.append(c_evt)
+        return ret
+
+    def is_NIP09(self):
+        return self._delete_mode in (DeleteMode.DEL_FLAG, DeleteMode.DEL_DELETE)
+
+
+class SQLStore(RelayStoreInterface):
 
     @classmethod
     def make_filter_sql(cls, filters):
@@ -108,63 +197,11 @@ class RelayStore:
             'args': args
         }
 
-    def __init__(self, db_file):
-        self._db_file = db_file
-        self._db = Database(db_file)
-        logging.debug('RelayStore::__init__ db_file=%s', self._db_file)
+    def __init__(self, db: Database, delete_mode=DeleteMode.DEL_FLAG):
+        self._delete_mode = delete_mode
+        self._db = db
 
-    def create(self, tables=['events']):
-
-        if 'events' in tables:
-            evt_tmpl = DataSet(heads=[
-                'id', 'event_id', 'pubkey', 'created_at', 'kind', 'tags', 'content', 'sig','deleted'
-            ], data=[])
-            evt_tmpl.create_sqlite_table(self._db_file, 'events', {
-                'id': {
-                    'type': 'INTEGER PRIMARY KEY '
-                },
-                'event_id': {
-                    # not a type but all the underlying does is concat str so will do
-                    'type': 'UNIQUE'
-                },
-                'created_at': {
-                    'type': 'int'
-                },
-                'kind': {
-                    'type': 'int'
-                },
-                # will only ever be set if flagged deletes
-                'deleted' : {
-                    'type' : 'int'
-                }
-            })
-
-            tag_tmp = DataSet(heads=['id','type','value'])
-            tag_tmp.create_sqlite_table(self._db_file, 'event_tags', {
-                'id': {
-                    'type' : 'int'
-                }
-            })
-
-    def destroy(self, tables=['events']):
-        """
-            removes tbls as created in create - currently no key constraints so any table can be droped
-        """
-        if 'events' in tables:
-            batch = [
-                {
-                    'sql': 'drop table event_tags'
-                },
-                {
-                    'sql' : 'drop table events'
-                }
-            ]
-            self._db.execute_batch(batch)
-        # also remove the file, this make it easy for us to
-        # know db needs creating without looking for tbls or something
-        os.remove(self._db_file)
-
-    def add_event(self, evt: Event, catch_err=False):
+    def add_event(self, evt: Event):
         """
         store event to db, maybe allow [] of events that will be done in batch?
         :param evt: Event obj
@@ -221,7 +258,7 @@ class RelayStore:
                     'args': [evt.id,tag_type, tag_value]
                 })
 
-        return self._db.execute_batch(batch, catch_err=catch_err)
+        self._db.execute_batch(batch)
 
     def get_filter(self, filter):
         """
@@ -231,7 +268,7 @@ class RelayStore:
         :param filter: {} or [{},...] or filters
         :return:
         """
-        filter_query = RelayStore.make_filter_sql(filter)
+        filter_query = SQLStore.make_filter_sql(filter)
         data = self._db.select_sql(sql=filter_query['sql'],
                                    args=filter_query['args'])
         ret = []
@@ -248,33 +285,99 @@ class RelayStore:
             ))
         return ret
 
-    def delete_events(self, ids, flag=False):
-        if not ids:
-            return True
-        if isinstance(ids, str):
-            ids = [ids]
-        if isinstance(ids[0], Event):
-            ids = [evt.id for evt in ids]
+    def do_delete(self, evt: Event):
+        if self._delete_mode == DeleteMode.DEL_NO_ACTION:
+            return
+        to_delete = evt.e_tags
 
         # only flag as deleted
-        if flag:
+        if self._delete_mode == DeleteMode.DEL_FLAG:
             ret = self._db.execute_sql(sql='update events set deleted=true where event_id in (%s) and kind<>?' %
-                                           ','.join(['?'] * len(ids)),
-                                       args=ids + [Event.KIND_DELETE])
+                                           ','.join(['?'] * len(to_delete)),
+                                       args=to_delete + [Event.KIND_DELETE])
         # actually delete
-        else:
+        elif self._delete_mode == DeleteMode.DEL_DELETE:
             batch = [
                 {
                     'sql': 'delete from event_tags where id in (select id from events '
                            'where event_id in (%s) and kind<>?)' % ','.join(
-                        ['?'] * len(ids)),
-                    'args': ids + [Event.KIND_DELETE]
+                        ['?'] * len(to_delete)),
+                    'args': to_delete + [Event.KIND_DELETE]
                 },
                 {
-                    'sql' : 'delete from events where event_id in (%s) and kind<>?' % ','.join(['?']*len(ids)),
-                    'args': ids + [Event.KIND_DELETE]
+                    'sql' : 'delete from events where event_id in (%s) and kind<>?' % ','.join(['?']*len(to_delete)),
+                    'args': to_delete + [Event.KIND_DELETE]
                 }
             ]
             ret = self._db.execute_batch(batch)
 
         return ret
+
+    def is_NIP09(self):
+        return self._delete_mode in (DeleteMode.DEL_FLAG, DeleteMode.DEL_DELETE)
+
+class SQLiteStore(SQLStore):
+    """
+        persistence for the relay implementation, the relay only really needs to store events and
+        structure (for example seperate table for tags) as best we can for querying.
+        Note that it's unlikely that an sqlite base persistence layer will be ok if the relay is
+        really being hit
+    """
+
+    def __init__(self, db_file, delete_mode=DeleteMode.DEL_FLAG):
+        self._db_file = db_file
+        super().__init__(Database(self._db_file),
+                         delete_mode=delete_mode)
+        logging.debug('SQLiteStore::__init__ db_file=%s, delete mode=%s' % (self._db_file,
+                                                                           self._delete_mode))
+
+    def create(self, tables=['events']):
+
+        if 'events' in tables:
+            evt_tmpl = DataSet(heads=[
+                'id', 'event_id', 'pubkey', 'created_at', 'kind', 'tags', 'content', 'sig','deleted'
+            ], data=[])
+            evt_tmpl.create_sqlite_table(self._db_file, 'events', {
+                'id': {
+                    'type': 'INTEGER PRIMARY KEY '
+                },
+                'event_id': {
+                    # not a type but all the underlying does is concat str so will do
+                    'type': 'UNIQUE'
+                },
+                'created_at': {
+                    'type': 'int'
+                },
+                'kind': {
+                    'type': 'int'
+                },
+                # will only ever be set if flagged deletes
+                'deleted' : {
+                    'type' : 'int'
+                }
+            })
+
+            tag_tmp = DataSet(heads=['id','type','value'])
+            tag_tmp.create_sqlite_table(self._db_file, 'event_tags', {
+                'id': {
+                    'type' : 'int'
+                }
+            })
+
+    def destroy(self, tables=['events']):
+        """
+            removes tbls as created in create - currently no key constraints so any table can be droped
+        """
+        if 'events' in tables:
+            batch = [
+                {
+                    'sql': 'drop table event_tags'
+                },
+                {
+                    'sql' : 'drop table events'
+                }
+            ]
+            self._db.execute_batch(batch)
+        # also remove the file, this make it easy for us to
+        # know db needs creating without looking for tbls or something
+        os.remove(self._db_file)

@@ -10,12 +10,12 @@ different db/persistance layer with min code changes
 
 """
 import json
-import time
 from json import JSONDecodeError
 import secp256k1
 import logging
 from nostr.persist import Store
 from data.data import DataSet
+from db.db import Database
 from nostr.network import Event
 from datetime import datetime
 from nostr.util import util_funcs
@@ -95,7 +95,7 @@ class Profile:
                 updated.add(p.public_key)
 
     @classmethod
-    def load_from_db(cls, name, db_file):
+    def load_from_db(cls, db: Database, profile_name):
         """
             used to load out local profiles which we name
         """
@@ -106,14 +106,15 @@ class Profile:
                 order by updated_at desc
         """
 
-        profiles = DataSet.from_sqlite(db_file, sql, [name])
+        profiles = db.select_sql(sql, [profile_name])
         if not profiles:
-            raise Exception('Profile::load_from_db profile not found %s' % name)
+            raise Exception('Profile::load_from_db profile not found %s' % profile_name)
         p = profiles[0]
+
         return Profile(
             priv_k=p['priv_k'],
             pub_k=p['pub_k'],
-            profile_name=name,
+            profile_name=profile_name,
             attrs=p['attrs'],
             update_at=p['updated_at']
         )

@@ -126,7 +126,7 @@ class Event:
 
     def test(self, filter):
         # where ttype is [e]vent or [p]ubkey
-        def _test_tag_match(t_type):
+        def _test_tag_match(t_type, single_filter):
             ismatch = False
             # create lookup of out type tags
             t_lookup = set()
@@ -136,7 +136,7 @@ class Event:
             # if there are any p tags on this event
             if t_lookup:
                 # just incase has been passed as str
-                t_filter = c_filter['#'+t_type]
+                t_filter = single_filter['#'+t_type]
                 if isinstance(t_filter, str):
                     t_filter = [t_filter]
 
@@ -147,9 +147,26 @@ class Event:
 
             return ismatch
 
+        def _field_tag_match(name, single_filter):
+            field_match = False
+            if name not in c_filter:
+                field_match = True
+            else:
+                to_test = single_filter[name]
+                if isinstance(to_test, str):
+                    to_test = [to_test]
+
+                for c_test in to_test:
+                    # need to change this, should be prefix rather that in,
+                    if c_test in self.pub_key:
+                        field_match = True
+                        break
+
+            return field_match
 
         if isinstance(filter, dict):
             filter = [filter]
+
         for c_filter in filter:
             ret = True
             if 'since' in filter and self.created_at_ticks <= c_filter['since']:
@@ -163,27 +180,15 @@ class Event:
                         ret = False
                 elif fkinds != self.kind:
                     ret = False
-            if 'authors' in c_filter:
-                auth_match = False
-                for c_author in c_filter['authors']:
-                    if c_author in self.pub_key:
-                        auth_match = True
-                        break
-                if not auth_match:
-                    ret = False
-            if 'ids' in c_filter:
-                id_match = False
-                for c_author in c_filter['ids']:
-                    if c_author in self.pub_key:
-                        id_match = True
-                        break
-                if not id_match:
-                    ret = False
+            if not _field_tag_match('authors', c_filter):
+                ret = False
+            if not _field_tag_match('ids', c_filter):
+                ret = False
             if '#e' in c_filter:
-                if not _test_tag_match('e'):
+                if not _test_tag_match('e', c_filter):
                     ret = False
             if '#p' in c_filter:
-                if not _test_tag_match('p'):
+                if not _test_tag_match('p', c_filter):
                     ret = False
 
             # TODO: #e and #p
@@ -193,6 +198,14 @@ class Event:
                 break
 
         return ret
+
+    def get_tags(self, tag_name):
+        """
+        returns tag data for tag_name, no checks on the data e..g. that #e, event id is long enough to be valid event
+        :param tag_name:
+        :return:
+        """
+        return [t[1:] for t in self._tags if len(t) >= 1 and t[0] == tag_name]
 
     """
         get/set various event properties
@@ -221,6 +234,22 @@ class Event:
     @property
     def tags(self):
         return self._tags
+
+    @property
+    def e_tags(self):
+        """
+        :return: all ref'd events/#e tag in [evt_id, evt_id,...] makes sure evt_id is correct len
+        """
+        ret = []
+        for c_e in self._tags:
+            if len(c_e) >= 2 and c_e[0] == 'e' and len(c_e[1]) == 64:
+                ret.append(c_e[1])
+
+        return ret
+
+    # TODO: same e for p
+    # def get_p_tags(self):
+    #     return self.get_tags('#p')
 
     @property
     def created_at(self):

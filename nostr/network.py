@@ -153,6 +153,17 @@ class Client:
         self._ws.send(to_pub)
         time.sleep(0.2)
 
+    def _on_message(self, ws, message):
+        message = json.loads(message)
+        type = message[0]
+        for_sub = message[1]
+        if type == 'EVENT':
+            self._do_events(for_sub, message)
+        elif type == 'NOTICE':
+            logging.debug('NOTICE!! %s' % message[1])
+        else:
+            logging.debug('Network::_on_message unexpected type %s' % type)
+
     def _do_events(self, for_sub, message):
         if for_sub in self._handlers:
             for c_handler in self._handlers[for_sub]:
@@ -165,17 +176,6 @@ class Client:
             logging.debug(
                 'Network::_on_message event for subscription with no handler registered subscription : %s\n event: %s' % (
                 for_sub, message))
-
-    def _on_message(self, ws, message):
-        message = json.loads(message)
-        type = message[0]
-        for_sub = message[1]
-        if type=='EVENT':
-            self._do_events(for_sub, message)
-        elif type=='NOTICE':
-            logging.debug('NOTICE!! %s' % message[1])
-        else:
-            logging.debug('Network::_on_message unexpected type %s' % type)
 
     def _on_error(self, ws, error):
         print(error)

@@ -92,7 +92,6 @@ class Database:
         """
         ret = False
         was_err = None
-
         try:
             c = self._get_con()
             curs = c.cursor()
@@ -110,7 +109,7 @@ class Database:
             logging.debug('Database::execute_batch commit done')
             ret = True
         except Error as e:
-            logging.log(logging.WARN, e)
+            # logging.log(logging.WARN, e)
             was_err = e
             logging.debug('Database::execute_batch error - not committed')
         finally:

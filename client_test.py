@@ -102,10 +102,9 @@ if __name__ == "__main__":
     #     'author' : '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486'
     # })
 
-    # test_events_to_file(filter={
-    #     'authors' : 'ab5d1908507df1ccc8597ecb3153bf471a93215be3acfa1f7625c9d0b17a84ba',
-    #     'kinds' : 0
-    # })
-    # test_import_events(BASE_DIR+'20220316091228_events.json')
+    test_events_to_file(filter={
+        'authors' : '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486'
+    })
+    # test_import_events(BASE_DIR+'events.json')
     # from nostr.ident import Profile
     # Profile.import_from_file('/home/shaun/.nostrpy/local_profiles.csv',DB_FILE)

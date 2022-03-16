@@ -9,25 +9,12 @@ from gevent.lock import BoundedSemaphore
 import json
 from json import JSONDecodeError
 from nostr.event import Event
-from nostr.relay.persist import RelayStore
+from nostr.relay.persist import RelayStoreInterface
 from nostr.relay.accepthandlers import AcceptReqHandler
 from nostr.exception import NostrCommandException
 from sqlite3 import IntegrityError
 from nostr.util import util_funcs
 from enum import Enum
-
-
-class DeleteMode(Enum):
-    # what will the relay do on receiving delete event
-
-    # delete any events we can from db - note that once deleted there is no check that it's not reposted, which
-    # anyone would be able to do... not just the creator.
-    # TODO: write accept handler that will block reinserts of previously deleted events
-    DEL_DELETE = 1
-    # mark as deleted any events from db - to client this would look exactly same as DEL_DELETE
-    DEL_FLAG = 2
-    # nothing, ref events will still be returned to clients
-    DEL_NO_ACTION = 3
 
 
 class Relay:
@@ -42,13 +29,19 @@ class Relay:
                         delete_mode=DeleteMode.DEL_FLAG probbably best option as this will mark the event as deleted
                         but also it won't be possible to repost.
                         https://github.com/fiatjaf/nostr/blob/master/nips/09.md
+        NIP-11      -   TODO: Relay Information Document
+                        https://github.com/fiatjaf/nostr/blob/master/nips/11.md
         NIP-12          generic querie tags, todo but should be easy.... test with shared
                         https://github.com/fiatjaf/nostr/blob/master/nips/12.md
+
+        for NIPS n,n... whats actually being implemented will be decided by the store/properties it was created with
+        e.g. delete example....
+        For NIP-12 the relay will check with the store for those NIPs
 
     """
     VALID_CMDS = ['EVENT', 'REQ', 'CLOSE']
 
-    def __init__(self, store: RelayStore, accept_req_handler=None, max_sub=3, delete_mode=DeleteMode.DEL_FLAG):
+    def __init__(self, store: RelayStoreInterface, accept_req_handler=None, max_sub=3):
         self._app = Bottle()
         self._app.route('/websocket', callback=self._handle_websocket)
         # self._web_sockets = {}
@@ -76,8 +69,6 @@ class Relay:
         # convert to array of only single class handed in
         if not hasattr(self._accept_req, '__iter__'):
             self._accept_req = [self._accept_req]
-
-        self._delete_mode = delete_mode
 
         logging.info('Relay::__init__ maxsub=%s' % self._max_sub)
 
@@ -153,7 +144,8 @@ class Relay:
                                                                               # give str mapping of kind where we can in future
                                                                               evt.kind))
             if evt.kind == Event.KIND_DELETE:
-                self._do_delete(evt)
+                logging.debug('Relay::_do_event doing delete events - %s ' % evt.e_tags)
+                self._store.do_delete(evt)
 
             # now post to any interested subscribers
             self._check_subs(evt)
@@ -161,20 +153,6 @@ class Relay:
             msg = str(ie)
             if 'events.event_id' in msg and 'UNIQUE' in msg:
                 raise NostrCommandException('event already exists %s' % evt.id)
-
-    def _do_delete(self, evt: Event):
-        logging.debug('Relay::_do_delete - %s' % evt.tags)
-        if evt.kind == DeleteMode.DEL_DELETE or DeleteMode.DEL_FLAG:
-            e_tags = []
-            for c_e in evt.tags:
-                if len(c_e) >= 2 and c_e[0] == 'e' and len(c_e[1])==64:
-                    e_tags.append(c_e[1])
-            if e_tags:
-                to_delete = self._store.get_filter({
-                    'authors': evt.pub_key,
-                    'ids': e_tags
-                })
-                self._store.delete_events(to_delete, self._delete_mode == DeleteMode.DEL_FLAG)
 
     def _clean_ws(self):
         """
@@ -273,29 +251,3 @@ class Relay:
             ws.send(json.dumps(to_send))
         except Exception as e:
             logging.info('Relay::_send_event error: %s' % e)
-
-def start_relay():
-    nostr_db_file = '/nostr/storage/nostr.db'
-    my_server = Relay()
-    my_server.start(port=8081)
-
-    # my_socket = NostrWebsocket()
-    # my_socket.start()
-
-
-if __name__ == '__main__':
-    logging.getLogger().setLevel(logging.DEBUG)
-
-    # example clean exit... need to look into more though
-    import signal
-    import sys
-
-
-    def sigint_handler(signal, frame):
-        rel.abort()
-        sys.exit(0)
-
-
-    signal.signal(signal.SIGINT, sigint_handler)
-
-    start_relay()

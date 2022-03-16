@@ -22,7 +22,7 @@ class Store:
             will return none if we don't have any events yet
         """
         ret = 0
-        created_by = DataSet.from_sqlite(self._db_file, 'select created_at from events order by created_at desc limit 1')
+        created_by = self._db.select_sql('select created_at from events order by created_at desc limit 1')
         if created_by:
             ret = created_by[0]['created_at']
         else:

@@ -6,6 +6,7 @@ import cmd
 import hashlib
 import base64
 import rel
+from db.db import Database
 from nostr.network import Client, Event
 from nostr.event import Event
 from nostr.event_handlers import PrintEventHandler, PersistEventHandler
@@ -102,9 +103,12 @@ def command_line(relay_url, db_file):
         def __init__(self):
             self._c_profile = None
             self._db_file = db_file
+            self._db = Database(self._db_file)
             self._store = Store(db_file)
 
-            self._event_handler = [PersistEventHandler(self._db_file)]
+            self._print_view = PrintEventHandler(False)
+            self._event_handler = [PersistEventHandler(self._db_file),
+                                   self._print_view]
             self._set_relay()
             super().__init__()
 
@@ -161,7 +165,7 @@ encrypt_post <pubkey> <msg>
         def do_set_profile(self, arg):
             'set the profile to use'
             try:
-                self._c_profile = Profile.load_from_db(arg, db_file)
+                self._c_profile = Profile.load_from_db(self._db, arg)
                 self.prompt = '%s@%s : ' % (self._c_profile.profile_name,
                                             self._relay.url)
             except Exception as e:
@@ -196,9 +200,9 @@ FIXME: needs to support quoting for strings with spaces!
                 print('no profile, use set_profile %name%')
 
         def do_view_all(self, arg):
-            self._event_handler.view_on()
+            self._print_view.view_on()
             input('press any key to exit view\n')
-            self._event_handler.view_off()
+            self._print_view.view_off()
             print('exit view_all')
 
         def do_delete(self, arg):
@@ -269,7 +273,7 @@ def events_import(relay_url, filename):
 
 
 if __name__ == "__main__":
-    # logging.getLogger().setLevel(logging.DEBUG)
+    logging.getLogger().setLevel(logging.DEBUG)
     nostr_db_file = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr.db'
     # nostr_db_file = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr-relay.db'
     # relay_url = 'wss://nostr-pub.wellorder.net'

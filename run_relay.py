@@ -15,7 +15,7 @@ from toml import TomlDecodeError
 
 from nostr.relay.relay import Relay
 from nostr.relay.accepthandlers import LengthAcceptReqHandler
-from nostr.relay.persist import RelayStore
+from nostr.relay.persist import SQLiteStore, MemoryStore
 
 # default values when nothing is specified either from cmd line or config file
 HOST = 'localhost'
@@ -38,7 +38,7 @@ usage: python run_relay.py --host=localhost --port=8081
 --config    -   config file if any
 --host      -   host relay will listen websocket at, default %s
 --port      -   port relay will listen websocket on, default %s
--s --store  -   storage type where relay will persist events etc. either sqllite or postgres, default %s
+-s --store  -   storage type where relay will persist events etc. either sqllite, postgres or transient default %s
 --dbfile    -   when --store is sqlite the db file for the database, default %s.
                 when using dir .nostrpy dir it will be created if it doesn't exist already - other dirs wont and
                 should be created manually. The dbfile will be created if it doesn't already exist.
@@ -68,11 +68,11 @@ def get_sql_store(filename):
     # if it does we'll assume everything is ok...we could do more
     if not f.is_file():
         logging.info('get_sql_store::create new db %s' % filename)
-        ret = RelayStore(filename)
+        ret = SQLiteStore(filename)
         ret.create()
     else:
         logging.info('get_sql_store::open existing db %s' % filename)
-        ret = RelayStore(filename)
+        ret = SQLiteStore(filename)
     return ret
 
 
@@ -167,12 +167,19 @@ def main():
     elif config['store'] == 'postgres':
         print('db postgres not yet implemented, exiting!')
         sys.exit(2)
+    elif config['store'] == 'transient':
+        my_store = MemoryStore()
+        # rem options that don't apply
+        del config['dbfile']
     else:
         print('--store most be sqlite or postgres')
         sys.exit(2)
 
     if is_wipe:
-        my_store.destroy()
+        if config['store'] != 'transient':
+            my_store.destroy()
+        else:
+            print('transient store, no action required!')
         sys.exit(0)
 
     # optional message accept handlers
