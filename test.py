@@ -6,7 +6,7 @@ import cmd
 import hashlib
 import base64
 import rel
-from db.db import Database
+from db.db import SQLiteDatabase as Database
 from nostr.network import Client, Event
 from nostr.event import Event
 from nostr.event_handlers import PrintEventHandler, PersistEventHandler
@@ -150,7 +150,7 @@ encrypt_post <pubkey> <msg>
                 iv_env = base64.b64encode(crypt_message['iv'])
                 full_enc_message = '%s?iv=%s' % (enc_message.decode(), iv_env.decode())
 
-                public_box = Profile.load_from_db('anonmailbox', self._db_file)
+                public_box = Profile.load_from_db(self._db, 'anonmailbox')
                 n_evt = Event(kind=Event.KIND_ENCRYPT,
                               tags=shared,
                               content=full_enc_message,
@@ -280,12 +280,12 @@ if __name__ == "__main__":
     # relay_url = 'wss://rsslay.fiatjaf.com'
     # relay_url = 'wss://nostr.bitcoiner.social'
     # relay_url = 'ws://localhost:7000'
-    relay_url = 'ws://localhost:8081/websocket'
+    relay_url = 'ws://localhost:8081/'
     backup_dir = '/home/shaun/.nostrpy/'
 
     # test_client_publish(relay_url)
     # test_client_publish_with_persist(relay_url, nostr_db_file)
-    command_line(relay_url, nostr_db_file)
+    # command_line(relay_url, nostr_db_file)
 
     # NOTE: each event is json but the file structure isn't correct json there are \n between each event
     # events_backup(relay_url, backup_dir+'events.json')
@@ -321,4 +321,22 @@ if __name__ == "__main__":
     # from nostr.persist import RelayStore
     # rs = RelayStore(nostr_db_file)
     # rs.create()
+    # from nostr.relay.persist import PostgresStore
+    # #
+    # my_store = PostgresStore(db_name='nostr-relay',
+    #                          user='postgres',
+    #                          password='password')
+    #
+    # my_store.create()
+    # my_store.destroy()
+    from db.db import SQLiteDatabase
+    # from nostr.relay.persist import SQLiteStore
+    # my_sql = SQLiteStore('/home/shaun/test')
+    # print(my_sql.exists())
+
+    x = 'select id from events ' \
+        'where created_at>=%s and ' \
+        'kind=%s and pubkey=%s'.replace('%s', 'x')
+    print(x)
+
 

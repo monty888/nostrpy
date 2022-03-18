@@ -15,7 +15,7 @@ import secp256k1
 import logging
 from nostr.persist import Store
 from data.data import DataSet
-from db.db import Database
+from db.db import Database, SQLiteDatabase
 from nostr.network import Event
 from datetime import datetime
 from nostr.util import util_funcs
@@ -277,14 +277,14 @@ class ProfileList:
     """
 
     @classmethod
-    def create_profiles_from_db(cls, db_file):
+    def create_profiles_from_db(cls, db: Database):
         """
         loads all profiles from db, at somepoint this might not be a good idea but OK for now
         includes local profiles also
         :param db_file:
         :return:
         """
-        data = DataSet.from_sqlite(db_file, 'select * from profiles --where priv_k isnull')
+        data = db.select_sql('select * from profiles --where priv_k isnull')
         profiles = []
         for c_r in data:
             profiles.append(Profile(
@@ -449,7 +449,7 @@ class ProfileEventHandler:
     """
 
     def __init__(self, db_file, on_update=None):
-        self._profiles = ProfileList.create_profiles_from_db(db_file)
+        self._profiles = ProfileList.create_profiles_from_db(SQLiteDatabase(db_file))
         self._store = Store(db_file)
         self._on_update = on_update
 
@@ -481,10 +481,13 @@ if __name__ == "__main__":
     nostr_db_file = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr.db'
     backup_dir = '/home/shaun/.nostrpy/'
     s = Store(nostr_db_file)
+    s.destroy()
+    s.create()
+
 
     from nostr.network import Client
 
-    c = Client('ws://localhost:8081/websocket').start()
+    c = Client('ws://localhost:8081/').start()
     peh = ProfileEventHandler(nostr_db_file)
 
     def my_update(profile, pre_profile):
@@ -494,7 +497,7 @@ if __name__ == "__main__":
 
 
     c.subscribe(handler=peh,filters={
-        'authors' : 'ab5d1908507df1ccc8597ecb3153bf471a93215be3acfa1f7625c9d0b17a84ba'
+
     })
 
 

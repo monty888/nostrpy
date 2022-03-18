@@ -6,11 +6,53 @@
 """
 import sqlite3
 from sqlite3 import Error
+import psycopg2
 from data.data import DataSet
 import logging
+from abc import abstractmethod, ABC
 
 
 class Database:
+
+    @abstractmethod
+    def execute_sql(self, sql, args=None):
+        """
+            execute some SQL, currently we'll just fall over on
+            errors
+        """
+
+    @abstractmethod
+    def executemany_sql(self, sql, args=None):
+        """
+            execute some SQL, returns True/False on success if catch_err is False
+            then errors will raise an exception
+        """
+
+    @abstractmethod
+    def execute_batch(self, batch):
+        """
+        :param batch: array of {
+            'sql' : str,
+            'args' : [] optional
+        }
+        :return: True on success
+        """
+
+    @abstractmethod
+    def select_sql(self, sql, args=None) -> DataSet:
+        """
+        excutes query against database con
+        :param sql: query str
+        :param args: query args
+        :return: results as DataSet
+        """
+
+    @property
+    def placeholder(self):
+        pass
+
+
+class SQLiteDatabase(Database, ABC):
 
     def __init__(self, f_name):
         self._f_name = f_name
@@ -18,6 +60,14 @@ class Database:
     def _get_con(self):
         return sqlite3.connect(self._f_name)
 
+    @property
+    def file(self):
+        return self._f_name
+    """
+        subclass and add methods
+        __init__(as required)
+        _get_con()
+    """
     def execute_sql(self, sql, args=None, catch_err=False):
         """
             execute some SQL, currently we'll just fall over on
@@ -42,7 +92,7 @@ class Database:
             c.commit()
             success = True
         except Error as e:
-            logging.log(logging.WARN, e)
+            logging.debug('Database::execute_sql error %s' % e)
             was_err = e
         finally:
             if c:
@@ -71,7 +121,7 @@ class Database:
             c.commit()
             ret = True
         except Error as e:
-            logging.log(logging.WARN, e)
+            logging.debug('Database::executemany_sql error %s' % e)
             was_err = e
         finally:
             if c:
@@ -109,9 +159,8 @@ class Database:
             logging.debug('Database::execute_batch commit done')
             ret = True
         except Error as e:
-            # logging.log(logging.WARN, e)
             was_err = e
-            logging.debug('Database::execute_batch error - not committed')
+            logging.debug('Database::execute_batch error - not committed %s' % e)
         finally:
             if c:
                 c.close()
@@ -168,3 +217,69 @@ class Database:
                                        ','.join(pcount))
 
         self.execute_sql(sql+fields,data.Data)
+
+    @property
+    def placeholder(self):
+        return '?'
+
+
+class PostgresDatabase(Database, ABC):
+    """
+        Same for Postgres using psycopg2
+        unfortunetly  psycopg2 and sqlite3 cons so for now have just re-implemented the same methods
+
+
+    """
+    def __init__(self, db_name, user, password):
+        self._name = db_name
+        self._user = user
+        self._password = password
+
+    def _get_con(self):
+        return psycopg2.connect("dbname=%s user=%s password=%s" % (self._name,
+                                                                   self._user,
+                                                                   self._password))
+
+    def execute_sql(self, sql, args=None):
+        with self._get_con() as c:
+            with c.cursor() as cur:
+                logging.debug('Database::execute_batch SQL: %s\n ARGS: %s' % (sql,
+                                                                              args))
+                cur.execute(sql, args)
+                c.commit()
+
+    def executemany_sql(self, sql, args=None):
+        raise Exception('not implemented!')
+
+    def execute_batch(self, batch):
+        with self._get_con() as c:
+            with c.cursor() as cur:
+                for c_cmd in batch:
+                    args = []
+                    sql = c_cmd['sql']
+                    if 'args' in c_cmd:
+                        args = c_cmd['args']
+                    logging.debug('Database::execute_batch SQL: %s\n ARGS: %s' % (sql,
+                                                                                  args))
+                    cur.execute(sql, args)
+
+                c.commit()
+
+    def select_sql(self, sql, args=None) -> DataSet:
+        with self._get_con() as c:
+            with c.cursor() as cur:
+                cur.execute(sql, args)
+                # get heads
+                heads = [h.name for h in cur.description]
+
+                # and data
+                rows = cur.fetchall()
+                data = []
+                for c_r in rows:
+                    data.append(list(c_r))
+
+        return DataSet(heads, data)
+
+    @property
+    def placeholder(self):
+        return '%s'

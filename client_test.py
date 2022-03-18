@@ -7,7 +7,7 @@ from nostr.persist import Store
 
 # stuff that eventually should be config/come from cmdline
 DB_FILE = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr.db'
-RELAY_URL = 'ws://localhost:8081/websocket'
+RELAY_URL = 'ws://localhost:8081/'
 LOG_LEVEL = logging.DEBUG
 BASE_DIR = '/home/shaun/.nostrpy/'
 
@@ -102,9 +102,10 @@ if __name__ == "__main__":
     #     'author' : '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486'
     # })
 
-    test_events_to_file(filter={
-        'authors' : '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486'
-    })
-    # test_import_events(BASE_DIR+'events.json')
+    # test_events_to_file(filter={
+    #     'authors' : '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486'
+    # })
+
+    test_import_events(BASE_DIR+'events.json')
     # from nostr.ident import Profile
     # Profile.import_from_file('/home/shaun/.nostrpy/local_profiles.csv',DB_FILE)

@@ -2,11 +2,12 @@ import logging
 import os
 from abc import ABC, abstractmethod
 from enum import Enum
-from db.db import Database
-from data.data import DataSet
+from db.db import Database, SQLiteDatabase, PostgresDatabase
 from nostr.event import Event
 from nostr.util import util_funcs
 from nostr.exception import NostrCommandException
+from psycopg2 import OperationalError
+from pathlib import Path
 
 
 class RelayStoreInterface(ABC):
@@ -34,7 +35,6 @@ class RelayStoreInterface(ABC):
         :param filter: [{filter}...] nostr filter
         :return: all evts in store that passed the filter
         """
-
 
     @abstractmethod
     def is_NIP09(self):
@@ -68,6 +68,8 @@ class MemoryStore(RelayStoreInterface):
         self._evts = {}
 
     def add_event(self, evt: Event):
+        if evt.id in self._evts:
+            raise NostrCommandException.event_already_exists(evt.id)
         self._evts[evt.id] = {
             'is_deleted': False,
             'evt': evt
@@ -105,7 +107,7 @@ class MemoryStore(RelayStoreInterface):
 class SQLStore(RelayStoreInterface):
 
     @classmethod
-    def make_filter_sql(cls, filters):
+    def make_filter_sql(cls, filters, placeholder='?'):
         """
         creates the sql to select events from a db given nostr filter
         NOTE tags are currently not dealt with so if needed this will have to be done in
@@ -126,7 +128,7 @@ class SQLStore(RelayStoreInterface):
                     )
                                 """ % (join,
                                        tag_type,
-                                       ','.join(['?'] * len(t_filter)))
+                                       ','.join([placeholder] * len(t_filter)))
                 sql_arr.append(e_sql)
                 args = args + t_filter
 
@@ -136,16 +138,16 @@ class SQLStore(RelayStoreInterface):
             join = 'and'
             args = []
             if 'since' in filter:
-                sql_arr.append(' %s created_at>=?' % join)
+                sql_arr.append(' %s created_at>=%s' % (join, placeholder))
                 args.append(filter['since'])
             if 'until' in filter:
-                sql_arr.append(' %s created_at<=?' % join)
+                sql_arr.append(' %s created_at<=%s' % (join, placeholder))
                 args.append(filter['until'])
             if 'kinds' in filter:
                 kind_arr = filter['kinds']
                 if not hasattr(kind_arr,'__iter__')or isinstance(kind_arr,str):
                     kind_arr = [kind_arr]
-                arg_str = ','.join(['?']*len(kind_arr))
+                arg_str = ','.join([placeholder]*len(kind_arr))
                 sql_arr.append(' %s kind in(%s)' % (join, arg_str))
                 args = args + kind_arr
             if 'authors' in filter:
@@ -153,7 +155,7 @@ class SQLStore(RelayStoreInterface):
                 if not hasattr(auth_arr,'__iter__') or isinstance(auth_arr,str):
                     auth_arr = [auth_arr]
 
-                arg_str = 'or '.join(['pubkey like ?'] * len(auth_arr))
+                arg_str = 'or '.join(['pubkey like ' + placeholder] * len(auth_arr))
                 sql_arr.append(' %s (%s)' % (join, arg_str))
                 for c_arg in auth_arr:
                     args.append(c_arg + '%')
@@ -163,7 +165,7 @@ class SQLStore(RelayStoreInterface):
                 if not hasattr(ids_arr,'__iter__') or isinstance(ids_arr,str):
                     ids_arr = [ids_arr]
 
-                arg_str = ' or '.join(['event_id like ?']*len(ids_arr))
+                arg_str = ' or '.join(['event_id like ' + placeholder]*len(ids_arr))
                 sql_arr.append(' %s (%s)' % (join, arg_str))
                 for c_arg in ids_arr:
                     args.append(c_arg+'%')
@@ -175,8 +177,8 @@ class SQLStore(RelayStoreInterface):
                 do_tags('p')
 
             return {
-                'sql' : ''.join(sql_arr),
-                'args' : args
+                'sql': ''.join(sql_arr),
+                'args': args
             }
 
         # only been passed a single, put into list
@@ -205,14 +207,15 @@ class SQLStore(RelayStoreInterface):
         """
         store event to db, maybe allow [] of events that will be done in batch?
         :param evt: Event obj
-        :param catch_err: set to True if don't want to raise exception on err
         :return: True/False, you'll only get False when catch_err is True
         """
         batch = []
         # META and CONTACT_LIST event type supercede any previous events of same type, so if this event is newer
         # then we'll delete all pre-existing
         if evt.kind in (Event.KIND_META, Event.KIND_CONTACT_LIST):
-            if self._db.select_sql(sql='select id from events where created_at>=? and kind=? and pubkey=?',
+            if self._db.select_sql(sql='select id from events '
+                                       'where created_at>=%s and kind=%s '
+                                       'and pubkey=%s'.replace('%s', self._db.placeholder),
                                    args=[evt.created_at_ticks, evt.kind, evt.pub_key]):
                 raise NostrCommandException('Newer event for kind %s already exists' % evt.kind)
 
@@ -221,20 +224,23 @@ class SQLStore(RelayStoreInterface):
                 batch.append(
                     {
                         'sql': 'delete from event_tags where id in '
-                               '(select id from events where kind=? and pubkey=?)',
+                               '(select id from events where kind=%s and pubkey=%s)' %
+                               (self._db.placeholder, self._db.placeholder),
                         'args': [evt.kind, evt.pub_key]
                     }
                 )
                 batch.append(
                     {
                         'sql': 'delete from events where id in '
-                                '(select id from events where kind=? and pubkey=?)',
+                               '(select id from events '
+                               'where kind=%s and pubkey=%s)'.replace('%s', self._db.placeholder),
                         'args': [evt.kind, evt.pub_key]
                     }
                 )
 
         batch.append({
-            'sql': 'insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)',
+            'sql': 'insert into events(event_id, pubkey, created_at, kind, tags, content,sig) '
+                   'values(%s,%s,%s,%s,%s,%s,%s)'.replace('%s', self._db.placeholder),
             'args': [
                 evt.id, evt.pub_key, evt.created_at_ticks,
                 evt.kind, str(evt.tags), evt.content, evt.sig
@@ -251,14 +257,15 @@ class SQLStore(RelayStoreInterface):
                     # 'sql': 'insert into event_tags SELECT last_insert_rowid(),?,?',
                     'sql' : """
                         insert into event_tags values (
-                        (select id from events where event_id=?),
-                        ?,
-                        ?)
-                    """,
+                        (select id from events where event_id=%s),
+                        %s,
+                        %s)
+                    """.replace('%s', self._db.placeholder),
                     'args': [evt.id,tag_type, tag_value]
                 })
 
         self._db.execute_batch(batch)
+
 
     def get_filter(self, filter):
         """
@@ -268,7 +275,11 @@ class SQLStore(RelayStoreInterface):
         :param filter: {} or [{},...] or filters
         :return:
         """
-        filter_query = SQLStore.make_filter_sql(filter)
+        filter_query = SQLStore.make_filter_sql(filter,
+                                                placeholder=self._db.placeholder)
+
+        print(filter_query['sql'], filter_query['args'])
+
         data = self._db.select_sql(sql=filter_query['sql'],
                                    args=filter_query['args'])
         ret = []
@@ -318,66 +329,143 @@ class SQLStore(RelayStoreInterface):
 
 class SQLiteStore(SQLStore):
     """
-        persistence for the relay implementation, the relay only really needs to store events and
-        structure (for example seperate table for tags) as best we can for querying.
-        Note that it's unlikely that an sqlite base persistence layer will be ok if the relay is
-        really being hit
-    """
+        SQLite implementation of RelayStoreInterface
 
+    """
     def __init__(self, db_file, delete_mode=DeleteMode.DEL_FLAG):
-        self._db_file = db_file
-        super().__init__(Database(self._db_file),
+        super().__init__(SQLiteDatabase(db_file),
                          delete_mode=delete_mode)
-        logging.debug('SQLiteStore::__init__ db_file=%s, delete mode=%s' % (self._db_file,
-                                                                           self._delete_mode))
+        logging.debug('SQLiteStore::__init__ db_file=%s, delete mode=%s' % (db_file,
+                                                                            self._delete_mode))
 
     def create(self, tables=['events']):
 
         if 'events' in tables:
-            evt_tmpl = DataSet(heads=[
-                'id', 'event_id', 'pubkey', 'created_at', 'kind', 'tags', 'content', 'sig','deleted'
-            ], data=[])
-            evt_tmpl.create_sqlite_table(self._db_file, 'events', {
-                'id': {
-                    'type': 'INTEGER PRIMARY KEY '
-                },
-                'event_id': {
-                    # not a type but all the underlying does is concat str so will do
-                    'type': 'UNIQUE'
-                },
-                'created_at': {
-                    'type': 'int'
-                },
-                'kind': {
-                    'type': 'int'
-                },
-                # will only ever be set if flagged deletes
-                'deleted' : {
-                    'type' : 'int'
-                }
-            })
-
-            tag_tmp = DataSet(heads=['id','type','value'])
-            tag_tmp.create_sqlite_table(self._db_file, 'event_tags', {
-                'id': {
-                    'type' : 'int'
-                }
-            })
-
-    def destroy(self, tables=['events']):
-        """
-            removes tbls as created in create - currently no key constraints so any table can be droped
-        """
-        if 'events' in tables:
-            batch = [
+            events_tbl_sql = """
+                create table events( 
+                    id INTEGER PRIMARY KEY,  
+                    event_id UNIQUE,  
+                    pubkey text,  
+                    created_at int,  
+                    kind int,  
+                    tags text,  
+                    content text,  
+                    sig text,  
+                    deleted int)
+            """
+            events_tag_tbl_sql = """
+                create table event_tags(
+                    id int,  
+                    type text,  
+                    value text)
+            """
+            self._db.execute_batch([
                 {
-                    'sql': 'drop table event_tags'
+                    'sql': events_tbl_sql
                 },
                 {
-                    'sql' : 'drop table events'
+                    'sql': events_tag_tbl_sql
                 }
-            ]
-            self._db.execute_batch(batch)
-        # also remove the file, this make it easy for us to
-        # know db needs creating without looking for tbls or something
-        os.remove(self._db_file)
+            ])
+
+    def exists(self):
+        return Path(self._db.file).is_file()
+
+    def destroy(self):
+        os.remove(self._db.file)
+
+
+class PostgresStore(SQLStore):
+    """
+    Postgres implementation of RelayStoreInterface
+    """
+    def __init__(self, db_name, user, password, delete_mode=DeleteMode.DEL_FLAG):
+        super().__init__(PostgresDatabase(db_name=db_name,
+                                          user=user,
+                                          password=password),
+                         delete_mode=delete_mode)
+        self._db_name = db_name
+        self._user = user
+        self._password = password
+        logging.debug('PostgresStore::__init__ db=%s, user=%s, delete mode=%s' % (db_name,
+                                                                                  user,
+                                                                                  self._delete_mode))
+
+    def exists(self):
+        ret = True
+        try:
+            self._db.select_sql('select 1')
+        except OperationalError as oe:
+            if 'does not exist' in str(oe):
+                ret = False
+        return ret
+
+    def create(self):
+        """
+        needs to be done above the level the store is created at, assumed that the same user has permissions to create
+        we can;'t just us postgres_db.execute_sql because it creates a tx and CREATE DATABASE won't work inside a tx
+        """
+        postgres_db = PostgresDatabase(db_name='postgres',
+                                       user=self._user,
+                                       password=self._password)
+        c = postgres_db._get_con()
+        c.autocommit = True
+        cur = c.cursor()
+        cur.execute(
+            """
+                CREATE DATABASE "%s"
+                    WITH 
+                    OWNER = postgres
+                    ENCODING = 'UTF8'
+                    LC_COLLATE = 'en_GB.UTF-8'
+                    LC_CTYPE = 'en_GB.UTF-8'
+                    TABLESPACE = pg_default
+                    CONNECTION LIMIT = -1;
+            """ % self._db_name
+        )
+
+
+        self._db.execute_batch([
+            {
+                'sql': """
+                    create table events( 
+                        id SERIAL PRIMARY KEY,  
+                        event_id text UNIQUE,  
+                        pubkey varchar(128),  
+                        created_at int,  
+                        kind int,  
+                        tags text,  
+                        content text,  
+                        sig varchar(128),  
+                        deleted int)
+                """
+            },
+            {
+                'sql': """
+                    create table event_tags(
+                        id int,  
+                        type varchar(32),  
+                        value text)
+                """
+            }
+        ])
+
+    def destroy(self):
+        # as create
+        postgres_db = PostgresDatabase(db_name='postgres',
+                                       user=self._user,
+                                       password=self._password)
+        c = postgres_db._get_con()
+        c.autocommit = True
+        cur = c.cursor()
+        cur.execute(
+            """
+            SELECT  
+            pg_terminate_backend (pg_stat_activity.pid)
+            FROM
+                pg_stat_activity
+            WHERE
+            pg_stat_activity.datname = '%s';
+            """ % self._db_name
+        )
+        cur.execute('DROP DATABASE IF EXISTS "%s"' % self._db_name)

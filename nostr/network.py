@@ -76,7 +76,6 @@ class Client:
         :return:
         """
         with Client(relay_url) as my_client:
-            print(my_client)
             with open(filename, "r") as f:
                 try:
                     l = f.readline()
@@ -85,7 +84,7 @@ class Client:
                             evt = Event.create_from_JSON(json.loads(l))
                             my_client.publish(evt)
                         except JSONDecodeError as je:
-                            logging('Client::post_events_from_file - problem loading event data %s - %s' % (l, je))
+                            logging.debug('Client::post_events_from_file - problem loading event data %s - %s' % (l, je))
                         l = f.readline()
 
 
@@ -155,6 +154,7 @@ class Client:
 
     def _on_message(self, ws, message):
         message = json.loads(message)
+
         type = message[0]
         for_sub = message[1]
         if type == 'EVENT':
@@ -198,7 +198,10 @@ class Client:
         # not sure about this at all!?...
         # rel.signal(2, rel.abort)  # Keyboard Interrupt
         def my_thread():
-            rel.dispatch()
+            try:
+                rel.dispatch()
+            except BrokenPipeError as be:
+                print('Client::my_thread %s\n check that connection details %s are correct' % (be, self._url))
         Thread(target=my_thread).start()
 
         # so can open.start() and asign in one line

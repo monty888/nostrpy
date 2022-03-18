@@ -350,7 +350,7 @@ class DataSet:
 
 			self._head_map[v] = i
 			# so can also use col n
-			self._head_map[i] = v
+			self._head_map[i] = i
 
 	def _col_data(self, row, head):
 		# get the data in row for given head

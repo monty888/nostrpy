@@ -13,8 +13,9 @@ from nostr.relay.persist import RelayStoreInterface
 from nostr.relay.accepthandlers import AcceptReqHandler
 from nostr.exception import NostrCommandException
 from sqlite3 import IntegrityError
+import psycopg2.errors as pg_errors
 from nostr.util import util_funcs
-from enum import Enum
+
 
 
 class Relay:
@@ -43,7 +44,6 @@ class Relay:
 
     def __init__(self, store: RelayStoreInterface, accept_req_handler=None, max_sub=3):
         self._app = Bottle()
-        self._app.route('/websocket', callback=self._handle_websocket)
         # self._web_sockets = {}
 
         # single lock for accessing shared resource
@@ -72,8 +72,10 @@ class Relay:
 
         logging.info('Relay::__init__ maxsub=%s' % self._max_sub)
 
-    def start(self, host='localhost', port=8080):
-        logging.info('Relay::start host=%s port=%s' % (host, port))
+    def start(self, host='localhost', port=8080, endpoint='/'):
+        logging.info('Relay::start %s:%s%s' % (host, port, endpoint))
+        self._app.route(endpoint, callback=self._handle_websocket)
+
         server = WSGIServer((host, port), self._app, handler_class=WebSocketHandler)
         server.serve_forever()
 
@@ -82,11 +84,14 @@ class Relay:
         ws = request.environ.get('wsgi.websocket')
 
         if not ws:
-            abort(400, 'Expected WebSocket request.')
+            # abort(400, 'Expected WebSocket request.')
+            return 'HI THERE, info about what this guys supports!'
 
         # set up place to store subs for ws
         self._ws[ws] = {
-            'subs': {}
+            'subs': {
+            },
+            'send_lock': BoundedSemaphore()
         }
 
         while True:
@@ -138,21 +143,26 @@ class Relay:
             c_accept.accept_post(ws, evt)
 
         try:
+
             self._store.add_event(evt)
             logging.info('Relay::_do_event persisted event - %s - %s (%s)' % (evt.short_id,
                                                                               util_funcs.str_tails(evt.content, 6),
                                                                               # give str mapping of kind where we can in future
                                                                               evt.kind))
+
+
+
+
             if evt.kind == Event.KIND_DELETE:
                 logging.debug('Relay::_do_event doing delete events - %s ' % evt.e_tags)
                 self._store.do_delete(evt)
 
             # now post to any interested subscribers
             self._check_subs(evt)
-        except IntegrityError as ie:
-            msg = str(ie)
-            if 'events.event_id' in msg and 'UNIQUE' in msg:
-                raise NostrCommandException('event already exists %s' % evt.id)
+        except (IntegrityError, pg_errors.UniqueViolation) as ie:
+            msg = str(ie).lower()
+            if 'event_id' in msg and 'unique' in msg:
+                raise NostrCommandException.event_already_exists(evt.id)
 
     def _clean_ws(self):
         """
@@ -193,7 +203,7 @@ class Relay:
 
                 # event passes sub filter
                 if evt.test(the_sub['filter']):
-                    self._send_event(ws, c_sub_id, evt)
+                    self._send_event(ws, c_sub_id, evt, self._ws[ws]['send_lock'])
 
     def _do_sub(self, req_json, ws: WebSocket):
         logging.info('subscription requested')
@@ -223,7 +233,7 @@ class Relay:
         # post back the pre existing
         evts = self._store.get_filter(filter)
         for c_evt in evts:
-            self._send_event(ws, sub_id, c_evt)
+            self._send_event(ws, sub_id, c_evt, self._ws[ws]['send_lock'])
 
     def _do_unsub(self, req_json, ws: WebSocket):
         logging.info('un-subscription requested')
@@ -241,13 +251,14 @@ class Relay:
         # not actual exception but this will send notice back that sub_id has been closed, might be useful to client?
         raise NostrCommandException('CLOSE command for sub_id %s - success' % sub_id)
 
-    def _send_event(self, ws: WebSocket, sub_id, evt):
+    def _send_event(self, ws: WebSocket, sub_id, evt, lock: BoundedSemaphore):
         try:
             to_send = [
                 'EVENT',
                 sub_id,
                 evt.event_data()
             ]
-            ws.send(json.dumps(to_send))
+            with lock:
+                ws.send(json.dumps(to_send))
         except Exception as e:
             logging.info('Relay::_send_event error: %s' % e)

@@ -6,7 +6,7 @@ import json
 import logging
 from datetime import datetime
 from data.data import DataSet
-from db.db import Database
+from db.db import SQLiteDatabase as Database
 from nostr.util import util_funcs
 
 
