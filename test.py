@@ -1,16 +1,14 @@
 import json
 import logging
 from datetime import datetime, timedelta
-import time
 import cmd
 import hashlib
 import base64
-import rel
 from db.db import SQLiteDatabase as Database
-from nostr.network import Client, Event
+from nostr.client.client import Client
 from nostr.event import Event
-from nostr.event_handlers import PrintEventHandler, PersistEventHandler
-from nostr.persist import Store
+from nostr.client.event_handlers import PrintEventHandler, PersistEventHandler
+from nostr.client.persist import Store
 from nostr.util import util_funcs
 from nostr.ident import ProfileList, Profile
 from nostr.encrypt import SharedEncrypt
@@ -329,7 +327,6 @@ if __name__ == "__main__":
     #
     # my_store.create()
     # my_store.destroy()
-    from db.db import SQLiteDatabase
     # from nostr.relay.persist import SQLiteStore
     # my_sql = SQLiteStore('/home/shaun/test')
     # print(my_sql.exists())

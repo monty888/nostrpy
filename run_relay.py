@@ -14,7 +14,7 @@ import toml
 from toml import TomlDecodeError
 
 from nostr.relay.relay import Relay
-from nostr.relay.accepthandlers import LengthAcceptReqHandler
+from nostr.relay.accept_handlers import LengthAcceptReqHandler
 from nostr.relay.persist import SQLiteStore, MemoryStore, PostgresStore
 
 # default values when nothing is specified either from cmd line or config file

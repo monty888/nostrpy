@@ -13,10 +13,10 @@ import json
 from json import JSONDecodeError
 import secp256k1
 import logging
-from nostr.persist import Store
+from nostr.client.persist import Store
 from data.data import DataSet
 from db.db import Database, SQLiteDatabase
-from nostr.network import Event
+from nostr.client.client import Event
 from datetime import datetime
 from nostr.util import util_funcs
 
@@ -485,7 +485,7 @@ if __name__ == "__main__":
     s.create()
 
 
-    from nostr.network import Client
+    from nostr.client.client import Client
 
     c = Client('ws://localhost:8081/').start()
     peh = ProfileEventHandler(nostr_db_file)

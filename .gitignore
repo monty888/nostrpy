@@ -1,4 +1,5 @@
 /.idea/modules.xml
+/nostr/storage/
 /nostr/storage/nostr.db
 /nostr/storage/nostr-relay.db
 /.idea/nostrpy.iml

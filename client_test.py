@@ -1,9 +1,9 @@
 import logging
 import time
 from datetime import datetime
-from nostr.network import Client
-from nostr.event_handlers import PrintEventHandler
-from nostr.persist import Store
+from nostr.client.client import Client
+from nostr.client.event_handlers import PrintEventHandler
+from nostr.client.persist import Store
 
 # stuff that eventually should be config/come from cmdline
 DB_FILE = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr.db'

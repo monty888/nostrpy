@@ -10,7 +10,7 @@ import json
 from json import JSONDecodeError
 from nostr.event import Event
 from nostr.relay.persist import RelayStoreInterface
-from nostr.relay.accepthandlers import AcceptReqHandler
+from nostr.relay.accept_handlers import AcceptReqHandler
 from nostr.exception import NostrCommandException
 from sqlite3 import IntegrityError
 import psycopg2.errors as pg_errors

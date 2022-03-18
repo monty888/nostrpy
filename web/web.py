@@ -1,17 +1,17 @@
 import json
 
 import rel
-from bottle import request, Bottle, static_file,route,abort
+from bottle import request, Bottle, static_file, abort
 import logging
 from nostr.ident import ProfileList
 from data.data import DataSet
 from gevent.pywsgi import WSGIServer
 from geventwebsocket import WebSocketError
 from geventwebsocket.handler import WebSocketHandler
-from nostr.network import Client
+from nostr.client.client import Client
 from nostr.event import Event
-from nostr.event_handlers import PersistEventHandler
-from nostr.persist import Store
+from nostr.client.event_handlers import PersistEventHandler
+from nostr.client.persist import Store
 
 class StaticServer():
     """

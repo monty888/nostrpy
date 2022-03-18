@@ -1,6 +1,6 @@
 import logging
 from nostr.relay import Relay
-from nostr.persist import RelayStore
+from nostr.client.persist import RelayStore
 
 # stuff that eventually should be config/come from cmdline
 DB_FILE = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr-relay.db'

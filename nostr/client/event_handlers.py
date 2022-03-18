@@ -7,11 +7,10 @@
 import base64
 import logging
 import json
-from nostr.persist import Store
+from nostr.client.persist import Store
 from nostr.encrypt import SharedEncrypt
 from nostr.util import util_funcs
 from nostr.event import Event
-from nostr.ident import ProfileList
 
 
 class PrintEventHandler:

@@ -10,10 +10,10 @@ import json
 import random
 from hashlib import md5
 from json import JSONDecodeError
-from datetime import datetime, timedelta
+from datetime import datetime
 from nostr.util import util_funcs
 from nostr.event import Event
-from nostr.event_handlers import EventTimeHandler, FileEventHandler
+from nostr.client.event_handlers import EventTimeHandler, FileEventHandler
 from threading import Thread
 
 rel.safe_read()
