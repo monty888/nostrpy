@@ -283,7 +283,7 @@ if __name__ == "__main__":
 
     # test_client_publish(relay_url)
     # test_client_publish_with_persist(relay_url, nostr_db_file)
-    # command_line(relay_url, nostr_db_file)
+    command_line(relay_url, nostr_db_file)
 
     # NOTE: each event is json but the file structure isn't correct json there are \n between each event
     # events_backup(relay_url, backup_dir+'events.json')
@@ -331,9 +331,5 @@ if __name__ == "__main__":
     # my_sql = SQLiteStore('/home/shaun/test')
     # print(my_sql.exists())
 
-    x = 'select id from events ' \
-        'where created_at>=%s and ' \
-        'kind=%s and pubkey=%s'.replace('%s', 'x')
-    print(x)
 
 

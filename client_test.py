@@ -101,11 +101,11 @@ if __name__ == "__main__":
     # test_filter_match({
     #     'author' : '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486'
     # })
+    from nostr.event import Event
+    test_events_to_file(filter={
+        'kinds': Event.KIND_META
+    },filename=BASE_DIR+'meta_only.json')
 
-    # test_events_to_file(filter={
-    #     'authors' : '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486'
-    # })
-
-    test_import_events(BASE_DIR+'events.json')
+    # test_import_events(BASE_DIR+'events.json')
     # from nostr.ident import Profile
     # Profile.import_from_file('/home/shaun/.nostrpy/local_profiles.csv',DB_FILE)

@@ -7,6 +7,7 @@
 import base64
 import logging
 import json
+from collections import OrderedDict
 from nostr.client.persist import Store
 from nostr.encrypt import SharedEncrypt
 from nostr.util import util_funcs
@@ -30,7 +31,7 @@ class PrintEventHandler:
     def view_off(self):
         self._view_on = False
 
-    def do_event(self, evt, relay):
+    def do_event(self, sub_id, evt, relay):
         if self._view_on:
             pubkey = evt['pubkey']
             pubkey = '%s...%s' % (pubkey[:4],
@@ -63,7 +64,7 @@ class DecryptPrintEventHandler(PrintEventHandler):
                                                  # note the ext is ignored anyway
                                                  pub_key_hex='02' + pub_key))
 
-    def do_event(self, evt, relay):
+    def do_event(self, sub_id, evt, relay):
         if self._view_on is False:
             return
         do_decrypt = False
@@ -97,7 +98,7 @@ class FileEventHandler:
             with open(self._file_name, 'w'):
                 pass
 
-    def do_event(self, evt, relay):
+    def do_event(self, sub_id, evt, relay):
         # appends to
         with open(self._file_name, "a") as f:
             evt['pubkey'] = evt['pubkey']
@@ -110,7 +111,7 @@ class EventTimeHandler:
     def __init__(self, callback=None):
         self._callback = callback
 
-    def do_event(self, evt, relay):
+    def do_event(self, sub_id, evt, relay):
         self._callback(evt['created_at'])
 
 
@@ -125,7 +126,7 @@ class PersistEventHandler:
         # to check if new or update profile
         # self._profiles = DataSet.from_sqlite(db_file,'select pub_k from profiles')
 
-    def do_event(self, evt, relay):
+    def do_event(self, sub_id, evt, relay):
 
         # store the actual event
         try:
@@ -136,4 +137,28 @@ class PersistEventHandler:
             pass
 
 
+class RepostEventHandler:
+    """
+    reposts events seen  on to given Client/ClientPool object
+    event size number of event ids to keep to prevent duplicates being sent out
+    NOTE though this is really just to prevent wasteful repost of events, relays
+    shouldn't have a problem receiving duplicate ids
+
+    to_client, TODO: define interface that both Client and ClientPool share and type hint with that
+
+    """
+    def __init__(self, to_client, max_dedup=1000):
+        self._to_client = to_client
+        self._duplicates = OrderedDict()
+        self._max_dedup = max_dedup
+
+    def do_event(self, sub_id, evt, relay):
+        if evt['id'] not in self._duplicates:
+            self._duplicates[evt['id']] = True
+            if len(self._duplicates) >= self._max_dedup:
+                self._duplicates.popitem(False)
+
+            evt = Event.create_from_JSON(evt)
+            self._to_client.publish(evt)
+            print('RepostEventHandler::sent event %s to %s' % (evt, self._to_client))
 

@@ -1,6 +1,5 @@
 import json
 
-import rel
 from bottle import request, Bottle, static_file, abort
 import logging
 from nostr.ident import ProfileList
@@ -12,6 +11,8 @@ from nostr.client.client import Client
 from nostr.event import Event
 from nostr.client.event_handlers import PersistEventHandler
 from nostr.client.persist import Store
+from db.db import SQLiteDatabase
+
 
 class StaticServer():
     """
@@ -92,23 +93,23 @@ class StaticServer():
 class NostrWeb(StaticServer):
 
     def __init__(self, file_root, db_file):
-        self._db_file = db_file
-        self._store = Store(self._db_file)
-        self._persist_event = PersistEventHandler(self._db_file)
+        self._db = SQLiteDatabase(db_file)
+        self._store = Store(db_file)
+        self._persist_event = PersistEventHandler(db_file)
 
         # this should be passed in and probably will be a ClientPool
-        self._nostr_client = Client('ws://localhost:8081/websocket')
-        self._nostr_client.start()
 
-        self._nostr_client.subscribe('web', self, {
-            'since' : self._store.get_oldest()-100000
-        })
+        def my_connect(the_client):
+            nonlocal self
+            the_client.subscribe('web', self, {
+                'since': self._store.get_oldest() - 100000
+            })
+        self._nostr_client = Client('ws://localhost:8082/', on_connect=my_connect).start()
 
         self._web_sockets = {}
-
         # initial load of profiles, after that shoudl track events
         # obvs at some point keeping all profiles in mem might not work so well
-        self._other_profiles = ProfileList.create_others_profiles_from_db(db_file).as_arr()
+        self._other_profiles = ProfileList.create_profiles_from_db(self._db).as_arr()
 
         super(NostrWeb, self).__init__(file_root)
 
@@ -154,8 +155,9 @@ class NostrWeb(StaticServer):
         if not pub_k:
             raise Exception('pub_k is required')
 
-        contacts = DataSet.from_sqlite(self._db_file,sql=sql,
-                                       args=[pub_k])
+        contacts = DataSet.from_db(self._db,
+                                   sql=sql,
+                                   args=[pub_k])
         return {
             'pub_k_owner' : pub_k,
             'contacts' : contacts.as_arr(dict_rows=True)
@@ -179,9 +181,9 @@ class NostrWeb(StaticServer):
         # if not pub_k:
         #     raise Exception('pub_k is required')
 
-        notes = DataSet.from_sqlite(self._db_file,
-                                    sql=sql,
-                                    args=args)
+        notes = DataSet.from_db(self._db,
+                                sql=sql,
+                                args=args)
 
         ret = {
             'notes': notes.as_arr(dict_rows=True)
@@ -200,9 +202,9 @@ class NostrWeb(StaticServer):
         return ret
 
 
-    def do_event(self, evt, relay):
+    def do_event(self, sub_id, evt, relay):
         # store event to db, no err handling...
-        self._persist_event.do_event(evt, relay)
+        self._persist_event.do_event(sub_id, evt, relay)
 
         for c_sock in self._web_sockets:
             ws = self._web_sockets[c_sock]
@@ -226,12 +228,28 @@ class NostrWeb(StaticServer):
             except WebSocketError:
                 break
 
+    def stop(self):
+        self._nostr_client.end()
 
 def nostr_web():
     nostr_db_file = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr.db'
     my_server = NostrWeb(file_root='/home/shaun/PycharmProjects/nostrpy/web/static/',
                          db_file=nostr_db_file)
+
+    # example clean exit... need to look into more though
+    import signal
+    import sys
+    def sigint_handler(signal, frame):
+        my_server.stop()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, sigint_handler)
+
+
     my_server.start()
+
+
+
 
     # my_socket = NostrWebsocket()
     # my_socket.start()
@@ -240,14 +258,6 @@ def nostr_web():
 if __name__ == '__main__':
     logging.getLogger().setLevel(logging.DEBUG)
 
-    # example clean exit... need to look into more though
-    import signal
-    import sys
-    def sigint_handler(signal, frame):
-        rel.abort()
-        sys.exit(0)
 
-
-    signal.signal(signal.SIGINT, sigint_handler)
 
     nostr_web()

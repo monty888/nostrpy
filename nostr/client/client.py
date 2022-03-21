@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import time
 import websocket
-import rel
+from websocket._exceptions import WebSocketConnectionClosedException
 import json
 import random
 from hashlib import md5
@@ -15,8 +15,6 @@ from nostr.util import util_funcs
 from nostr.event import Event
 from nostr.client.event_handlers import EventTimeHandler, FileEventHandler
 from threading import Thread
-
-rel.safe_read()
 
 class Client:
 
@@ -91,15 +89,20 @@ class Client:
                 except Exception as e:
                     print(e)
 
-    def __init__(self, relay_url):
+    def __init__(self, relay_url, on_connect=None):
         self._url = relay_url
         self._handlers = {}
+        self._run = True
+        self._ws = None
+        self._last_con = None
+        self._con_fail_count = 0
+        self._on_connect = on_connect
 
     @property
     def url(self):
         return self._url
 
-    def subscribe(self, sub_id=None, handler=None, filters={}):
+    def subscribe(self, sub_id=None, handlers=None, filters={}):
         """
         :param sub_id: if none a rndish 4digit hex sub_id will be given
         :param handler: single or [] of handlers that'll get called for events on sub
@@ -122,11 +125,11 @@ class Client:
         # TODO: at the moment there'd be no point subscribing if you don't pass handler
         #  because there's no way of adding later
         #
-        if handler:
+        if handlers:
             # caller only passed in single handler
-            if not hasattr(handler, '__iter__'):
-                handler = [handler]
-            self._handlers[sub_id] = handler
+            if not hasattr(handlers, '__iter__'):
+                handlers = [handlers]
+            self._handlers[sub_id] = handlers
 
         self._ws.send(the_req)
         return sub_id
@@ -142,7 +145,10 @@ class Client:
         return ret
 
     def unsubscribe(self, sub_id):
-        self._ws.send(json.dumps(['CLOSE', sub_id]))
+        # if subscribed, should we error if unknown sub_id?
+        if sub_id in self._handlers:
+            self._ws.send(json.dumps(['CLOSE', sub_id]))
+            self._handlers[sub_id]
 
     def publish(self, evt: Event):
         logging.debug('Client::publish - %s', evt.event_data())
@@ -150,32 +156,34 @@ class Client:
             'EVENT', evt.event_data()
         ])
         self._ws.send(to_pub)
-        time.sleep(0.2)
 
     def _on_message(self, ws, message):
+        self._con_fail_count = 0
+        self._last_con = datetime.now()
+
         message = json.loads(message)
 
         type = message[0]
-        for_sub = message[1]
+        sub_id = message[1]
         if type == 'EVENT':
-            self._do_events(for_sub, message)
+            self._do_events(sub_id, message)
         elif type == 'NOTICE':
             logging.debug('NOTICE!! %s' % message[1])
         else:
             logging.debug('Network::_on_message unexpected type %s' % type)
 
-    def _do_events(self, for_sub, message):
-        if for_sub in self._handlers:
-            for c_handler in self._handlers[for_sub]:
+    def _do_events(self, sub_id, message):
+        if sub_id in self._handlers:
+            for c_handler in self._handlers[sub_id]:
                 try:
-                    c_handler.do_event(message[2], self._url)
+                    c_handler.do_event(sub_id, message[2], self._url)
                 except Exception as e:
                     # TODO: add name property to handlers
                     logging.debug('Client::_do_events in handler %s - %s' % (c_handler, e))
         else:
             logging.debug(
-                'Network::_on_message event for subscription with no handler registered subscription : %s\n event: %s' % (
-                for_sub, message))
+                'Client::_on_message event for subscription with no handler registered subscription : %s\n event: %s' % (
+                sub_id, message))
 
     def _on_error(self, ws, error):
         print(error)
@@ -186,30 +194,47 @@ class Client:
 
     def _on_open(self, ws):
         print('Opened connection %s' % self._url)
+        if self._on_connect:
+            self._on_connect(self)
 
     def start(self):
-        self._ws = websocket.WebSocketApp(self._url,
-                                          on_open=self._on_open,
-                                          on_message=self._on_message,
-                                          on_error=self._on_error,
-                                          on_close=self._on_close)
-        self._ws.run_forever(dispatcher=rel)  # Set dispatcher to automatic reconnection
+        # should probably check self._run and error if already true
 
         # not sure about this at all!?...
         # rel.signal(2, rel.abort)  # Keyboard Interrupt
-        def my_thread():
-            try:
-                rel.dispatch()
-            except BrokenPipeError as be:
-                print('Client::my_thread %s\n check that connection details %s are correct' % (be, self._url))
-        Thread(target=my_thread).start()
+        def get_con():
+            self._ws = websocket.WebSocketApp(self._url,
+                                              on_open=self._on_open,
+                                              on_message=self._on_message,
+                                              on_error=self._on_error,
+                                              on_close=self._on_close)
+            self._ws.run_forever()  # Set dispatcher to automatic reconnection
 
+        def my_thread():
+            while self._run:
+                try:
+                    get_con()
+                except BrokenPipeError as be:
+                    print('Client::my_thread %s\n check that connection details %s are correct' % (be, self._url))
+                    self._run = False
+                except WebSocketConnectionClosedException as wsc:
+                    print('Client::my_thread %s\n lost connection to %s '
+                          'should try to reestablish but for now it dead!' % (wsc, self._url))
+
+                self._ws = None
+                self._con_fail_count +=1
+
+
+        Thread(target=my_thread).start()
+        # time.sleep(1)
         # so can open.start() and asign in one line
         return self
 
     def end(self):
+        self._run = False
         self._ws.close()
-        rel.abort()
+
+        # rel.abort()
 
     # so where appropriate can use with syntax, exit function probably needs to do more...
     def __enter__(self):
@@ -217,6 +242,9 @@ class Client:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.end()
+
+    def __str__(self):
+        return self._url
 
 
 class ClientPool:
@@ -236,19 +264,28 @@ class ClientPool:
             where read/write not passed in they'll be True
 
     """
-    def __init__(self, clients):
+    def __init__(self, clients, on_connect=None):
+        # Clients (Relays) we connecting to
         self._clients = {}
+        # subscription event handlers keyed on sub ids
+        self._handlers = {}
+
+        # for whatever reason using pool but only a single client handed in
+        if isinstance(clients, str):
+            clients = [clients]
+
         for c_client in clients:
+            print(c_client)
             try:
                 if isinstance(c_client, str):
                     self._clients[c_client] = {
-                        'client': Client(c_client),
+                        'client': Client(c_client, on_connect=on_connect),
                         'read': True,
                         'write': True
                     }
                 elif isinstance(c_client, Client):
                     self._clients[c_client] = {
-                        'client': Client(c_client),
+                        'client': Client(c_client, on_connect=on_connect),
                         'read': True,
                         'write': True
                     }
@@ -259,7 +296,7 @@ class ClientPool:
                         'write': True
                     }
                     if isinstance(to_add['client'], str):
-                        to_add['client'] = Client(to_add['client'])
+                        to_add['client'] = Client(to_add['client'], on_connect=on_connect)
                         if 'read' in c_client:
                             to_add['read'] = c_client['read']
                         if 'write' in c_client:
@@ -275,20 +312,49 @@ class ClientPool:
             the_client = self._clients[c_client]['client']
             the_client.start()
 
-    def subscribe(self, sub_id, handler=None, filters={}):
+    def subscribe(self, sub_id=None, handlers=None, filters={}):
+
         for c_client in self._clients:
             the_client = self._clients[c_client]['client']
-            the_client.subscribe(sub_id, self, filters)
+            sub_id = the_client.subscribe(sub_id, self, filters)
 
-    def do_event(self, evt, relay):
-        print(evt,relay)
+        # add handlers if any given - nothing happens on receiving events if not
+        if handlers:
+            if not hasattr(handlers, '__iter__'):
+                handlers = [handlers]
+            self._handlers[sub_id] = handlers
+
+        return sub_id
+
+    def publish(self, evt: Event):
+        logging.debug('ClientPool::publish - %s', evt.event_data())
+        for c_client in self._clients:
+            if self._clients[c_client]['write']:
+                self._clients[c_client]['client'].publish(evt)
+
+    def do_event(self, sub_id, evt, relay):
+        # shouldn't be possible...
+        if relay not in self._clients:
+            raise Exception('ClientPool::do_event received event from unexpected relay - %s WTF?!?' % relay)
+
+        # only do anyhting if relay read is True
+        if self._clients[relay]['read']:
+            # note no de-duplication is done here, you might see the same event from mutiple relays
+            if sub_id in self._handlers:
+                for c_handler in self._handlers[sub_id]:
+                    c_handler.do_event(sub_id, evt, relay)
+            else:
+                # supose this might happen if unsubscribe then evt comes in...
+                logging.debug(
+                    'ClientPool::do_event event for subscription with no handler registered subscription : %s\n event: %s' % (
+                        sub_id, evt))
+
+    def __repr__(self):
+        return self._clients
 
     def __str__(self):
         ret_arr = []
         for c_client in self._clients:
-            the_client = self._clients[c_client]
-            ret_arr.append(c_client+ '\n')
-            ret_arr.append('read: %s write: %s\n' % (the_client['read'],
-                                                     the_client['write']))
+            ret_arr.append(str(self._clients[c_client]['client']))
 
-        return ''.join(ret_arr)
+        return ', '.join(ret_arr)

@@ -144,6 +144,13 @@ class Profile:
 
         s = Store(db_file)
         for p in profiles:
+            s.add_profile(Profile(
+                priv_k=p['priv_k'],
+                pub_k=p['pub_k'],
+                profile_name=p['profile_name'],
+                attrs=p['attrs'],
+                update_at=util_funcs.date_as_ticks(datetime.now())
+            ))
             try:
                 s.add_profile(Profile(
                     priv_k=p['priv_k'],
@@ -453,21 +460,27 @@ class ProfileEventHandler:
         self._store = Store(db_file)
         self._on_update = on_update
 
-    def do_event(self, evt, relay):
+    def do_event(self, sub_id, evt, relay):
+        c_profile: Profile
+        evt_profile: Profile
+
         if evt['kind'] == Event.KIND_META:
             pubkey = evt['pubkey']
             c_profile = self._profiles.lookup(pubkey)
             evt_profile = Profile(pub_k=pubkey, attrs=evt['content'], update_at=evt['created_at'])
-            # not sure about this... probably OK most of the time...
-            if c_profile:
-                self._store.update_profile(evt_profile)
-            else:
-                self._store.add_profile(evt_profile)
-                self._profiles.append(evt_profile)
 
-            # if owner gave us an on_update call with pubkey that has changed, they may want to do something...
-            if self._on_update:
-                self._on_update(evt_profile, c_profile)
+            # we only need to do something if the profile is newer than we already have
+            if c_profile is None or c_profile.update_at < evt_profile.update_at:
+                # not sure about this... probably OK most of the time...
+                if c_profile:
+                    self._store.update_profile(evt_profile)
+                else:
+                    self._store.add_profile(evt_profile)
+                    self._profiles.append(evt_profile)
+
+                # if owner gave us an on_update call with pubkey that has changed, they may want to do something...
+                if self._on_update:
+                    self._on_update(evt_profile, c_profile)
 
     @property
     def profiles(self):
@@ -481,23 +494,27 @@ if __name__ == "__main__":
     nostr_db_file = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr.db'
     backup_dir = '/home/shaun/.nostrpy/'
     s = Store(nostr_db_file)
-    s.destroy()
-    s.create()
+
+    Profile.import_from_file(backup_dir+'local_profiles.csv', nostr_db_file)
 
 
-    from nostr.client.client import Client
-
-    c = Client('ws://localhost:8081/').start()
-    peh = ProfileEventHandler(nostr_db_file)
-
-    def my_update(profile, pre_profile):
-        print(len(peh.profiles))
-
-    peh.set_on_update(my_update)
-
-
-    c.subscribe(handler=peh,filters={
-
-    })
-
+    # s.destroy()
+    # s.create()
+    #
+    #
+    # from nostr.client.client import Client
+    #
+    # c = Client('ws://localhost:8081/').start()
+    # peh = ProfileEventHandler(nostr_db_file)
+    #
+    # def my_update(profile, pre_profile):
+    #     print(len(peh.profiles))
+    #
+    # peh.set_on_update(my_update)
+    #
+    #
+    # c.subscribe(handler=peh,filters={
+    #     'kinds' : 0
+    # })
+    #
 

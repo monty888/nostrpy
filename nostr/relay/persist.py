@@ -86,7 +86,9 @@ class MemoryStore(RelayStoreInterface):
         elif self._delete_mode == DeleteMode.DEL_DELETE:
             for c_id in to_delete:
                 if c_id in self._evts:
-                    del self._evts[c_id]
+                    # we just leave the is deleted flag in place but get rid of the evt data
+                    # as it's just in memory it wouldn't be easy to get at anyway so really we're just freeing the mem
+                    del self._evts[c_id]['evt']
 
     def get_filter(self, filter):
         ret = []
