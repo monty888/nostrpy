@@ -126,7 +126,7 @@ class NostrWeb(StaticServer):
             return str(e).replace(',','<br>')
 
         self._app.error_handler = {
-            500 : my_internal
+            500: my_internal
         }
 
     def _profiles_list(self):

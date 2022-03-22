@@ -20,6 +20,7 @@ from nostr.client.client import Event
 from datetime import datetime
 from nostr.util import util_funcs
 
+
 class Profile:
 
     @classmethod
@@ -304,6 +305,38 @@ class ProfileList:
 
         return ProfileList(profiles)
 
+    @classmethod
+    def add_profile_db(cls, db: Database, p: Profile):
+        sql = """
+            insert into 
+                profiles (priv_k, pub_k, profile_name, attrs, name, picture, updated_at) 
+                        values(?,?,?,?,?,?,?)
+            """
+        args = [
+            p.private_key, p.public_key,
+            p.profile_name, json.dumps(p.attrs),
+            p.get_attr('name'), p.get_attr('picture'),
+            util_funcs.date_as_ticks(p.update_at)
+        ]
+
+        db.execute_sql(sql, args)
+
+    @classmethod
+    def update_profile_db(cls, db: Database, p: Profile):
+        sql = """
+                update profiles 
+                    set profile_name=?, attrs=?, name=?, picture=?, updated_at=?
+                    where pub_k=?
+            """
+        args = [
+            p.profile_name, json.dumps(p.attrs),
+            p.get_attr('name'), p.get_attr('picture'),
+            util_funcs.date_as_ticks(p.update_at),
+            p.public_key
+        ]
+        logging.debug('Store::update profile sql: %s args: %s' % (sql, args))
+        db.execute_sql(sql, args)
+
     def __init__(self, profiles):
         self._profiles = profiles
         self._key_lookup = {}
@@ -330,6 +363,9 @@ class ProfileList:
         return ret
 
     def matches(self, m_str):
+        if m_str.replace(' ','') =='':
+            return self._profiles
+
         # simple text text lookup against name/pubkey
         ret = []
         # we're going to ignore case
@@ -455,9 +491,9 @@ class ProfileEventHandler:
         TODO: check and verify NIP05 if profile has it
     """
 
-    def __init__(self, db_file, on_update=None):
-        self._profiles = ProfileList.create_profiles_from_db(SQLiteDatabase(db_file))
-        self._store = Store(db_file)
+    def __init__(self, db, on_update=None):
+        self._db = db
+        self._profiles = ProfileList.create_profiles_from_db(self._db)
         self._on_update = on_update
 
     def do_event(self, sub_id, evt, relay):
@@ -473,9 +509,9 @@ class ProfileEventHandler:
             if c_profile is None or c_profile.update_at < evt_profile.update_at:
                 # not sure about this... probably OK most of the time...
                 if c_profile:
-                    self._store.update_profile(evt_profile)
+                    ProfileList.update_profile_db(self._db, evt_profile)
                 else:
-                    self._store.add_profile(evt_profile)
+                    ProfileList.add_profile_db(self._db, evt_profile)
                     self._profiles.append(evt_profile)
 
                 # if owner gave us an on_update call with pubkey that has changed, they may want to do something...
@@ -495,26 +531,24 @@ if __name__ == "__main__":
     backup_dir = '/home/shaun/.nostrpy/'
     s = Store(nostr_db_file)
 
-    Profile.import_from_file(backup_dir+'local_profiles.csv', nostr_db_file)
+    # Profile.import_from_file(backup_dir+'local_profiles.csv', nostr_db_file)
 
 
     # s.destroy()
     # s.create()
     #
     #
-    # from nostr.client.client import Client
-    #
-    # c = Client('ws://localhost:8081/').start()
-    # peh = ProfileEventHandler(nostr_db_file)
-    #
-    # def my_update(profile, pre_profile):
-    #     print(len(peh.profiles))
-    #
-    # peh.set_on_update(my_update)
-    #
-    #
-    # c.subscribe(handler=peh,filters={
-    #     'kinds' : 0
-    # })
-    #
+    from nostr.client.client import Client
+
+    def my_connect(the_client):
+        peh = ProfileEventHandler(SQLiteDatabase(nostr_db_file))
+        def my_update(profile, pre_profile):
+            print(len(peh.profiles))
+        peh.set_on_update(my_update)
+
+        the_client.subscribe(handlers=peh, filters={
+            'kinds': 0
+        })
+
+    c = Client('ws://localhost:8082/', on_connect=my_connect).start()
 

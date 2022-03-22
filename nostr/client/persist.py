@@ -120,7 +120,6 @@ class Store:
         if 'contacts' in tables:
             self._db.execute_sql('drop table contacts')
 
-
     def add_event(self, evt, relay_url='?'):
         batch = [
             {
@@ -174,36 +173,6 @@ class Store:
         event_sql = ''.join(sql_arr)
 
         return DataSet.from_sqlite(self._db_file, event_sql, args)
-
-    def add_profile(self, profile: 'Profile'):
-        sql = """
-            insert into 
-                profiles (priv_k, pub_k, profile_name, attrs, name, picture, updated_at) 
-                        values(?,?,?,?,?,?,?)
-            """
-        args = [
-            profile.private_key, profile.public_key,
-            profile.profile_name, json.dumps(profile.attrs),
-            profile.get_attr('name'), profile.get_attr('picture'),
-            util_funcs.date_as_ticks(profile.update_at)
-        ]
-
-        self._db.execute_sql(sql, args)
-
-    def update_profile(self,profile: 'Profile'):
-        sql = """
-                update profiles 
-                    set profile_name=?, attrs=?, name=?, picture=?, updated_at=?
-                    where pub_k=?
-            """
-        args = [
-            profile.profile_name, json.dumps(profile.attrs),
-            profile.get_attr('name'), profile.get_attr('picture'),
-            util_funcs.date_as_ticks(profile.update_at),
-            profile.public_key
-        ]
-        logging.debug('Store::update profile sql: %s args: %s' % (sql, args))
-        self._db.execute_sql(sql, args)
 
     def update_contact_list(self, owner_pub_k, contacts):
         """

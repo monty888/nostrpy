@@ -194,8 +194,6 @@ class Event:
                 if not _test_tag_match('p', c_filter):
                     ret = False
 
-            # TODO: #e and #p
-
             # multiple filters are joined so a pass on any and we're out of here
             if ret:
                 break

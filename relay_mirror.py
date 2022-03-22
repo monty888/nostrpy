@@ -13,7 +13,7 @@ from nostr.client.event_handlers import RepostEventHandler
 def do_mirror(from_relay, to_relay, filter=None):
     if filter is None:
         filter = {
-            'since': util_funcs.date_as_ticks(datetime.now()-timedelta(days=1))
+            # 'since': util_funcs.date_as_ticks(datetime.now()-timedelta(days=1))
         }
 
     # where we're posting to
@@ -34,7 +34,7 @@ if __name__ == "__main__":
 
     from_relay = ['wss://nostr-pub.wellorder.net', 'wss://nostr.bitcoiner.social',
                   'wss://rsslay.fiatjaf.com']
-    # from_relay = ['ws://localhost:8081/']
-    to_relay = ['ws://localhost:8082/']
+    # from_relay = ['ws://localhost:8082/']
+    to_relay = ['ws://localhost:8081/','ws://localhost:8082/']
 
     do_mirror(from_relay, to_relay)

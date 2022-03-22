@@ -18,8 +18,12 @@ class util_funcs:
     def str_tails(cls, the_str, taillen=4):
         # returns str start...end chars for taillen
         ret = '?...?'
+
         if the_str:
-            ret = '%s...%s' % (the_str[:taillen], the_str[len(the_str)-taillen:])
+            if len(the_str) < (taillen*2)+3:
+                ret = the_str
+            else:
+                ret = '%s...%s' % (the_str[:taillen], the_str[len(the_str)-taillen:])
         return ret
 
     def sql_lite_destroy(self, db_file, export_profiles=None):
