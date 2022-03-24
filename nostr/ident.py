@@ -138,22 +138,14 @@ class Profile:
         profiles.save_csv(filename)
 
     @classmethod
-    def import_from_file(cls, filename, db_file, names=None):
+    def import_from_file(cls, filename, db, names=None):
         profiles = DataSet.from_CSV(filename)
         if names:
             profiles = profiles.value_in('profile_name', names)
 
-        s = Store(db_file)
         for p in profiles:
-            s.add_profile(Profile(
-                priv_k=p['priv_k'],
-                pub_k=p['pub_k'],
-                profile_name=p['profile_name'],
-                attrs=p['attrs'],
-                update_at=util_funcs.date_as_ticks(datetime.now())
-            ))
             try:
-                s.add_profile(Profile(
+                ProfileList.add_profile_db(db, Profile(
                     priv_k=p['priv_k'],
                     pub_k=p['pub_k'],
                     profile_name=p['profile_name'],
@@ -527,28 +519,7 @@ class ProfileEventHandler:
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
-    nostr_db_file = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr.db'
+    nostr_db_file = '/home/shaun/.nostrpy/nostr-client.db'
     backup_dir = '/home/shaun/.nostrpy/'
     s = Store(nostr_db_file)
-
-    # Profile.import_from_file(backup_dir+'local_profiles.csv', nostr_db_file)
-
-
-    # s.destroy()
-    # s.create()
-    #
-    #
-    from nostr.client.client import Client
-
-    def my_connect(the_client):
-        peh = ProfileEventHandler(SQLiteDatabase(nostr_db_file))
-        def my_update(profile, pre_profile):
-            print(len(peh.profiles))
-        peh.set_on_update(my_update)
-
-        the_client.subscribe(handlers=peh, filters={
-            'kinds': 0
-        })
-
-    c = Client('ws://localhost:8082/', on_connect=my_connect).start()
-
+    Profile.import_from_file(backup_dir+'local_profiles.csv', SQLiteDatabase(nostr_db_file))

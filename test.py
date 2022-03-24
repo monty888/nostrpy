@@ -111,18 +111,21 @@ def command_line(relay_url, db_file):
             super().__init__()
 
         def _set_relay(self):
-            self._relay = Client(relay_url).start()
-            filter = {
-                'since': self._store.get_oldest(),
-                'kinds': [Event.KIND_TEXT_NOTE]
-            }
+            def my_connect(the_client):
+                filter = {
+                    'since': self._store.get_oldest(),
+                    'kinds': [Event.KIND_TEXT_NOTE]
+                }
 
-            self._relay.subscribe('testid',self._event_handler,filter)
+                the_client.subscribe('testid', self._event_handler, filter)
+
+            self._relay = Client(relay_url, on_connect=my_connect).start()
+
 
         def do_post(self, arg):
             'Post text as not to relay'
             if self._c_profile:
-                n_event = Event(kind=Event.KIND_TEXT_NOTE,content=arg, pub_key=self._c_profile.public_key[2:])
+                n_event = Event(kind=Event.KIND_TEXT_NOTE,content=arg, pub_key=self._c_profile.public_key)
                 n_event.sign(self._c_profile.private_key)
                 self._relay.publish(n_event)
             else:
@@ -272,7 +275,7 @@ def events_import(relay_url, filename):
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
-    nostr_db_file = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr.db'
+    nostr_db_file = '/home/shaun/.nostrpy/nostr-client.db'
     # nostr_db_file = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr-relay.db'
     # relay_url = 'wss://nostr-pub.wellorder.net'
     # relay_url = 'wss://rsslay.fiatjaf.com'

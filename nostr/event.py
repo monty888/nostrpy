@@ -158,10 +158,10 @@ class Event:
 
                 for c_test in to_test:
                     # need to change this, should be prefix rather that in,
-                    if name is 'authors' and self.pub_key.startswith(field_match):
+                    if name is 'authors' and self.pub_key.startswith(c_test):
                         field_match = True
                         break
-                    elif name is 'ids' and self.id.startswith(field_match):
+                    elif name is 'ids' and self.id.startswith(c_test):
                         field_match = True
                         break
 
