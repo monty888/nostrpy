@@ -84,6 +84,8 @@ class SQLiteDatabase(Database, ABC):
             c = self._get_con()
             logging.debug('Database::execute_batch SQL: %s\n ARGS: %s' % (sql,
                                                                           args))
+            # replace to ? as used by sql_lite
+            sql = sql.replace(':?', self.placeholder)
             # if [[]] then we're doing a multi insert, not sure this is a perfect test...
             if args and isinstance(args[0], list):
                 c.executemany(sql, args)
@@ -181,6 +183,9 @@ class SQLiteDatabase(Database, ABC):
 
         if args is None:
             args = []
+
+        # replace to ? as used by sql_lite
+        sql = sql.replace(':?', self.placeholder)
 
         # create con
         con = self._get_con()

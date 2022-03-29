@@ -3,6 +3,7 @@
 """
 from __future__ import annotations
 import logging
+import sys
 import time
 import websocket
 from websocket._exceptions import WebSocketConnectionClosedException
@@ -155,6 +156,7 @@ class Client:
         to_pub = json.dumps([
             'EVENT', evt.event_data()
         ])
+
         self._ws.send(to_pub)
 
     def _on_message(self, ws, message):
@@ -176,7 +178,7 @@ class Client:
         if sub_id in self._handlers:
             for c_handler in self._handlers[sub_id]:
                 try:
-                    c_handler.do_event(sub_id, message[2], self._url)
+                    c_handler.do_event(sub_id, Event.create_from_JSON(message[2]), self._url)
                 except Exception as e:
                     # TODO: add name property to handlers
                     logging.debug('Client::_do_events in handler %s - %s' % (c_handler, e))
@@ -220,7 +222,7 @@ class Client:
                 except WebSocketConnectionClosedException as wsc:
                     print('Client::my_thread %s\n lost connection to %s '
                           'should try to reestablish but for now it dead!' % (wsc, self._url))
-
+                time.sleep(1)
                 self._ws = None
                 self._con_fail_count +=1
 
@@ -275,7 +277,6 @@ class ClientPool:
             clients = [clients]
 
         for c_client in clients:
-            print(c_client)
             try:
                 if isinstance(c_client, str):
                     self._clients[c_client] = {
@@ -330,7 +331,10 @@ class ClientPool:
         logging.debug('ClientPool::publish - %s', evt.event_data())
         for c_client in self._clients:
             if self._clients[c_client]['write']:
-                self._clients[c_client]['client'].publish(evt)
+                try:
+                    self._clients[c_client]['client'].publish(evt)
+                except Exception as e:
+                    print(e)
 
     def do_event(self, sub_id, evt, relay):
         # shouldn't be possible...

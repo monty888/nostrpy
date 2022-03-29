@@ -38,12 +38,15 @@ from kivy.lang.builder import Builder
 from kivymd.uix.list import OneLineListItem, TwoLineListItem, \
     OneLineAvatarIconListItem, TwoLineAvatarIconListItem, ImageLeftWidget
 from kivy.uix.screenmanager import ScreenManager
-
+from datetime import datetime, timedelta
 from nostr.ident import ProfileEventHandler, ProfileList, Profile
 from nostr.client.client import Client
+from nostr.client.event_handlers import PersistEventHandler
 from db.db import SQLiteDatabase
 from kivy_components.screens import SearchContactScreen, MessageScreen
 from nostr.event import Event
+from nostr.util import util_funcs
+from nostr.client.persist import SQLLiteStore
 
 DB = SQLiteDatabase('/home/shaun/.nostrpy/nostr-client.db')
 
@@ -53,6 +56,7 @@ class Demo(MDApp):
         self._scr_man = None
         self._con_sel_screen = None
         self._client = None
+        self._store = SQLLiteStore(DB.file)
 
         self._c_profile = Profile.load_from_db(DB,'firedragon888')
 
@@ -60,7 +64,6 @@ class Demo(MDApp):
         def my_update(evt_p, old_p):
             pass
         self._peh = ProfileEventHandler(DB, on_update=my_update)
-
         super().__init__(**kargs)
 
     def build(self):
@@ -90,6 +93,7 @@ class Demo(MDApp):
                                          on_message=do_message)
         self._scr_man.add_widget(self._msg_screen)
 
+        self._con_sel_screen.set_profiles(self._peh.profiles)
         return self._scr_man
 
     def contact_selected(self, p: Profile):
@@ -100,13 +104,18 @@ class Demo(MDApp):
         self._client = the_client
         while not self._con_sel_screen:
             time.sleep(0.1)
-        self._con_sel_screen.set_profiles(self._peh.profiles)
 
+        # TODO: to store add method to get the latest tick for event matching filter
         the_client.subscribe(handlers=self._peh, filters={
-            'kinds' : Event.KIND_META
+            'kinds': Event.KIND_META
+            # 'since': util_funcs.date_as_ticks(datetime.now()-timedelta(days=1))
         })
 
 
+        the_client.subscribe(handlers=PersistEventHandler(self._store), filters={
+            'kinds': Event.KIND_TEXT_NOTE,
+            'since': util_funcs.date_as_ticks(datetime.now()-timedelta(days=1))
+        })
 
 
 def test_select_contact():
@@ -114,7 +123,6 @@ def test_select_contact():
     at most basic the select contact screen needs to have a search and allow selection of a single contact
     contacts should be autosync to most recent profiles (use nostr.profiles)
     """
-    from nostr.client.persist import Store
     # s = Store('/home/shaun/.nostrpy/nostr-client.db')
     # s.destroy()
     # s.create()
@@ -125,9 +133,6 @@ def test_select_contact():
 
     my_app.run()
     c.end()
-
-
-
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ import base64
 import logging
 import json
 from collections import OrderedDict
-from nostr.client.persist import Store
+from nostr.client.persist import ClientStoreInterface
 from nostr.encrypt import SharedEncrypt
 from nostr.util import util_funcs
 from nostr.event import Event
@@ -31,15 +31,11 @@ class PrintEventHandler:
     def view_off(self):
         self._view_on = False
 
-    def do_event(self, sub_id, evt, relay):
+    def do_event(self, sub_id, evt:Event, relay):
         if self._view_on:
-            pubkey = evt['pubkey']
-            pubkey = '%s...%s' % (pubkey[:4],
-                                  pubkey[len(pubkey)-4:])
-
             print('%s: %s - %s' % (util_funcs.ticks_as_date(evt['created_at']),
-                                   pubkey,
-                                   evt['content']))
+                                   util_funcs.str_tails(evt.pub_key, 4),
+                                   evt.content))
 
 
 class DecryptPrintEventHandler(PrintEventHandler):
@@ -121,20 +117,20 @@ class PersistEventHandler:
         TODO: either add back in persist profile here or move to own handler
     """
 
-    def __init__(self, db_file):
-        self._store = Store(db_file)
+    def __init__(self, store: ClientStoreInterface):
+        self._store = store
         # to check if new or update profile
         # self._profiles = DataSet.from_sqlite(db_file,'select pub_k from profiles')
 
-    def do_event(self, sub_id, evt, relay):
-
+    def do_event(self, sub_id, evt:Event, relay):
         # store the actual event
         try:
             self._store.add_event(evt, relay)
-        except:
+        except Exception as e:
+            print(e)
             # most likely because we already have, we could though add a table that
             # linking evets with every relay we saw them from
-            pass
+
 
 
 class RepostEventHandler:
@@ -152,13 +148,13 @@ class RepostEventHandler:
         self._duplicates = OrderedDict()
         self._max_dedup = max_dedup
 
-    def do_event(self, sub_id, evt, relay):
-        if evt['id'] not in self._duplicates:
-            self._duplicates[evt['id']] = True
+    def do_event(self, sub_id, evt:Event, relay):
+        if evt.id not in self._duplicates:
+            self._duplicates[evt.id] = True
             if len(self._duplicates) >= self._max_dedup:
                 self._duplicates.popitem(False)
 
-            evt = Event.create_from_JSON(evt)
+            # evt = Event.create_from_JSON(evt)
             self._to_client.publish(evt)
             print('RepostEventHandler::sent event %s to %s' % (evt, self._to_client))
 

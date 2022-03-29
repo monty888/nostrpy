@@ -1,25 +1,81 @@
 """
-    basic persistance layer for our nostr stuff
+    The client store just keeps a local copy of nostr events that we have seen before and is almost the relay store.
+    it adds relay_url so that we can see which relay
+    and the delete just deletes events from event tbl - actually no delete at mo....
+
+    The same db we'll use elsewhere for keeping data about profiles, contacts and any extra data specific to a
+    client implementation. In many cases this data is just derived from the events table for example profiles tbl
+    is created from meta event types, so you can delete all profiles and the reacreate from events tbl
+    or you could event not persist the events but subscribe to a relay and create just the profiles data from
+    what you get back from the relay/
+
 """
-from __future__ import annotations
-import json
+
+from abc import ABC, abstractmethod
 import logging
 from datetime import datetime
+import json
+from pathlib import Path
+import os
 from data.data import DataSet
-from db.db import SQLiteDatabase as Database
+from db.db import SQLiteDatabase, Database
 from nostr.util import util_funcs
+from nostr.event import Event
+from nostr.relay.persist import SQLStore as RelayStore
 
 
-class Store:
+class ClientStoreInterface(ABC):
 
-    def __init__(self, db_file):
-        self._db_file = db_file
-        self._db = Database(db_file)
+    @abstractmethod
+    def add_event(self, evt: Event, relay_url: str):
+        """
+        add given event to store should throw NostrCommandException if can't for some reason
+        e.g. duplicate event, already newer contact/meta, or db insert err etc.
+
+        :param evt: nostr.Event
+        :param relay_url:
+        :return: None, as long as it returns it should have been success else it should throw
+        """
+
+    # @abstractmethod
+    # def do_delete(self, evt: Event):
+    #     """
+    #     :param evt: the delete event
+    #     :return: None, as long as it returns it should have been success else it should throw
+    #     """
+
+    @abstractmethod
+    def get_filter(self, filter):
+        """
+        :param filter: [{filter}...] nostr filter
+        :return: all evts in store that passed the filter
+        """
+
+
+class SQLStore(ClientStoreInterface, ABC):
+    """
+    sql version of ClientStoreInterface, we won't bother with mem only version for the client
+    as with the relay we'll do 2 versions just to add the correct create and destroy sql
+    hopefully we can keep the rest of our SQL standard enough that the underlying db doesn't matter
+    """
+
+    # tbl structure should be same so copy this method from relays version of sqlstore
+    @classmethod
+    def make_filter_sql(cls, filters, placeholder='?'):
+        return RelayStore.make_filter_sql(filter, placeholder)
+
+    def __init__(self, db: Database):
+        self._db = db
+        # copy this method from relay
+        self._do_filter = RelayStore.get_filter
 
     def get_oldest(self):
         """
-            get the oldest event in the db, this can then be used in filter queries as since
-            will return none if we don't have any events yet
+            gets the oldest event in the database, this can then be used when subscribing as the since var
+            so we don't have to fetch everything. Maybe just use as guide and lookback a little further as may not have
+            seen some events on some relays e.g if lost connection so could be some gaps.
+            Change this so that it can be oldest of events matching filter
+            A Client might want to give the user option to scan back anyway to check for any gaps
         """
         ret = 0
         created_by = self._db.select_sql('select created_at from events order by created_at desc limit 1')
@@ -30,127 +86,62 @@ class Store:
 
         return ret
 
-    def create(self, tables=['events','profiles','contacts','event_relay']):
-        """
-            creates the tbls we need, at the moment this will error on exist
-        """
+    def add_event(self, evt: Event, relay_url='?'):
 
-        if 'events' in tables:
-            evt_tmpl = DataSet(heads=[
-                'id','event_id', 'pubkey', 'created_at', 'kind', 'tags', 'content', 'sig'
-            ],data=[])
-
-            evt_tmpl.create_sqlite_table(self._db_file, 'events', {
-                'id': {
-                    'type': 'INTEGER PRIMARY KEY '
-                },
-                'event_id' : {
-                    # not a type but all the underlying does is concat str so will do
-                    'type' : 'UNIQUE'
-                },
-                'created_at' : {
-                    'type' : 'int'
-                },
-                'kind' : {
-                    'type' : 'int'
-                }
-            })
-
-            evt_relay_tmpl = DataSet(heads=['id', 'relay_url'])
-            evt_relay_tmpl.create_sqlite_table(self._db_file, 'event_relay', {
-                'id': {
-                    'type': 'int'
-                }
-            })
-
-
-        """
-            where we store all profiles, at the moment we'll store both our own and others here
-            the difference being that we'll only have a prov_k for our own profiles. 
-            For others will just have pub_k and attrs. 
-            
-            TODO: add create_at and version fields?     
-        """
-        if 'profiles' in tables:
-            # name and picture are extracted from tags if they exist
-            profile_tmpl = DataSet(heads=['priv_k','pub_k', 'profile_name', 'attrs', 'name','picture','updated_at'])
-            profile_tmpl.create_sqlite_table(self._db_file, 'profiles',{
-                # because we alway have to have
-                'pub_k' : {
-                    'type' : 'primary key not null'
-                },
-                'updated_at' : {
-                    'type' : 'int'
-                }
-            })
-
-        if 'contacts' in tables:
-            contact_tmpl = DataSet(heads=['pub_k_owner','pub_k_contact','relay','petname','updated_at'])
-            contact_tmpl.create_sqlite_table(self._db_file, 'contacts', {
-                # because we alway have to have
-                'pub_k_owner': {
-                    'type': 'not null'
-                },
-                'pub_k_contact': {
-                    'type': 'not null'
-                },
-                'updated_at': {
-                    'type': 'int'
-                }
-            })
-
-    def destroy(self, tables=['events','profiles','contacts', 'event_relay']):
-        """
-            removes tbls as created in create - currently no key constraints so any table can be droped
-        """
-        if 'events' in tables:
-            # eventually event_relay should have a constraint linking to events
-            batch = [
-                {
-                    'sql' : 'drop table event_relay'
-                },
-                {
-                    'sql' : 'drop table events'
-                }
-            ]
-            self._db.execute_batch(batch)
-
-        if 'profiles' in tables:
-            self._db.execute_sql('drop table profiles')
-        if 'contacts' in tables:
-            self._db.execute_sql('drop table contacts')
-
-    def add_event(self, evt, relay_url='?'):
         batch = [
             {
                 'sql': 'insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)',
                 'args': [
-                    evt['id'], evt['pubkey'], evt['created_at'],
-                    evt['kind'], str(evt['tags']), evt['content'], evt['sig']
+                    evt.id, evt.pub_key, evt.created_at_ticks,
+                    evt.kind, json.dumps(evt.tags), evt.content, evt.sig
                 ]
             },
             # TODO  rem last_insert_rowid() make like we did for relay event_tags
             {
-                'sql' : 'insert into event_relay SELECT last_insert_rowid(), ?',
-                'args' : [relay_url]
+                'sql': 'insert into event_relay values((select id from events where event_id=%s), %s)'.replace('%s',self._db.placeholder),
+                'args': [evt.id, relay_url]
             }
         ]
+
+        # tags = json.loads(evt['tags'].replace('\'', '\"'))
+        tags = evt.tags
+        if tags and not isinstance(tags[0], list):
+            tags = [tags]
+        for c_tag in tags:
+
+            if len(c_tag) >= 2:
+                tag_type = c_tag[0]
+                tag_value = c_tag[1]
+                batch.append({
+                    # 'sql': 'insert into event_tags SELECT last_insert_rowid(),?,?',
+                    'sql' : """
+                        insert into event_tags values (
+                        (select id from events where event_id=%s),
+                        %s,
+                        %s)
+                    """.replace('%s', self._db.placeholder),
+                    'args': [evt.id, tag_type, tag_value]
+                })
 
         try:
             self._db.execute_batch(batch)
         # probably because already inserted, take a look see if we already have for this relay
         except Exception as e:
-            data = DataSet.from_sqlite(self._db_file,
-                                       sql='SELECT  e.id, er.relay_url from events e'
-                                           ' inner join event_relay er on e.id = er.id'
-                                           ' where e.event_id = ?',
-                                       args=[evt['id']])
+            data = DataSet.from_db(self._db,
+                                   sql='SELECT  e.id, er.relay_url from events e'
+                                       ' inner join event_relay er on e.id = er.id'
+                                       ' where e.event_id = ?',
+                                   args=[evt.id])
             have_relay = data.value_in('relay_url', relay_url)
             # we recieved event we have seen before but from another relay, just insert into event_relay tbl
             if data and not have_relay:
                 self._db.execute_sql('insert into event_relay values (?, ?)',
                                      args=[data[0]['id'], relay_url])
 
+    def get_filter(self, filter):
+        return self._do_filter(filter)
+
+    # TODO - to go
     def load_events(self, kind, since=None):
         """
             :param kind: int type of event
@@ -174,6 +165,7 @@ class Store:
 
         return DataSet.from_sqlite(self._db_file, event_sql, args)
 
+    # TODO: also to go, move to contacts
     def update_contact_list(self, owner_pub_k, contacts):
         """
         when we get a contact list event that replaces any contact list that existed before
@@ -206,4 +198,50 @@ class Store:
                     ])
                 # finally insert
                 self._db.executemany_sql(insert_sql,insert_data)
+
+
+class SQLLiteStore(SQLStore):
+
+    def __init__(self, db_file):
+        self._db_file = db_file
+        super().__init__(SQLiteDatabase(db_file))
+        logging.debug('SQLiteStore::__init__ db_file=%s' % db_file)
+
+    def create(self):
+        self._db.execute_batch([
+            {
+                'sql': """
+                                    create table events( 
+                                        id INTEGER PRIMARY KEY,  
+                                        event_id UNIQUE,  
+                                        pubkey text,  
+                                        created_at int,  
+                                        kind int,  
+                                        tags text,  
+                                        content text,  
+                                        sig text)
+                                """
+            },
+            {
+                'sql': """
+                                    create table event_tags(
+                                    id int,  
+                                    type text,  
+                                    value text)
+                                """
+            },
+            {
+                'sql': """
+                                    create table event_relay(
+                                        id int,  
+                                        relay_url text)
+                                """
+            }
+        ])
+
+    def exists(self):
+        return Path(self._db.file).is_file()
+
+    def destroy(self):
+        os.remove(self._db_file)
 

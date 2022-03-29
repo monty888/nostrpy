@@ -8,7 +8,7 @@ from db.db import SQLiteDatabase as Database
 from nostr.client.client import Client
 from nostr.event import Event
 from nostr.client.event_handlers import PrintEventHandler, PersistEventHandler
-from nostr.client.persist import Store
+from nostr.client.persist import SQLLiteStore
 from nostr.util import util_funcs
 from nostr.ident import ProfileList, Profile
 from nostr.encrypt import SharedEncrypt
@@ -102,10 +102,10 @@ def command_line(relay_url, db_file):
             self._c_profile = None
             self._db_file = db_file
             self._db = Database(self._db_file)
-            self._store = Store(db_file)
+            self._store = SQLLiteStore(db_file)
 
             self._print_view = PrintEventHandler(False)
-            self._event_handler = [PersistEventHandler(self._db_file),
+            self._event_handler = [PersistEventHandler(self._store),
                                    self._print_view]
             self._set_relay()
             super().__init__()
@@ -281,7 +281,7 @@ if __name__ == "__main__":
     # relay_url = 'wss://rsslay.fiatjaf.com'
     # relay_url = 'wss://nostr.bitcoiner.social'
     # relay_url = 'ws://localhost:7000'
-    relay_url = 'ws://localhost:8081/'
+    relay_url = 'ws://localhost:8082/'
     backup_dir = '/home/shaun/.nostrpy/'
 
     # test_client_publish(relay_url)

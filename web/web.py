@@ -10,7 +10,7 @@ from geventwebsocket.handler import WebSocketHandler
 from nostr.client.client import Client
 from nostr.event import Event
 from nostr.client.event_handlers import PersistEventHandler
-from nostr.client.persist import Store
+from nostr.client.persist import SQLLiteStore
 from db.db import SQLiteDatabase
 
 
@@ -94,8 +94,8 @@ class NostrWeb(StaticServer):
 
     def __init__(self, file_root, db_file):
         self._db = SQLiteDatabase(db_file)
-        self._store = Store(db_file)
-        self._persist_event = PersistEventHandler(db_file)
+        self._store = SQLLiteStore(db_file)
+        self._persist_event = PersistEventHandler(self._store)
 
         # this should be passed in and probably will be a ClientPool
 

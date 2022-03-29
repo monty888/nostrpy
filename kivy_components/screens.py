@@ -52,6 +52,15 @@ Builder.load_string(
     ImageLeftWidget:
         source: root.source
 
+<MessageItem>
+    canvas.before:
+        Color:
+            rgba: 0, 1, 0, 0.5
+        RoundedRectangle:
+            size: self.size
+            pos: self.pos
+            radius: [55]  #---- This rounds the corners --- #
+    
 <MessageScreen>:
     BoxLayout:
         orientation: 'vertical'
@@ -68,11 +77,20 @@ Builder.load_string(
             MDLabel:
                 id: msg_name_label
                 text: '?'
-        ScrollView:
-            size_hint : 1,0.8
-            id: scroll
-            MDList:
-                id: msg_con
+
+        RecycleView:
+            id: msg_rv
+            key_viewclass: 'viewclass'
+            key_size: 'height'
+
+            RecycleBoxLayout:
+                padding: dp(10)
+                default_size: None, dp(56)
+                default_size_hint: 1, None
+                size_hint_y: None
+                height: self.minimum_height
+                orientation: 'vertical'
+
         BoxLayout:
             size_hint : 1,0.2
             MDTextField:
@@ -88,6 +106,12 @@ Builder.load_string(
 )
 
 class CustomAvatarTwoLineText(TwoLineAvatarIconListItem):
+    def __init__(self, **kargs):
+        super().__init__(**kargs)
+
+from kivymd.uix.label import MDLabel
+
+class MessageItem(MDLabel):
     def __init__(self, **kargs):
         super().__init__(**kargs)
 
@@ -162,9 +186,26 @@ class MessageScreen(Screen):
             pic = p.get_attr('picture')
         self._img.source = pic
 
+    def add_message(self, message_text):
+        """
+            adds message text to message con
+        """
+
+        to_add = {
+            'viewclass' : 'MessageItem',
+            'text' : message_text
+        }
+
+        self.ids.msg_rv.data.append(to_add)
+
     def back(self):
         self._on_back()
 
     def send_pressed(self):
-        self._on_message(text=self.ids.message_text.text,
+        msg_text = self.ids.message_text.text
+        self.ids.message_text.text = ''
+
+        self._on_message(text=msg_text,
                          to_profile=self._to_profile)
+
+        self.add_message(msg_text)

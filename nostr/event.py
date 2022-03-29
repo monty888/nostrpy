@@ -1,5 +1,6 @@
 from datetime import datetime
 import json
+from json import JSONDecodeError
 import secp256k1
 import hashlib
 from nostr.util import util_funcs
@@ -48,6 +49,14 @@ class Event:
             self._created_at = datetime.now()
         self._content = content
         self._tags = tags
+
+        if isinstance(self._tags, str):
+            try:
+                self._tags = json.loads(self._tags)
+            except JSONDecodeError as je:
+                self._tags = []
+
+
         self._pub_key = pub_key
 
         if tags is None:
@@ -119,7 +128,7 @@ class Event:
             'pubkey': self._pub_key,
             'created_at': util_funcs.date_as_ticks(self._created_at),
             'kind': self._kind,
-            'tags': self._tags,
+            'tags': json.dumps(self._tags),
             'content': self._content,
             'sig': self._sig
         }

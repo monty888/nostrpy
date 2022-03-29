@@ -13,13 +13,16 @@ import json
 from json import JSONDecodeError
 import secp256k1
 import logging
-from nostr.client.persist import Store
+
 from data.data import DataSet
 from db.db import Database, SQLiteDatabase
 from nostr.client.client import Event
 from datetime import datetime
 from nostr.util import util_funcs
 
+
+class UnknownProfile(Exception):
+    pass
 
 class Profile:
 
@@ -96,26 +99,29 @@ class Profile:
                 updated.add(p.public_key)
 
     @classmethod
-    def load_from_db(cls, db: Database, profile_name):
+    def load_from_db(cls, db: Database, key):
         """
-            used to load out local profiles which we name
+            load a single profile from db using key which should be either profilename, private key, or publickey
+            where it's profilename or privatekey then we're able to sign, its a local/users profile
+            if the match is found on pubkey then it's a remote key and can't be used to post messages
+            match must be exact
         """
         sql = """
             select * from profiles 
                 -- see why we have profiles that are emptystr? anyway we want one with a priv_k if its us to sign key 
-                where profile_name=? and priv_k NOTNULL
+                where profile_name=:? or priv_k=:? or pub_k=:? 
+                --and priv_k NOTNULL
                 order by updated_at desc
         """
 
-        profiles = db.select_sql(sql, [profile_name])
+        profiles = db.select_sql(sql, [key, key, key])
         if not profiles:
-            raise Exception('Profile::load_from_db profile not found %s' % profile_name)
+            raise UnknownProfile('Profile::load_from_db using key=%s, not found' % key)
         p = profiles[0]
-
         return Profile(
             priv_k=p['priv_k'],
             pub_k=p['pub_k'],
-            profile_name=profile_name,
+            profile_name=p['profile_name'],
             attrs=p['attrs'],
             update_at=p['updated_at']
         )
@@ -145,7 +151,8 @@ class Profile:
 
         for p in profiles:
             try:
-                ProfileList.add_profile_db(db, Profile(
+                profile_store = SQLProfileStore(db)
+                profile_store.add_profile(Profile(
                     priv_k=p['priv_k'],
                     pub_k=p['pub_k'],
                     profile_name=p['profile_name'],
@@ -214,6 +221,12 @@ class Profile:
 
     @property
     def public_key(self):
+        # profile must have be created only with priv_k
+        # work out corresponding pub_k
+        if not self._pub_k and self._priv_k:
+            pk = secp256k1.PrivateKey(bytes(bytearray.fromhex(self._priv_k)), raw=True)
+            self._pub_k = pk.pubkey.serialize(compressed=True).hex()[2:]
+
         return self._pub_k
 
     @property
@@ -233,15 +246,26 @@ class Profile:
         return self._update_at
 
     def __str__(self):
-        name = self._profile_name
-        if not name:
-            name = '%s/%s' % ('remote', self.name)
 
         can_sign = False
         if self.private_key:
             can_sign = True
 
-        return '%s %s %s can sign=%s' % (name, self.public_key, self.attrs, can_sign)
+        return '%s %s %s can sign=%s' % (self.display_name(False), self.public_key, self.attrs, can_sign)
+
+    def display_name(self, with_pub=False):
+        # any thing with profile is assumed to be local
+        ret = self.profile_name
+        if not ret:
+            loc = 'remote'
+            if self.private_key:
+                loc = 'local'
+            ret = '%s/%s' % (loc, self.name)
+
+        if with_pub:
+            ret = '%s<%s>' % (ret, util_funcs.str_tails(self.public_key, 4))
+
+        return ret
 
     def as_dict(self):
         ret = {
@@ -264,6 +288,60 @@ class Profile:
         e.sign(self.private_key)
         return e
 
+
+class SQLProfileStore:
+
+    def __init__(self, db: Database):
+        self._db = db
+
+    def add_profile(self, p: Profile):
+        sql = """
+            insert into 
+                profiles (priv_k, pub_k, profile_name, attrs, name, picture, updated_at) 
+                        values(?,?,?,?,?,?,?)
+            """
+        args = [
+            p.private_key, p.public_key,
+            p.profile_name, json.dumps(p.attrs),
+            p.get_attr('name'), p.get_attr('picture'),
+            util_funcs.date_as_ticks(p.update_at)
+        ]
+
+        self._db.execute_sql(sql, args)
+
+    def update_profile(self, p: Profile):
+        sql = """
+                update profiles 
+                    set profile_name=?, attrs=?, name=?, picture=?, updated_at=?
+                    where pub_k=?
+            """
+        args = [
+            p.profile_name, json.dumps(p.attrs),
+            p.get_attr('name'), p.get_attr('picture'),
+            util_funcs.date_as_ticks(p.update_at),
+            p.public_key
+        ]
+        logging.debug('SQLProfileStore::update profile sql: %s args: %s' % (sql, args))
+        self._db.execute_sql(sql, args)
+
+
+class SQLiteProfileStore(SQLProfileStore):
+
+    def __init__(self, db_file):
+        self._db_file = db_file
+        super().__init__(SQLiteDatabase(self._db_file))
+
+    def create(self):
+        profile_tmpl = DataSet(heads=['priv_k', 'pub_k', 'profile_name', 'attrs', 'name', 'picture', 'updated_at'])
+        profile_tmpl.create_sqlite_table(self._db_file, 'profiles', {
+            # because we alway have to have
+            'pub_k': {
+                'type': 'primary key not null'
+            },
+            'updated_at': {
+                'type': 'int'
+            }
+        })
 
 class ProfileList:
     """
@@ -299,35 +377,11 @@ class ProfileList:
 
     @classmethod
     def add_profile_db(cls, db: Database, p: Profile):
-        sql = """
-            insert into 
-                profiles (priv_k, pub_k, profile_name, attrs, name, picture, updated_at) 
-                        values(?,?,?,?,?,?,?)
-            """
-        args = [
-            p.private_key, p.public_key,
-            p.profile_name, json.dumps(p.attrs),
-            p.get_attr('name'), p.get_attr('picture'),
-            util_funcs.date_as_ticks(p.update_at)
-        ]
-
-        db.execute_sql(sql, args)
+        SQLProfileStore(db).add_profile(p)
 
     @classmethod
     def update_profile_db(cls, db: Database, p: Profile):
-        sql = """
-                update profiles 
-                    set profile_name=?, attrs=?, name=?, picture=?, updated_at=?
-                    where pub_k=?
-            """
-        args = [
-            p.profile_name, json.dumps(p.attrs),
-            p.get_attr('name'), p.get_attr('picture'),
-            util_funcs.date_as_ticks(p.update_at),
-            p.public_key
-        ]
-        logging.debug('Store::update profile sql: %s args: %s' % (sql, args))
-        db.execute_sql(sql, args)
+        SQLProfileStore(db).update_profile(p)
 
     def __init__(self, profiles):
         self._profiles = profiles
@@ -488,14 +542,14 @@ class ProfileEventHandler:
         self._profiles = ProfileList.create_profiles_from_db(self._db)
         self._on_update = on_update
 
-    def do_event(self, sub_id, evt, relay):
+    def do_event(self, sub_id, evt: Event, relay):
         c_profile: Profile
         evt_profile: Profile
 
-        if evt['kind'] == Event.KIND_META:
-            pubkey = evt['pubkey']
+        if evt.kind == Event.KIND_META:
+            pubkey = evt.pub_key
             c_profile = self._profiles.lookup(pubkey)
-            evt_profile = Profile(pub_k=pubkey, attrs=evt['content'], update_at=evt['created_at'])
+            evt_profile = Profile(pub_k=pubkey, attrs=evt.content, update_at=evt.created_at_ticks)
 
             # we only need to do something if the profile is newer than we already have
             if c_profile is None or c_profile.update_at < evt_profile.update_at:
@@ -521,5 +575,5 @@ if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
     nostr_db_file = '/home/shaun/.nostrpy/nostr-client.db'
     backup_dir = '/home/shaun/.nostrpy/'
-    s = Store(nostr_db_file)
+    # s = Store(nostr_db_file)
     Profile.import_from_file(backup_dir+'local_profiles.csv', SQLiteDatabase(nostr_db_file))

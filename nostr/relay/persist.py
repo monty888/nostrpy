@@ -1,6 +1,7 @@
 import logging
 import os
 from abc import ABC, abstractmethod
+import json
 from enum import Enum
 from db.db import Database, SQLiteDatabase, PostgresDatabase
 from nostr.event import Event
@@ -245,7 +246,7 @@ class SQLStore(RelayStoreInterface):
                    'values(%s,%s,%s,%s,%s,%s,%s)'.replace('%s', self._db.placeholder),
             'args': [
                 evt.id, evt.pub_key, evt.created_at_ticks,
-                evt.kind, str(evt.tags), evt.content, evt.sig
+                evt.kind, json.dumps(evt.tags), evt.content, evt.sig
             ]
         })
 
@@ -263,7 +264,7 @@ class SQLStore(RelayStoreInterface):
                         %s,
                         %s)
                     """.replace('%s', self._db.placeholder),
-                    'args': [evt.id,tag_type, tag_value]
+                    'args': [evt.id, tag_type, tag_value]
                 })
 
         self._db.execute_batch(batch)
@@ -340,35 +341,33 @@ class SQLiteStore(SQLStore):
         logging.debug('SQLiteStore::__init__ db_file=%s, delete mode=%s' % (db_file,
                                                                             self._delete_mode))
 
-    def create(self, tables=['events']):
-
-        if 'events' in tables:
-            events_tbl_sql = """
-                create table events( 
-                    id INTEGER PRIMARY KEY,  
-                    event_id UNIQUE,  
-                    pubkey text,  
-                    created_at int,  
-                    kind int,  
-                    tags text,  
-                    content text,  
-                    sig text,  
-                    deleted int)
-            """
-            events_tag_tbl_sql = """
-                create table event_tags(
-                    id int,  
-                    type text,  
-                    value text)
-            """
-            self._db.execute_batch([
-                {
-                    'sql': events_tbl_sql
-                },
-                {
-                    'sql': events_tag_tbl_sql
-                }
-            ])
+    def create(self):
+        events_tbl_sql = """
+            create table events( 
+                id INTEGER PRIMARY KEY,  
+                event_id UNIQUE,  
+                pubkey text,  
+                created_at int,  
+                kind int,  
+                tags text,  
+                content text,  
+                sig text,  
+                deleted int)
+        """
+        events_tag_tbl_sql = """
+            create table event_tags(
+                id int,  
+                type text,  
+                value text)
+        """
+        self._db.execute_batch([
+            {
+                'sql': events_tbl_sql
+            },
+            {
+                'sql': events_tag_tbl_sql
+            }
+        ])
 
     def exists(self):
         return Path(self._db.file).is_file()
