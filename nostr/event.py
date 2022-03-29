@@ -181,9 +181,9 @@ class Event:
 
         for c_filter in filter:
             ret = True
-            if 'since' in filter and self.created_at_ticks <= c_filter['since']:
+            if 'since' in c_filter and self.created_at_ticks <= c_filter['since']:
                 ret = False
-            if 'until' in filter and self.created_at_ticks >= c_filter['until']:
+            if 'until' in c_filter and self.created_at_ticks >= c_filter['until']:
                 ret = False
             if 'kinds' in c_filter:
                 fkinds = c_filter['kinds']

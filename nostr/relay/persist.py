@@ -93,7 +93,6 @@ class MemoryStore(RelayStoreInterface):
 
     def get_filter(self, filter):
         ret = []
-
         c_evt: Event
         for evt_id in self._evts:
             r = self._evts[evt_id]
@@ -113,8 +112,6 @@ class SQLStore(RelayStoreInterface):
     def make_filter_sql(cls, filters, placeholder='?'):
         """
         creates the sql to select events from a db given nostr filter
-        NOTE tags are currently not dealt with so if needed this will have to be done in
-        2nd pass on whats returned use the TODO: event filter on each
         :param filter:
         :return:
         """
@@ -281,7 +278,7 @@ class SQLStore(RelayStoreInterface):
         filter_query = SQLStore.make_filter_sql(filter,
                                                 placeholder=self._db.placeholder)
 
-        print(filter_query['sql'], filter_query['args'])
+        # print(filter_query['sql'], filter_query['args'])
 
         data = self._db.select_sql(sql=filter_query['sql'],
                                    args=filter_query['args'])

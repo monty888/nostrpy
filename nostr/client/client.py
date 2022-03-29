@@ -191,11 +191,10 @@ class Client:
         print(error)
 
     def _on_close(self, ws, close_status_code, close_msg):
-        # probably won't see this
-        print("### closed %s ###", self._url)
+        logging.debug('Client::_on_close %s' % self._url)
 
     def _on_open(self, ws):
-        print('Opened connection %s' % self._url)
+        logging.debug('Client::_on_open %s' % self._url)
         if self._on_connect:
             self._on_connect(self)
 

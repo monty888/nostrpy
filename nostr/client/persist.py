@@ -59,15 +59,109 @@ class SQLStore(ClientStoreInterface, ABC):
     hopefully we can keep the rest of our SQL standard enough that the underlying db doesn't matter
     """
 
-    # tbl structure should be same so copy this method from relays version of sqlstore
     @classmethod
     def make_filter_sql(cls, filters, placeholder='?'):
-        return RelayStore.make_filter_sql(filter, placeholder)
+        """
+        creates the sql to select events from a db given nostr filter
+        same as the relay persist version of the same except the intial selected is changed
+        because we don't have a deleted col
+
+        :param filter:
+        :return:
+        """
+        def for_single_filter(filter):
+            def do_tags(tag_type):
+                nonlocal args
+                t_filter = filter['#'+tag_type]
+                if isinstance(t_filter, str):
+                    t_filter = [t_filter]
+                e_sql = """
+                %s id in 
+                    (
+                        select id from event_tags where type = '%s' and value in(%s)
+                    )
+                                """ % (join,
+                                       tag_type,
+                                       ','.join([placeholder] * len(t_filter)))
+                sql_arr.append(e_sql)
+                args = args + t_filter
+
+            # the only difference from relay version is this line and change to join starting as where below because
+            # of it and adding of join changes to and...
+            # sql_arr = ['select * from events where deleted isnull']
+            sql_arr = ['select * from events ']
+
+            # changed back to where because of change to above
+            join = 'where'
+            args = []
+            if 'since' in filter:
+                sql_arr.append(' %s created_at>=%s' % (join, placeholder))
+                args.append(filter['since'])
+                join = 'and'
+            if 'until' in filter:
+                sql_arr.append(' %s created_at<=%s' % (join, placeholder))
+                args.append(filter['until'])
+                join = 'and'
+            if 'kinds' in filter:
+                kind_arr = filter['kinds']
+                if not hasattr(kind_arr,'__iter__')or isinstance(kind_arr,str):
+                    kind_arr = [kind_arr]
+                arg_str = ','.join([placeholder]*len(kind_arr))
+                sql_arr.append(' %s kind in(%s)' % (join, arg_str))
+                args = args + kind_arr
+                join = 'and'
+            if 'authors' in filter:
+                auth_arr = filter['authors']
+                if not hasattr(auth_arr,'__iter__') or isinstance(auth_arr,str):
+                    auth_arr = [auth_arr]
+
+                arg_str = 'or '.join(['pubkey like ' + placeholder] * len(auth_arr))
+                sql_arr.append(' %s (%s)' % (join, arg_str))
+                for c_arg in auth_arr:
+                    args.append(c_arg + '%')
+                join = 'and'
+            if 'ids' in filter:
+                ids_arr = filter['ids']
+                if not hasattr(ids_arr,'__iter__') or isinstance(ids_arr,str):
+                    ids_arr = [ids_arr]
+
+                arg_str = ' or '.join(['event_id like ' + placeholder]*len(ids_arr))
+                sql_arr.append(' %s (%s)' % (join, arg_str))
+                for c_arg in ids_arr:
+                    args.append(c_arg+'%')
+                join = 'and'
+            # add other tags e.g. shared that appears on encrypted tags?
+            if '#e' in filter:
+                do_tags('e')
+                join = 'and'
+            if '#p' in filter:
+                do_tags('p')
+
+            return {
+                'sql': ''.join(sql_arr),
+                'args': args
+            }
+
+        # only been passed a single, put into list
+        if isinstance(filters, dict):
+            filters = [filters]
+
+        sql = ''
+        args = []
+        for c_filter in filters:
+            q = for_single_filter(c_filter)
+            if sql:
+                sql += ' union '
+            sql = sql + q['sql']
+            args = args + q['args']
+
+        return {
+            'sql': sql,
+            'args': args
+        }
 
     def __init__(self, db: Database):
         self._db = db
-        # copy this method from relay
-        self._do_filter = RelayStore.get_filter
 
     def get_oldest(self):
         """
@@ -139,7 +233,33 @@ class SQLStore(ClientStoreInterface, ABC):
                                      args=[data[0]['id'], relay_url])
 
     def get_filter(self, filter):
-        return self._do_filter(filter)
+        """
+        from database returns events that match filter/s
+        doesn't do #e and #p filters yet (maybe never)
+        also author and ids are currently exact only, doesn't support prefix
+        :param filter: {} or [{},...] or filters
+        :return:
+        """
+        filter_query = SQLStore.make_filter_sql(filter,
+                                                placeholder=self._db.placeholder)
+
+        # print(filter_query['sql'], filter_query['args'])
+
+        data = self._db.select_sql(sql=filter_query['sql'],
+                                   args=filter_query['args'])
+        ret = []
+        for c_r in data:
+            # we could actually do extra filter here
+            ret.append(Event(
+                id=c_r['event_id'],
+                pub_key=c_r['pubkey'],
+                kind=c_r['kind'],
+                content=c_r['content'],
+                tags=c_r['tags'],
+                created_at=util_funcs.ticks_as_date(c_r['created_at']),
+                sig=c_r['sig']
+            ))
+        return ret
 
     # TODO - to go
     def load_events(self, kind, since=None):

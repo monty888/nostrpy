@@ -2,6 +2,7 @@ import rel
 from bottle import request, Bottle, abort
 import logging
 from gevent.pywsgi import WSGIServer
+from gevent import Greenlet
 from geventwebsocket import WebSocketError
 from geventwebsocket.handler import WebSocketHandler
 from geventwebsocket.websocket import WebSocket
@@ -150,15 +151,14 @@ class Relay:
                                                                               # give str mapping of kind where we can in future
                                                                               evt.kind))
 
-
-
-
             if evt.kind == Event.KIND_DELETE:
                 logging.debug('Relay::_do_event doing delete events - %s ' % evt.e_tags)
                 self._store.do_delete(evt)
 
-            # now post to any interested subscribers
+
             self._check_subs(evt)
+
+
         except (IntegrityError, pg_errors.UniqueViolation) as ie:
             msg = str(ie).lower()
             if 'event_id' in msg and 'unique' in msg:
@@ -197,13 +197,19 @@ class Relay:
         self._clean_ws()
 
         # we should probably still catch websocket closed errs here, they can be clean next hit
+
+        def get_send(ws, sub_id, evt, lock):
+            def do_send():
+                self._send_event(ws, sub_id, evt,lock)
+            return do_send
+
         for ws in self._ws:
             for c_sub_id in self._ws[ws]['subs']:
                 the_sub = self._ws[ws]['subs'][c_sub_id]
 
                 # event passes sub filter
                 if evt.test(the_sub['filter']):
-                    self._send_event(ws, c_sub_id, evt, self._ws[ws]['send_lock'])
+                    Greenlet(get_send(ws, c_sub_id, evt, self._ws[ws]['send_lock'])).start()
 
     def _do_sub(self, req_json, ws: WebSocket):
         logging.info('subscription requested')
@@ -232,8 +238,18 @@ class Relay:
 
         # post back the pre existing
         evts = self._store.get_filter(filter)
-        for c_evt in evts:
-            self._send_event(ws, sub_id, c_evt, self._ws[ws]['send_lock'])
+
+        def get_sub_func(ws, sub_id, lock, evts):
+            def my_func():
+                for c_evt in evts:
+                    self._send_event(ws, sub_id, c_evt, lock)
+
+            return my_func
+
+        Greenlet(get_sub_func(ws, sub_id, self._ws[ws]['send_lock'], evts)).start()
+
+        # for c_evt in evts:
+        #     self._send_event(ws, sub_id, c_evt, self._ws[ws]['send_lock'])
 
     def _do_unsub(self, req_json, ws: WebSocket):
         logging.info('un-subscription requested')
@@ -258,7 +274,9 @@ class Relay:
                 sub_id,
                 evt.event_data()
             ]
+
             with lock:
                 ws.send(json.dumps(to_send))
+
         except Exception as e:
             logging.info('Relay::_send_event error: %s' % e)

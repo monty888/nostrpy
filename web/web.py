@@ -14,7 +14,7 @@ from nostr.client.persist import SQLLiteStore
 from db.db import SQLiteDatabase
 
 
-class StaticServer():
+class StaticServer:
     """
         simple server that just deals with the static data html,js, css...
     """
@@ -100,9 +100,8 @@ class NostrWeb(StaticServer):
         # this should be passed in and probably will be a ClientPool
 
         def my_connect(the_client):
-            nonlocal self
             the_client.subscribe('web', self, {
-                'since': self._store.get_oldest() - 100000
+                # 'since': self._store.get_oldest()
             })
         self._nostr_client = Client('ws://localhost:8082/', on_connect=my_connect).start()
 
@@ -202,14 +201,14 @@ class NostrWeb(StaticServer):
         return ret
 
 
-    def do_event(self, sub_id, evt, relay):
+    def do_event(self, sub_id, evt:Event, relay):
         # store event to db, no err handling...
         self._persist_event.do_event(sub_id, evt, relay)
 
         for c_sock in self._web_sockets:
             ws = self._web_sockets[c_sock]
             try:
-                ws.send(json.dumps(evt))
+                ws.send(json.dumps(evt.event_data()))
             except Exception as e:
                 print(e, ws)
                 print('kill this guy?')
@@ -232,7 +231,7 @@ class NostrWeb(StaticServer):
         self._nostr_client.end()
 
 def nostr_web():
-    nostr_db_file = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr.db'
+    nostr_db_file = '/home/shaun/.nostrpy/nostr-client.db'
     my_server = NostrWeb(file_root='/home/shaun/PycharmProjects/nostrpy/web/static/',
                          db_file=nostr_db_file)
 
