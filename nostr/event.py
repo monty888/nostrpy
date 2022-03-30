@@ -128,7 +128,7 @@ class Event:
             'pubkey': self._pub_key,
             'created_at': util_funcs.date_as_ticks(self._created_at),
             'kind': self._kind,
-            'tags': json.dumps(self._tags),
+            'tags': self._tags,
             'content': self._content,
             'sig': self._sig
         }

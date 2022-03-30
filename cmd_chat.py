@@ -12,7 +12,7 @@ monkey.patch_all()
 import logging
 import sys
 import time
-
+import os
 from prompt_toolkit import prompt
 from prompt_toolkit import Application
 from prompt_toolkit.layout.containers import HSplit, Window, VSplit
@@ -179,6 +179,7 @@ class BasicScreenApp:
         }
 
         self._enter_prompt = '%s: ' % self._from_p.display_name()
+        self._msgs_height = 0
 
         self._name_prompt_width = len(from_p.display_name())
         if len(to_p.display_name()) > self._name_prompt_width:
@@ -202,8 +203,10 @@ class BasicScreenApp:
         @kb.add('c-down')
         def do_up(e):
             pos = self._scroll.vertical_scroll + 1
-            # if pos > ?:
-            #     pos = ?
+
+            if pos > self._msgs_height - os.get_terminal_size().lines+3:
+                pos = self._msgs_height - os.get_terminal_size().lines+3
+
             self._scroll.vertical_scroll = pos
 
         def my_change(buffer):
@@ -218,6 +221,13 @@ class BasicScreenApp:
         self._scroll = ScrollablePane(content=self._msg_area,
                                       keep_cursor_visible=True)
 
+        self._enter_bar = VSplit([
+            Window(height=1,
+                   width=len(self._enter_prompt),
+                   content=FormattedTextControl(self._enter_prompt)),
+            Window(height=3, content=BufferControl(buffer=self._prompt))
+        ])
+
         # struct
         self._root_container = HSplit([
             # content
@@ -225,12 +235,7 @@ class BasicScreenApp:
             self._scroll,
             # msg entry
 
-            VSplit([
-                Window(height=1,
-                       width=len(self._enter_prompt),
-                       content=FormattedTextControl(self._enter_prompt)),
-                Window(height=3, content=BufferControl(buffer=self._prompt))
-            ])
+            self._enter_bar
 
 
         ])
@@ -279,11 +284,9 @@ class BasicScreenApp:
             total_height += win_height
             self._msg_area.children.append(n_win)
 
-
+        self._msgs_height = total_height
         self._app.invalidate()
-
-        self._scroll.vertical_scroll = total_height-10
-
+        self._scroll.vertical_scroll = self._msgs_height - os.get_terminal_size().lines+3
 
 def plain_text_chat(from_user, to_user, db: Database=None):
     # with what we've been given attempt to get profiles for the from and to users
