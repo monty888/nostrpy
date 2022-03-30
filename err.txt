@@ -23,139 +23,229 @@ DEBUG:root:Database::select_sql - SQL: select * from events  where kind in(?) an
  ARGS: [1, '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486%', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3%', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3']
 DEBUG:asyncio:Using selector: GeventSelector
 DEBUG:root:Client::_on_open ws://localhost:8082
-DEBUG:root:Client::subscribe - ["REQ", "e094", {"kinds": 1, "authors": ["40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"], "#p": ["40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]}]
+DEBUG:root:Client::subscribe - ["REQ", "d228", {"kinds": 1, "authors": ["40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"], "#p": ["40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]}]
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['edc5afe1268dd51bedfe477b918bc120e3db069d04f1a62dd6138f30325be7e1', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648568832, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 'hello', 'e05180f8aa0e2f5e485418ba3a563ea6adb9fa463ff94c4977ef5d0928fbc173df0d9421ae6dbceb2dde2275f8fcb0d088cea1c7bee6ccb3b1c73dfe2c6be3a7']
+ ARGS: ['42d3f881c7261eeedfbfda206e9c251ce933999d922d8cbd0b39fd49b8eafc9c', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648640913, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 'test', '8bdc6bd95a3bd212c838972040b9e02de1d383110d6b4ca79dad0afaa4a57735891c9b334792bd6873e2a2cc26ecc76f9fced9a8b6a6c8deb445a8b6ffa8155d']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['edc5afe1268dd51bedfe477b918bc120e3db069d04f1a62dd6138f30325be7e1']
+ ARGS: ['42d3f881c7261eeedfbfda206e9c251ce933999d922d8cbd0b39fd49b8eafc9c']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['cf98bd93ef3c732df614c6ab9e58f4572fb1fa74a7839e9c37d04582f1c554a7', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648568839, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 'another mesasge', '0a586ccd25de2313ccf0ae91ea6f5eb6b7c768e6e119e89dd5fe5afe0bf660ffaa7666bd2fe9ce26ef7c4b1081780faced59871be8d6385d0229a6db2ceefaa8']
+ ARGS: ['f8920bc9965cb6a004041c6281c396dcf8caa3f733dcb5535e46e85bf52d81e2', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648640934, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 'another message', '128f914cfc8488c0577351e1b14e4e29e7f306a5bdb81038e4d7bcb1fa953ea24a4286498c9d76de0dc3c8d4500cbd6a97c035ed279e8cc2c52ab62995c0f40f']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['cf98bd93ef3c732df614c6ab9e58f4572fb1fa74a7839e9c37d04582f1c554a7']
+ ARGS: ['f8920bc9965cb6a004041c6281c396dcf8caa3f733dcb5535e46e85bf52d81e2']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['d9452f2dcbbfb3944f5891b25ed89eb25fbde0e93e55bb6cc58bd583abb290db', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648569649, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 'my_dude', 'c777cb39a0ee659765c0304cc9c84e47077da902d0644424f84bb839caa1a8c93b311a04d63f703774ffd226c1ab6d38a43172e995c71958f1aaaf2ee261ecbb']
+ ARGS: ['62d6a3cc79e89e6643d9099e1eaa10dd0501de3a0c4b068a0eb21181c5b75e45', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648640937, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 'and another', '57aadfe814622545168541765bc851506cc86bb19d98d3b7c749659e03465e9d0fd50bc4453f899c181cb8d4987ddbefbdd6389a21d52663f9fe59e4bb757fac']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['d9452f2dcbbfb3944f5891b25ed89eb25fbde0e93e55bb6cc58bd583abb290db']
+ ARGS: ['62d6a3cc79e89e6643d9099e1eaa10dd0501de3a0c4b068a0eb21181c5b75e45']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['1beb9c116205eeaebe8be50032f8b23e937aa50e33efd5ab3754c8fbc9a6d1ae', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648569660, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 'i am sending you a lot of messages', '55955a63d8212f04c53fa09bf5037197e1b052aa8607b0948ab440f0d1c87b5d178ea082f31319c86cb96f432794695103e4b34a914610d9f417443279d162b9']
+ ARGS: ['01b7355650122de2c80e9c6fb1aef460c4d821767c197759259ad2d1f2662d62', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648641018, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 'dude i can \nwrite a message\nover multiple lines\nand there is tothing you can do to stop me!!!', '44dc2f86a4c5f78826b2cf8f8ac24d46807a9340f45a559c71b00010aa21537ffe44a8cdbeb598ae43f9eacf72640ed49ffcb42608f694ae08bced3e5ec305cf']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['1beb9c116205eeaebe8be50032f8b23e937aa50e33efd5ab3754c8fbc9a6d1ae']
+ ARGS: ['01b7355650122de2c80e9c6fb1aef460c4d821767c197759259ad2d1f2662d62']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['2ff1de8e27d6b11604f588b04eddc72a6f1dd8b2092cfaece2d55c590da7ba2f', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648569671, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 'why you no reply', 'd34f216962a8fb7d058517f32573bd4ffb224c871102282b368c612d9c4611b7786d11612f423ca01a3e6358e13541468800b2c7df815e925610bb4f8fcb511a']
+ ARGS: ['0d46989838c8cbc5834ad4b74e9df63ffb1c891153824d867c697bc45aa05039', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648641057, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'I will fuck you up!!!!', 'a12c5d019cc80c6212e7eb3d330d7a3bc78a9be9cb79f982d3a4f0ad3e718225f586f5eeaacca1670fbb81928c55da57e221498a5e37d60edac54d34f2fc319b']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['2ff1de8e27d6b11604f588b04eddc72a6f1dd8b2092cfaece2d55c590da7ba2f']
+ ARGS: ['0d46989838c8cbc5834ad4b74e9df63ffb1c891153824d867c697bc45aa05039']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['43340a9bc2e9bafe9e391a14df18d28317ecbf0233e5bc4f63252e2646ec298a', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648570559, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 'hi', '307fa5d0c4c344c894cb2808d7c84af0d9acfb57acd40f6dd463553c20547b3be765a8ca31562b8d378d49b92b85e608674cd2379ce0a1e74b8f6a4d4584bfb3']
+ ARGS: ['6ce4b41a8f4747a9773767f2ef2486417bc37c846f525a86b1d04aa8e6abad8a', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648641356, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'test', '1a5531111044287d2be09779887594085c4f40deea9565a3b8029f6002b1c70f618dd25215a9c00d4f305907a01ac8d5faad9fa34856e1e146491af7e619c603']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['43340a9bc2e9bafe9e391a14df18d28317ecbf0233e5bc4f63252e2646ec298a']
+ ARGS: ['6ce4b41a8f4747a9773767f2ef2486417bc37c846f525a86b1d04aa8e6abad8a']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['3aa1aca048690ac6321533b343ba860ab0e075c65f1f821b5b563d0d3b8d4e7d', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648571204, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 's', '18a5f9163f33cb0eaad0ed67247fa56027d08a2949dc4a355253d16174b0b574542ec5497cca879ae8d01451e0cc2c1bd1edfce530954b870d75a0e468ac71c6']
+ ARGS: ['f070f3b3939a97967c45997ea76b3511dd85a66ce4d43292ab941fd8dc84011d', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648641495, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'howdy', '2f21754a7d8e51dfb793e8d00f8525a5c80ed01aafeda3b8b23f2ce69f78c6bbb8cdc5b734ad2f7acb69e724034701c37706f6f0d5c6e22d0108e906cae93973']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['3aa1aca048690ac6321533b343ba860ab0e075c65f1f821b5b563d0d3b8d4e7d']
+ ARGS: ['f070f3b3939a97967c45997ea76b3511dd85a66ce4d43292ab941fd8dc84011d']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['47b8862fabb3eaeb9f7156e00928eee005654f53955cea8decd8d6a4f232f709', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648571205, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 's', 'c91c384f9607428a782f2a7d6750762fc32314846338b4c0f28a1c81647d17efdcbff0b9a1530405082f3a134e7faf4890f37022312e2e4152e1125c4c4d6757']
+ ARGS: ['88cbe0682df4e7c2a10ccd3e9f626c8b2f6a7aa41247e9dc241b79ac29322209', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648641501, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'dudy', '88a8ae840f6da7c7e64e83107a0a6bd34904ca073b029f8986fd1c4738d85c339fe4e1ed8f6990f3daec98a7923eafa26369d46a15d337fde9fb3f493331ba96']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['47b8862fabb3eaeb9f7156e00928eee005654f53955cea8decd8d6a4f232f709']
+ ARGS: ['88cbe0682df4e7c2a10ccd3e9f626c8b2f6a7aa41247e9dc241b79ac29322209']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['fdf81ff457539c7df7b43323c1094366e027d5d259482ca2d6b17ac42df7c4bd', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648571206, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 's', 'd6e9651d9bcd0d3a3c0da78937db71f5da3b9c6a4f85a24342275ff4d345091eec13f59d71d8f85a2c89836bd919ac9e474e6bfe32e7572256899d82595c80e5']
+ ARGS: ['8b59db24c3d74fab0085b56e1485e941fd5fd99440435be89cbd09aabb34e618', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648641507, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'mooky', 'f9d01e02b16e03d1dcca0ea02c907f7d5d8cca41648d325aa9ac18cf0ce6c6121f20ce8305f7fced56a09c82ae3afe0d4bf6c042dce1288552d3c63cb78e67b1']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['fdf81ff457539c7df7b43323c1094366e027d5d259482ca2d6b17ac42df7c4bd']
+ ARGS: ['8b59db24c3d74fab0085b56e1485e941fd5fd99440435be89cbd09aabb34e618']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['8e9516ef9c5a2fa746cc3b353b2e769657d39cd340dbaf4209f08a08d215c5c5', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648571207, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 'df', '8bd017336d82c5fdd7a19f4a6727dec15348d50848ec0b2609d308fe431dfab2ded5c1c68d290615f5b0b038e2d9f08a4ce8fc55c965ffc712e7d7559a701d96']
+ ARGS: ['5e81576f32a07c3d20a5b54825c9ec4f6302e4c698ac6917582dd245b216b301', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648641530, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'dude', 'a28a0289309fa1ef6c5a0af8220cb8b0f6a95da207bd1eb84cb2fc1019aa37b7669e5784652246505385ee65070c14670f1a0db04be565a4219d1b4990fb09c6']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['8e9516ef9c5a2fa746cc3b353b2e769657d39cd340dbaf4209f08a08d215c5c5']
+ ARGS: ['5e81576f32a07c3d20a5b54825c9ec4f6302e4c698ac6917582dd245b216b301']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['857c06cbbd79e25f871532769eaa609af4406d03bf00a67278b0bac48987b942', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648571208, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 'dsf', '2e1403b8819f7d351e3108ce919c12cdd14535842f254bba7938e01bdedf7c975a5b986720821e78167f44c9db7404779a0dc03eb2e292cbb12c16088be874a3']
+ ARGS: ['d4b218799eb547ebca7dcf97daf36507fe1d977a9438da8021ecffa366be4274', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648641534, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'rude', '6319826aae8cf5e980b185853978b8d1836fd4dabd22be4d99669050372302a7717364b5a6ca01e47efba04bce9d60eaaf50867802f1f8c80ab34c5b94f0eb37']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['857c06cbbd79e25f871532769eaa609af4406d03bf00a67278b0bac48987b942']
+ ARGS: ['d4b218799eb547ebca7dcf97daf36507fe1d977a9438da8021ecffa366be4274']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['48dbd6601cc8f96f42050b1ea400fce6387a35ec4f6921d7e0b5d6adb04d2123', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648571208, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 'sdf', '8fbc51653560f6edb72d226f1a492f6934149fdbd014991531e1bdcdd07eeb80a472dfc4920e7e70b60318046c36f63c308ba14511af7024466217981c002aa2']
+ ARGS: ['24fadcf3dbbb69b1b23fe38725940dbdcc68b605a4577005ab6f0cd12b24dd44', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648641641, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'dog', '1d39cb2fe17e463bfc765b5aa15a5dc48646e5e9716b05df9e697713c4691fa024a98f04518bd6d44db908b3555c2b19b9f867ba5e41cb4283cc752c13047fa0']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['48dbd6601cc8f96f42050b1ea400fce6387a35ec4f6921d7e0b5d6adb04d2123']
+ ARGS: ['24fadcf3dbbb69b1b23fe38725940dbdcc68b605a4577005ab6f0cd12b24dd44']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['66ede126b6bd73e854967c993e9a1ef2639da8494f1e446777b150ed3bf3b85b', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648571209, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 'sdf', '19c3393204e359ca5cf51156e78cbaa63099648d4e2445a9380cb67905b8a9eba238c31f1d7ab4ec1ea8486f8ee474476cf7232b10f464504d8319b9c013933d']
+ ARGS: ['0e42344c225e328e740cece3818bba33cf898ade81897d03c525773fb034ebc6', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648641740, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'test', '63bbb505ab6ed4b4ee29a664ed03f9596c5b7ac9f137f220c01bbe4d1e2dedd2494178d22a172a451fafbc61e5d633352e3f5c86fe946cedbadb7ca950551d9b']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['66ede126b6bd73e854967c993e9a1ef2639da8494f1e446777b150ed3bf3b85b']
+ ARGS: ['0e42344c225e328e740cece3818bba33cf898ade81897d03c525773fb034ebc6']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['c29877c4d64dc42cce8c7dbab62fba21d6c5d3616727fc1c02711b202dd50f78', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648571211, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 'ddeee', 'e50efc3d57c9e5ce68d2e55203a74fed0c2bef2c14fed1d72ae6c82d00af4a9684e13fdde8aa08fca281229e08b8307fed153a87d0046aa80c986e28f0b3b911']
+ ARGS: ['a8e231c5ed78c30970c8ccc6d3539e8f74da0c26819989124b4d8680ae927727', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648641762, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'so that works then?', '927dc01716dd8ff5b1d7f27fdb90214990f6fa46e54731918098a63cf37ff316f4e81d37dca41dd611969d47e6fd445486f3918080a1f14be5711b8e063be679']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['c29877c4d64dc42cce8c7dbab62fba21d6c5d3616727fc1c02711b202dd50f78']
+ ARGS: ['a8e231c5ed78c30970c8ccc6d3539e8f74da0c26819989124b4d8680ae927727']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['9b7018e7a197389f1a6b5babcbc2758bee8ff4b08f8e39472e1cff690ecf193d', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648571214, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 'poook', '5ac912d941f9e2ababb666eac631a59acb7eac9432be9e371a912df953a44dcfd6a4143ba7ea5f08d8ccb89a2747eb991f4390f9c4161961ef0f52d37eeada7d']
+ ARGS: ['81ad9fdf3ac5bf3f5eb0a142df2344025994c6894847a1281de8c857c24fb389', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648641770, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'wird', '7f50f4509fc36843e20b49af79f2edb8d881ba22763d4abaa50acf5a39a872ec9e6495b7d51189eb38dfe47aa3428da32541cc3f92a677166153ae87aa1dd15a']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['9b7018e7a197389f1a6b5babcbc2758bee8ff4b08f8e39472e1cff690ecf193d']
+ ARGS: ['81ad9fdf3ac5bf3f5eb0a142df2344025994c6894847a1281de8c857c24fb389']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['580f071d46acb7c0bed4523a2058a337be3da224cbf1091d9d854519c8cce748', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648571214, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', '', 'b3601815ff91e7b9a3962d5d98f1b89c881868d760931035df3f43636ec7cad4920394f59e04318084d47e3605e8b420b09c0fb6473afdb53cf0ec9a0b23b62e']
+ ARGS: ['079e32e8a266906bbc60b344a312400e7eda827b0a96d48a3f6a86ff7bc5b9dc', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648641844, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'test\n', '864c2cfa0d4df4ce514b0a2b398d058b158eb0a66a0c237771a11bdf76abf733256eb67f4b1754d7423f6e575f6a0b0d2954752a84535352a9175963d295342d']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['580f071d46acb7c0bed4523a2058a337be3da224cbf1091d9d854519c8cce748']
+ ARGS: ['079e32e8a266906bbc60b344a312400e7eda827b0a96d48a3f6a86ff7bc5b9dc']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['fae5ad7d3bc8d34636ac5e38fc508d73ebfcdb48dade0a97112c4969226e510f', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648571216, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 'kook', '83215e0137244e9417a03b69304c735b9568d9aa005190d3977c0bdb733d77479654ffd22613c5864f3ea539844388ac6e712848737c61fb660f05844978c86f']
+ ARGS: ['341825028ef6a5476b2930fa1182471233bfa42459e704ef34fdfd0b4f6462b5', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648641860, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'dude', '4c92c29597f1bface854d05340aface25f162aff58d9c894113b69b6afe66fdc440634d96a6cfa34b7934e6961b6b8fbcc5c6442a9ffab9b7213d24139f7d964']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['fae5ad7d3bc8d34636ac5e38fc508d73ebfcdb48dade0a97112c4969226e510f']
+ ARGS: ['341825028ef6a5476b2930fa1182471233bfa42459e704ef34fdfd0b4f6462b5']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['3f72bf45d644c37e0962603b82f68f5586f28ace02efd2db2b8ae04c0fbfbd4b', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648571218, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 'shaun', 'ddc3b59ca0ca97b7edb0da838d28de1fb7194c57797f53a7d672fb965989ab869044cd5b93fe8fd78a290c072066f4641307c85dd5176e46103aefad47b068e5']
+ ARGS: ['e9b743dab0e41a9998f2476ffa1a4049b84e997aed9a7d26962e4c3edbf2d398', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648641911, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'test', '49709b9d96450bf43abfeb3910c470366df05918e114811ceddb6c1d89fc79333cdb074ff65c99d3c2b195c71fccb22873e76f020c800c81b46c1731dbfb7eb1']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['3f72bf45d644c37e0962603b82f68f5586f28ace02efd2db2b8ae04c0fbfbd4b']
+ ARGS: ['e9b743dab0e41a9998f2476ffa1a4049b84e997aed9a7d26962e4c3edbf2d398']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['a73626a3b9fad51ced2a2221a9f953574e717ba098aab2d7e08449021c68ec71', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648571221, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 'lloook', '31044bbf40b5759be0a543693a61883219d631c0f25c9e8ba95f971a24059f7807d90345906c865f0d85688633c21896d997d7072841b2d95fc4812463888eaf']
+ ARGS: ['b6edc07e4bef7242882b43e2e10ee40e9676dabf106e4cd201a1fbaead12a2b1', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648641941, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'word', '246cc4069b74d0238f0ec5ae81ac0bd8c81829c64e6c051fdb295d9c87a3e279019c0eed1010ce365385c01a59bf963e1e2e75cea32b0854d71c4f2ebaa84828']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['a73626a3b9fad51ced2a2221a9f953574e717ba098aab2d7e08449021c68ec71']
+ ARGS: ['b6edc07e4bef7242882b43e2e10ee40e9676dabf106e4cd201a1fbaead12a2b1']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['cbc2440c3d610b1dea9213830946e22d0725e1fccc89984fe6c577c845afd214', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648571223, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 'devil', '9139444e99670b00cd09a293694ca834d1d79280357af22e324311ede1be910a91bab00251491ce4070dfb58e0accb0b611fa01bc6c8233af19fe6fc8514008b']
+ ARGS: ['e5363b43e8aaff166fc49f602dedd35c47bb0f42f3214c422e5dd880c5d92eb6', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648642032, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'what', '2e1fdec5257c274c69e9a6146fa9e6a6e14b98dc9eda2c4e6df7b6d8ba9139bc100e49dd9615a67f1b9d5c7460a27facabaf9a41ebaaad10ae4e0d5bd7cdd6e1']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['cbc2440c3d610b1dea9213830946e22d0725e1fccc89984fe6c577c845afd214']
+ ARGS: ['e5363b43e8aaff166fc49f602dedd35c47bb0f42f3214c422e5dd880c5d92eb6']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['23b963ae35bd80bfe1c6c7edddba9c163913f6c02c269e5dddcb40cc69a716be', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648571225, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 'rook', 'f5a4988dc436eb00282cce94106bfeb4ce3398a9c52ec82e644383dbac1594d7763b92d1bb86d01324bbed10885c0bf003a957175866d28b28290638291c33a0']
+ ARGS: ['7f91975314b901c1919cbc7b736003a9dd137bb24811a47b267e6571aa5913c2', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648642069, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'test', '065c6c04a60050277771e44df9d74dee027eec313d75f47f290401d223af0afbab05c2623181b4994f50b9ef96086687164bc00b229de74f6ab08f07f3797350']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['23b963ae35bd80bfe1c6c7edddba9c163913f6c02c269e5dddcb40cc69a716be']
+ ARGS: ['7f91975314b901c1919cbc7b736003a9dd137bb24811a47b267e6571aa5913c2']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['f290f8185e5032d0c12fd9bcd93fe6de9e64907cb00815aaa0e1d7727b3f816c', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648571227, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 'mook', 'c3846c3cf14515a341fc5aac90567962f8342699daf238baeac8a6ba1aa62748c94ca9c542a33c6586738db84ae8dda108a496293508b6064786c2361f0325ae']
+ ARGS: ['7422d7e40cc0ac7a7f737518da3c4c55d446b6dcbeffceee46e5965642de18f8', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648642078, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'moke', '18b88d1b254222b7dc2dede7c2a2d938afc53c20fbbb099c47ac5a2715703a2b2ada1169617671cb846ca8ee78e242d579fa701738373ff4787d19b6a18923ec']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['f290f8185e5032d0c12fd9bcd93fe6de9e64907cb00815aaa0e1d7727b3f816c']
+ ARGS: ['7422d7e40cc0ac7a7f737518da3c4c55d446b6dcbeffceee46e5965642de18f8']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['5f2d59cfbfe8055697a6ecf49422985e082093dfa6186b9defcb990640baa9e3', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648571229, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 'crook', '78fa716246021fe4f3f45e1e12ae7bca1609fe6e02a5f725222daa05b84a16d0f412deddefc2fd7cccd426223a4bc72f34e48540fb1df56cb9cb95b1cb6d91a7']
+ ARGS: ['e80e3d73aae850d233cc475eb1d3f65996c38abae8fa696c32e1c0c7b71db338', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648642095, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'wtf!?', '03a5d6d5640e6923619d06cd7867ccaf00e67abe1fc8451e4f0922e6a46efa55f9a05d815daa28a87c9ff5ef103c2cd7d987898cefd9100122ae9233f151363e']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['5f2d59cfbfe8055697a6ecf49422985e082093dfa6186b9defcb990640baa9e3']
+ ARGS: ['e80e3d73aae850d233cc475eb1d3f65996c38abae8fa696c32e1c0c7b71db338']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['7dc0178e285d615d41c2b74168629187dcbcc2efdbeaf1cc233e4580859fcc95', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648571231, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 'dook', '1da77560b8c017b84d2c213370b03264835b9c8475a3f7344f9d6c8976ac479c7c5f86e744cc6379acb103cf60486c8bff40d4cad40168e688f5d0f950a328a5']
+ ARGS: ['dcf24ad4fa4fb68e11c1fd486a041f8e9830b1459ea9e9458c2dff47a1ca594e', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648642127, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'yo!', '4e3848d3448674676fe681b73ab59e6d794c1517fb6804e6bd8c2ba50fae91c5764dcaacb6b1191d535b40c5e4fdc56f18ea77b4bedab77474d7f68bbbf3ff74']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['7dc0178e285d615d41c2b74168629187dcbcc2efdbeaf1cc233e4580859fcc95']
+ ARGS: ['dcf24ad4fa4fb68e11c1fd486a041f8e9830b1459ea9e9458c2dff47a1ca594e']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['6792c0acefde74c491c5c2835ae1301f59dff141331a65ba45c315aa49cf8916', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648571337, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 'donke', '6932581015e6ece17fe49039bd0aa79558498029a02d2f967322b622d077e8d5c9c45306f1c3962e62d169c423997a7b3ba25ea2f07762fe702a76847909879b']
+ ARGS: ['e0a1889abfc8981efe8d79a1a8c44397044c95a87416f6e7be4d9d2df2a30eb8', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648642142, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'shau', 'ca3242d304c39cda4be44b9371f7b52679520b4e608b5f7a66f6ae5b56348f58752e61c7cb98c61183f0b2e5aa4dc0c296e0b8db6f0e345ed2130d48874037aa']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['6792c0acefde74c491c5c2835ae1301f59dff141331a65ba45c315aa49cf8916']
+ ARGS: ['e0a1889abfc8981efe8d79a1a8c44397044c95a87416f6e7be4d9d2df2a30eb8']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['20a482985d8e6385d6fec3acbf7b9b28fc28e2d13669908546447b9d1c04453c', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648571344, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 'dude', '8000319a0b5f129d47ce09a37d384a435f3be741c3426ec17b6c7efb6addf77f1930dba782a0f7cbffa98a464dc41f0c928ea2537f417dccc3fdfbd591cca6b7']
+ ARGS: ['b1a0ce3af3ce4dec4898732e6906c8f88035eb536c2f8212cc47e7aff56ae113', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648642156, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'hehy', '948e6243c49b0e301f97ef63d91e2506ee68cd60c1a479a649f8be7a2c34a331a2b71d3cc6eed646dd7da2a665200eb6de7417d8f5417f012a3d8b947b9b4fd3']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['20a482985d8e6385d6fec3acbf7b9b28fc28e2d13669908546447b9d1c04453c']
+ ARGS: ['b1a0ce3af3ce4dec4898732e6906c8f88035eb536c2f8212cc47e7aff56ae113']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['9465e6e4aaf0e427be66b15e305cae47a842e37897a8977a8211131d28238ce5', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', 1648571409, 1, '[["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"]]', 's', '7e60149e25a31956d140bfbc0b005a9be285022a84d5aa58620349ab21f2bb6a0379b9c9fc88c80e57ea5044574d760e327b69d897a849ece929c3567a0fdf44']
+ ARGS: ['a43c259109c53cc39446acc6c4204b052661e0519de872e0cdebdc8fd040fa41', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648642174, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'dude', 'be074e4b9fc396dd998f6574eb27b2a341bc88fc9c7deeb136d6ddd4f9b1ed56898d27d6f8d113813dcf9466be1cae2c0e3e3708017a51117e4d631726b9b8aa']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['9465e6e4aaf0e427be66b15e305cae47a842e37897a8977a8211131d28238ce5']
+ ARGS: ['a43c259109c53cc39446acc6c4204b052661e0519de872e0cdebdc8fd040fa41']
+DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
+ ARGS: ['bd0904953997a66acac18c45a85a42479549c32ac8694ed180827a8e5bbbeca2', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648642223, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'what the actual fuck!?', 'b8831560b88f1e11860e94399dfdbb7d9ccd3773f86c133e0261675ce43ce8e95c895ebdd579ee049312e36a9a6b312b1e1c31937c382dd8dcab08bf1f319fcb']
+DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
+DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
+ ARGS: ['bd0904953997a66acac18c45a85a42479549c32ac8694ed180827a8e5bbbeca2']
+DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
+ ARGS: ['ac8ef3a8b2882b2e4716df397a82fe20c45a5d1b5c17d3aff38c838505dddc45', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648642425, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'ssss', '16e902e0096f1de2a40247ddbe34119966ff72660d748428c873996209646e26d4d4631eab9cf490fce0b41186747c0a3114e47249f296c3e563356845d37430']
+DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
+DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
+ ARGS: ['ac8ef3a8b2882b2e4716df397a82fe20c45a5d1b5c17d3aff38c838505dddc45']
+DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
+ ARGS: ['a14a9e3b4abc2c85e34fc4a960889326227c56233f5753b67df8375237983f78', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648642552, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'hey', '52a3d6702cd3758e45a864bb5a9158f55d4c7ad2ef374236c6d3b3aeea44b436a84eb5426444373b4adeed818a0727be79e38e60f79d557353d459dd1e495f31']
+DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
+DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
+ ARGS: ['a14a9e3b4abc2c85e34fc4a960889326227c56233f5753b67df8375237983f78']
+DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
+ ARGS: ['9ebeca01990892002c282483342d5b41f0b0ef1dcb2cba51dae0bc346a07a613', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648642557, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'dey', '0075fadf7e199b7f6323e497cb60777c360179ca3243ff8cbcc2f80ae801aa795410fc1575096474444f4dc232d18b206c659ebca6d92df2dcbc34b409c737db']
+DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
+DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
+ ARGS: ['9ebeca01990892002c282483342d5b41f0b0ef1dcb2cba51dae0bc346a07a613']
+DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
+ ARGS: ['b333667ec807fb3b9e409e29a04d1721f3c408c907d7cd508579a1289c48471b', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648642559, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'sss', '44e032c447d03537e6be5b15f2bf3911b20adc0b72ae37a6f47288a379704e8b0f16df7f4bdc1053706148aa3b09209afb89c8527884c2ee96d07a2013d7338d']
+DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
+DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
+ ARGS: ['b333667ec807fb3b9e409e29a04d1721f3c408c907d7cd508579a1289c48471b']
+DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
+ ARGS: ['56bdaf34c16522bc0754edbd82100e2c334a3619537aa208e481e7822bce8154', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648642607, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'wtf', '11975ae08378d15696ef6ff78e7cecf72a24935a1d85e05c96f374c7e18cb241ff7cd4cd74cc0503c26e2727d54f3f9df58720f786a078372149b425fad7c7a8']
+DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
+DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
+ ARGS: ['56bdaf34c16522bc0754edbd82100e2c334a3619537aa208e481e7822bce8154']
+DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
+ ARGS: ['ab362c5f7dd0e3a121b45dfbcf90d7db1775bbc0db7e2c2b42aeec32a3f3b9e8', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648642689, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'test', '5a5f29759ef7a3a628f405163e95808dcd4fec1011d0f3a6ee87beb9e0e1109f23f8faa5d7621ee33f1e1e2dcded804cf71cdbf096b347ac292594ee4e2e7fdc']
+DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
+DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
+ ARGS: ['ab362c5f7dd0e3a121b45dfbcf90d7db1775bbc0db7e2c2b42aeec32a3f3b9e8']
+DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
+ ARGS: ['d4356508fab036330d3f2aa46760624abd44144166ce9e29f8c8825a0c801bd9', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648642745, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'test', 'd1b1e1a4ca6598985d89777e2360a051164924343de0ae0c96491ff2732a99f9411f624b61b76608f80461021bf031f67955ae649fe027f0a907aa868ffe90e4']
+DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
+DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
+ ARGS: ['d4356508fab036330d3f2aa46760624abd44144166ce9e29f8c8825a0c801bd9']
+DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
+ ARGS: ['ba67196a44fab6cc9ea0504fd2cc6c27e33ca30b0c3e8b1ec53280ab3c901ce8', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648642777, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'test', '2710d05f2b098a1d1014ab37450646c90db2f2761f03926ba27b65b21e9bc788a4c9f49c7f6daf44b2400ced818ebb2066632e24d6490b3cbb76c654028db95a']
+DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
+DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
+ ARGS: ['ba67196a44fab6cc9ea0504fd2cc6c27e33ca30b0c3e8b1ec53280ab3c901ce8']
+DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
+ ARGS: ['6028fc40087779e79ccf19681419f017703c309224679279c97b2336801e3d53', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648643272, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'test', 'e2701af985a3cc1ac6585bb26d908b18aea6aa17c9748445d8c679f1bfa520e655ae333815724927bd1e0dbb2c219601693ea38aab9d6a4b2efefc54e03bee33']
+DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
+DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
+ ARGS: ['6028fc40087779e79ccf19681419f017703c309224679279c97b2336801e3d53']
+DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
+ ARGS: ['f7e5e35e50289114e99d1c4d973bea78f22255d775f91ee5ffc429ac1d6229a4', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648643275, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'mokey', 'da4ace63077496c1169b13949ee3e999ccdc8c1f6088c343ec38b121108bbac54b4d0ca0be6e7fadeae38d1282f1655db9f79f4ded87eb0176d620044ae9572d']
+DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
+DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
+ ARGS: ['f7e5e35e50289114e99d1c4d973bea78f22255d775f91ee5ffc429ac1d6229a4']
+DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
+ ARGS: ['d6d6826dd30d9688d877fcb6c640e16f3d374bb1836b47456302e06267bcacfc', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648643497, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'low', 'e49559e5a4a2561bd239d47b62ef7e4b77403697000cdadb89d57e8245a2cfb9971db74c5ae22bea3a10c4bf83a08a2166f1c53330cecb943760e768ae471d1a']
+DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
+DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
+ ARGS: ['d6d6826dd30d9688d877fcb6c640e16f3d374bb1836b47456302e06267bcacfc']
+DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
+ ARGS: ['049ca6f48ca46edff02a30938d7a771d8d0aebd328ce19675e700beee8a6c205', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648643884, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'doood', '69017552af733e28354da0515ab981491979d900e75822c8e565f66a7ad182dbc1f07edaf43bbe37d562b312efab70d71522d7e8f0031177ec327b600f0930ea']
+DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
+DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
+ ARGS: ['049ca6f48ca46edff02a30938d7a771d8d0aebd328ce19675e700beee8a6c205']
+DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
+ ARGS: ['1946d158f24c7ccf8489e5bc0a3b4cb40ddf297ca4757871bae106ea8c854d08', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648643918, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'why', 'd89c68e913aad4eeca816b3bc8313c3ac5bb8f1479f39ffe62aa579c28618c8b5096f9eb25686cf2f91f0c92412166d7c13a798c6f97035e9b3e470f468affaa']
+DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
+DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
+ ARGS: ['1946d158f24c7ccf8489e5bc0a3b4cb40ddf297ca4757871bae106ea8c854d08']
+DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
+ ARGS: ['4ea21b9f18e73c1ba7e358be83122143505e7e64625627965ce747ecd523bd68', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648643940, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'llsls', 'f1c7f75f3527a10ccda912e4b96c110b2bc59b70a511b497465a821bff45c5a18b0df600ba4203e28e9e5eedfef5e44f1621bf2e6ded48d2edff56f05bc7bdd8']
+DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
+DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
+ ARGS: ['4ea21b9f18e73c1ba7e358be83122143505e7e64625627965ce747ecd523bd68']
+DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
+ ARGS: ['d3c9b11e5132dbad7c35bd86360e02e7c934eec3c7d34e358e5d7ab7c5bff416', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648643997, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'llll', '75c5db7370c2927e258062cc460411a27dd39d0ce513073a3e46b58e8346e463ddda46502c793a79c3eb0a53cf11f9df1bbf89b2591050bf7f678c1726128f40']
+DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
+DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
+ ARGS: ['d3c9b11e5132dbad7c35bd86360e02e7c934eec3c7d34e358e5d7ab7c5bff416']
+DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
+ ARGS: ['bcb1a99415817aaf3705c5862e151b8a15b627f472d4cb0ffd305a7be63c940d', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648644287, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'shau', '3ab35577bfc4c2a37b71d2eee4ab7194ca2ae97a8d962977a4f03563a81ba32bc581f2902f679d7e796159c9889f3c3fd281866e0ccaabd0cb1aaf71db9b83a6']
+DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
+DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
+ ARGS: ['bcb1a99415817aaf3705c5862e151b8a15b627f472d4cb0ffd305a7be63c940d']
+DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
+ ARGS: ['91b6a922a660852230603c71141e7c100d7f9f53cfebc310028734b3ec69fad6', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648644290, 1, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'is', '13fd80db03acec5cbb9164d5026cb23df8e76f466783204a2739c8f3f4938a3aecb1b9db42d06b711f57daf7b640b5b5b8344f20ad7b8fccbd016377a2528e42']
+DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
+DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
+ ARGS: ['91b6a922a660852230603c71141e7c100d7f9f53cfebc310028734b3ec69fad6']

@@ -100,6 +100,8 @@ class MessageThread:
                  on_message=None):
         self._from = from_p
         self._to = to_p
+        # TODO:
+        #  don't think theres any guarantee of order so we should probably do this ourself
         self._msgs = []
         self._msg_lookup = set()
         self._evt_store = evt_store
@@ -147,6 +149,9 @@ class MessageThread:
                 self._on_message()
         # print(self._msgs)
 
+    @property
+    def messages(self):
+        return self._msgs
 
 def post_message(the_client: Client, from_user:Profile, to_user:Profile, msg):
     n_event = Event(kind=Event.KIND_TEXT_NOTE,
@@ -161,40 +166,124 @@ def post_message(the_client: Client, from_user:Profile, to_user:Profile, msg):
 
 class BasicScreenApp:
 
-    def __init__(self):
+    def __init__(self,
+                 from_p: Profile,
+                 to_p: Profile,
+                 on_message_enter):
+        self._from_p = from_p
+        self._to_p = to_p
+
+        self._ident_lookup = {
+            from_p.public_key: from_p,
+            to_p.public_key: to_p
+        }
+
+        self._enter_prompt = '%s: ' % self._from_p.display_name()
+
+        self._name_prompt_width = len(from_p.display_name())
+        if len(to_p.display_name()) > self._name_prompt_width:
+            self._name_prompt_width = len(to_p.display_name())
+        if self._name_prompt_width > 10:
+            self._name_prompt_width = 10
+
         kb = KeyBindings()
 
         @kb.add('c-q')
         def do_quit(e):
             self._app.exit()
 
+        @kb.add('c-up')
+        def do_up(e):
+            pos = self._scroll.vertical_scroll-1
+            if pos<0:
+                pos = 0
+            self._scroll.vertical_scroll = pos
 
-        self._prompt =  Buffer()  # Editable buffer.
-        self._main_window = Window(content=FormattedTextControl(text='nothing yet'))
+        @kb.add('c-down')
+        def do_up(e):
+            pos = self._scroll.vertical_scroll + 1
+            # if pos > ?:
+            #     pos = ?
+            self._scroll.vertical_scroll = pos
+
+        def my_change(buffer):
+            on_message_enter(buffer.text)
+            buffer.text = ''
+            return True
+
+        self._prompt = Buffer(accept_handler=my_change,
+                              multiline=True)  # Editable buffer.
+
+        self._msg_area = HSplit([])
+        self._scroll = ScrollablePane(content=self._msg_area,
+                                      keep_cursor_visible=True)
 
         # struct
         self._root_container = HSplit([
             # content
-            ScrollablePane(self._main_window),
+            # ScrollablePane(self._main_window, keep_cursor_visible=True),
+            self._scroll,
             # msg entry
 
             VSplit([
-                Window(height=1, width=20, content=FormattedTextControl('PROMPOT>>>')),
-                Window(height=1, content=BufferControl(buffer=self._prompt))
+                Window(height=1,
+                       width=len(self._enter_prompt),
+                       content=FormattedTextControl(self._enter_prompt)),
+                Window(height=3, content=BufferControl(buffer=self._prompt))
             ])
 
 
         ])
         self._layout = Layout(self._root_container)
-        self._app = Application(layout=self._layout, full_screen=True, key_bindings=kb
-                                , mouse_support=True)
+        self._app = Application(layout=self._layout,
+                                full_screen=True,
+                                key_bindings=kb,
+                                mouse_support=True)
 
     def run(self):
         self._app.run()
 
-    def set_main_content(self, content):
-        self._main_window.content = FormattedTextControl(text=content)
+    def set_messages(self, msgs):
+        self._msg_area.children = []
+        c_msg: Event
+        total_height = 0
+        for c_msg in msgs:
+            c_msg_arr = []
+            msg_from = self._ident_lookup[c_msg.pub_key]
+
+            user = msg_from.display_name()
+            if len(user) > self._name_prompt_width:
+                user = user[:self._name_prompt_width-2] + '..'
+
+            prompt_text = '%s@%s:' % (user.rjust(self._name_prompt_width),
+                                       c_msg.created_at)
+
+            prompt_col = 'gray'
+            if c_msg.pub_key != self._from_p.public_key:
+                prompt_col = 'green'
+
+            c_msg_arr.append((prompt_col, prompt_text))
+
+            first_line = True
+            for c_line in c_msg.content.split('\n'):
+                if first_line:
+                    c_msg_arr.append(('', c_line))
+                    first_line = False
+                else:
+                    c_msg_arr.append(('', '\n' + ''.join([' ']*len(prompt_text)) + c_line))
+
+            # c_msg_arr.append(('', '\n'))
+            # msg_arr.append('[SetCursorPosition]', '')
+            win_height = len(c_msg_arr)-1
+            n_win = Window(content=FormattedTextControl(text=c_msg_arr), height=win_height)
+            total_height += win_height
+            self._msg_area.children.append(n_win)
+
+
         self._app.invalidate()
+
+        self._scroll.vertical_scroll = total_height-10
+
 
 def plain_text_chat(from_user, to_user, db: Database=None):
     # with what we've been given attempt to get profiles for the from and to users
@@ -204,26 +293,20 @@ def plain_text_chat(from_user, to_user, db: Database=None):
                             db=db)
     from_p: Profile = profiles['from']
     to_p: Profile = profiles['to']
-    ident_lookup = {
-        from_p.public_key: from_p,
-        to_p.public_key: to_p
-    }
+
     my_store = None
     if db:
         my_store = SQLStore(db)
 
-    my_display = BasicScreenApp()
+    def do_message(text):
+        post_message(my_client, from_p, to_p, text)
+
+    my_display = BasicScreenApp(from_p=from_p,
+                                to_p=to_p,
+                                on_message_enter=do_message)
 
     def draw_msgs():
-        c_msg: Event
-        msg_arr = []
-        for c_msg in my_msg_thread._msgs:
-            msg_from = ident_lookup[c_msg.pub_key]
-            msg_arr.append(('%s@%s: %s' % (msg_from.display_name(),
-                                             c_msg.created_at,
-                                             c_msg.content)))
-        my_display.set_main_content('\n'.join(msg_arr))
-
+        my_display.set_messages(my_msg_thread.messages)
 
     my_msg_thread = MessageThread(from_p=from_p,
                                   to_p=to_p,
@@ -249,31 +332,13 @@ def plain_text_chat(from_user, to_user, db: Database=None):
                                  ]
                              })
 
-
-
-
-
     my_client = Client('ws://localhost:8082', on_connect=my_subscribe).start()
-
-    # look to write our messages until exit
-    # draw_msgs()
-    # while True:
-    #     text = prompt('%s: ' % from_p.display_name())
-    #     if text == 'exit':
-    #         break
-    #     post_message(my_client,
-    #                  from_user=from_p,
-    #                  to_user=to_p,
-    #                  msg=text)
 
     draw_msgs()
     my_display.run()
 
 
     my_client.end()
-
-
-
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
