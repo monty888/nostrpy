@@ -7,13 +7,12 @@
     This it to get the basics together before doing a gui based chat app probably using Kivy
 
 """
-from gevent import monkey
-monkey.patch_all()
+# from gevent import monkey
+# monkey.patch_all()
 import logging
 import sys
-import time
 import os
-from prompt_toolkit import prompt
+from pathlib import Path
 from prompt_toolkit import Application
 from prompt_toolkit.layout.containers import HSplit, Window, VSplit
 from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
@@ -153,15 +152,144 @@ class MessageThread:
     def messages(self):
         return self._msgs
 
-def post_message(the_client: Client, from_user:Profile, to_user:Profile, msg):
-    n_event = Event(kind=Event.KIND_TEXT_NOTE,
-                    content=msg,
-                    pub_key=from_user.public_key,
-                    tags=[
-                        ['p', to_user.public_key]
-                    ])
-    n_event.sign(from_user.private_key)
-    the_client.publish(n_event)
+
+class MessageThreads:
+    """
+        keep a track of all 1-1 message for from_p
+        if evt_store is given then
+
+    """
+    def __init__(self,
+                 from_p: Profile,
+                 evt_store: ClientStoreInterface,
+                 on_message=None,
+                 to_pub_k=None,
+                 kinds=[Event.KIND_TEXT_NOTE]):
+        """
+
+        :param from_p:
+        :param evt_store:
+        :param on_message:
+        :param to_pub_k:
+        :param kinds:
+        """
+
+        self._from = from_p
+        if not to_pub_k:
+            to_pub_k = []
+        if isinstance(to_pub_k, str):
+            to_pub_k = [to_pub_k]
+
+        self._to_puk_key = to_pub_k
+
+        self._kinds = kinds
+
+        self._msg_lookup = set()
+
+        self._evt_store = evt_store
+
+        # messages keyed on pub_key of who they are to
+        self._msg_threads = {}
+
+        self.load_local()
+        self._on_message = on_message
+
+    def load_local(self):
+        """
+        load the already seen msgs from what we've already seen locally
+        """
+
+        # we have no local store of events, completely reliant on fetch from relay
+        if not self._evt_store:
+            return
+
+        # get all messages we created all were mentioned in
+        all_evts = self._evt_store.get_filter(
+            [
+                {
+                    'kinds': self._kinds,
+                    'authors': [self._from.public_key]
+                },
+                {
+                    'kinds': self._kinds,
+                    '#p': [self._from.public_key]
+                }
+            ]
+        )
+        # we want newest at the bottom
+        all_evts.reverse()
+        c_evt: Event
+        for c_evt in all_evts:
+            self._add_msg(c_evt)
+
+    def _add_msg(self, msg_evt):
+        tags = msg_evt.get_tags('p')
+        # we've already seen this event either from local store or previous sub recieved
+        # or it's not 1-1 msg
+        if msg_evt.id in self._msg_lookup or len(tags) != 1:
+            return False
+
+        to_id = tags[0][0]
+        # must be our event to them
+        if to_id == self._from.public_key:
+            to_id = msg_evt.pub_key
+
+        if to_id not in self._msg_threads:
+            """
+                seperate store for the different types of notes, dict as we might in future add unread count etc.
+            """
+            self._msg_threads[to_id] = {
+                Event.KIND_TEXT_NOTE: {
+                    'msgs': []
+                },
+                Event.KIND_ENCRYPT: {
+                    'msgs': []
+                }
+            }
+
+        self._msg_threads[to_id][msg_evt.kind]['msgs'].append(msg_evt)
+        self._msg_lookup.add(msg_evt.id)
+        return True
+
+    def do_event(self, sub_id, evt: Event, relay):
+        if self._add_msg(evt) and self._on_message:
+            self._on_message()
+        # print(self._msgs)
+
+    def post_message(self,
+                     the_client: Client,
+                     from_user: Profile,
+                     to_user: Profile,
+                     msg,
+                     kind=Event.KIND_TEXT_NOTE):
+        """
+        :param from_user:
+        :param to_user:
+        :param msg:
+        :param kind:
+        :return:
+        """
+        n_event = Event(kind=kind,
+                        content=msg,
+                        pub_key=from_user.public_key,
+                        tags=[
+                            ['p', to_user.public_key]
+                        ])
+        n_event.sign(from_user.private_key)
+        the_client.publish(n_event)
+
+    def messages(self, pub_k, kind):
+        return self._msg_threads[pub_k][kind]['msgs']
+
+# def post_message(the_client: Client, from_user:Profile, to_user:Profile, msg):
+#     n_event = Event(kind=Event.KIND_TEXT_NOTE,
+#                     content=msg,
+#                     pub_key=from_user.public_key,
+#                     tags=[
+#                         ['p', to_user.public_key]
+#                     ])
+#     n_event.sign(from_user.private_key)
+#     the_client.publish(n_event)
 
 
 class BasicScreenApp:
@@ -302,17 +430,17 @@ def plain_text_chat(from_user, to_user, db: Database=None):
         my_store = SQLStore(db)
 
     def do_message(text):
-        post_message(my_client, from_p, to_p, text)
+        my_msg_thread.post_message(my_client, from_p, to_p, text)
 
     my_display = BasicScreenApp(from_p=from_p,
                                 to_p=to_p,
                                 on_message_enter=do_message)
 
     def draw_msgs():
-        my_display.set_messages(my_msg_thread.messages)
+        my_display.set_messages(my_msg_thread.messages(to_p.public_key,Event.KIND_TEXT_NOTE))
 
-    my_msg_thread = MessageThread(from_p=from_p,
-                                  to_p=to_p,
+    my_msg_thread = MessageThreads(from_p=from_p,
+                                  # to_p=to_p,
                                   evt_store=my_store,
                                   on_message=draw_msgs)
 
@@ -335,7 +463,7 @@ def plain_text_chat(from_user, to_user, db: Database=None):
                                  ]
                              })
 
-    my_client = Client('ws://localhost:8082', on_connect=my_subscribe).start()
+    my_client = Client('ws://192.168.0.16:8081', on_connect=my_subscribe).start()
 
     draw_msgs()
     my_display.run()
@@ -345,12 +473,14 @@ def plain_text_chat(from_user, to_user, db: Database=None):
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
-    #
+
     plain_text_chat(
-        from_user='firedragon888',
-        to_user='3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3',
+        from_user='3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3',
+        to_user='firedragon888',
         db=DB
     )
+
+
     #
     # def my_connect(the_client):
     #     the_client.subscribe('web', None, {

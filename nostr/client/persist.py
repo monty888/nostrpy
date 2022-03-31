@@ -25,6 +25,8 @@ from nostr.relay.persist import SQLStore as RelayStore
 
 
 class ClientStoreInterface(ABC):
+    # TODO:
+    #  add method that returns the most recent create date for all relays we've seen
 
     @abstractmethod
     def add_event(self, evt: Event, relay_url: str):
@@ -146,17 +148,20 @@ class SQLStore(ClientStoreInterface, ABC):
         if isinstance(filters, dict):
             filters = [filters]
 
-        sql = ''
+        sql = []
         args = []
         for c_filter in filters:
             q = for_single_filter(c_filter)
             if sql:
-                sql += ' union '
-            sql = sql + q['sql']
+                sql.append(' union ')
+            sql.append(q['sql'])
             args = args + q['args']
 
+        # queries to our own local data will be ordered
+        sql.append('order by created_at desc')
+
         return {
-            'sql': sql,
+            'sql': ''.join(sql),
             'args': args
         }
 

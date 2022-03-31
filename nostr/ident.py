@@ -180,7 +180,6 @@ class Profile:
         self._profile_name = profile_name
         self._priv_k = priv_k
         self._pub_k = pub_k
-
         self._attrs = attrs
         if self._attrs is None:
             self._attrs = {}
