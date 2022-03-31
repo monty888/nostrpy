@@ -47,8 +47,6 @@ class SharedEncrypt:
 
     def derive_shared_key(self, pub_key_hex):
         pk = secp256k1.PublicKey()
-        # pk.deserialize(bytes.fromhex('02' + pub_key_hex))
-        print(pub_key_hex)
         pk.deserialize(bytes.fromhex(pub_key_hex))
         pub_key = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), pk.serialize(False))
         self._shared_key = self._key.exchange(ec.ECDH(), pub_key)

@@ -277,6 +277,13 @@ class Event:
     def content(self):
         return self._content
 
+    # FIXME:
+    #  setters should probably invalidate the id and sig as they'll need to be done again,
+    #  though only important if going to post
+    @content.setter
+    def content(self, content):
+        self._content = content
+
     @property
     def sig(self):
         return self._sig

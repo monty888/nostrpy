@@ -188,7 +188,7 @@ class Client:
                 sub_id, message))
 
     def _on_error(self, ws, error):
-        print(error)
+        logging.debug('Client::_on_error %s' % error)
 
     def _on_close(self, ws, close_status_code, close_msg):
         logging.debug('Client::_on_close %s' % self._url)
