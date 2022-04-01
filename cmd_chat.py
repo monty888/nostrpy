@@ -134,6 +134,12 @@ def plain_text_chat(from_user, to_user, db: Database=None):
 
     my_client = Client('ws://192.168.0.17:8081', on_connect=my_subscribe).start()
     draw_msgs()
+
+    # import signal
+    # def sigint_handler(signal, frame):
+    #     logging.debug('RESIZED!!!!!!')
+    # signal.signal(signal.SIGWINCH, sigint_handler)
+
     my_display.run()
     my_client.end()
 

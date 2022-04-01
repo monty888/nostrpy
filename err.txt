@@ -23,19 +23,24 @@ DEBUG:root:Database::select_sql - SQL: select * from events  where kind in(?) an
  ARGS: [4, '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486%', 4, '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486']
 DEBUG:asyncio:Using selector: EpollSelector
 DEBUG:root:Client::_on_open ws://192.168.0.17:8081
-DEBUG:root:Client::subscribe - ["REQ", "e633", {"kinds": 4, "authors": ["40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"], "#p": ["40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]}]
+DEBUG:root:Client::subscribe - ["REQ", "58cb", {"kinds": 4, "authors": ["40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"], "#p": ["40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]}]
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['69ef9fc7f094ca8b00610833ac72fccb232fc0cb61f09723136e0f8e79a1b97f', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648747581, 4, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'Z2DTdAHyWohljZ566Tb9jftYHZP6G6zGPqXJoqBrJPs=?iv=K3mncu1uRK6VfKXvpToT9g==', '40149ee728dfdd14a2807d842d68837f5c8b29a9c8a5a39c298520e0865704f6bf48312f2c0cc3857e94b0d9f10594ed1ad849bdcab8695cabca1ed1a3b336e8']
+ ARGS: ['a89a5d4b843eafd0b8df1cfff80f2e7892dc436c4c83b593135c248f39834e1d', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648798097, 4, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'UK+DkFnGV1qrtdI3H+YfmQ==?iv=Y8uiqBD1iZa8cWPUmmvagA==', 'e6074da14018640ece3a49a2653e34e786506c0135b75b92fcde27f1c2a317c6decc10c1f5bb897a46a5d29f38dd49596bddadd5403cd8bdac0acaaa8c203858']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['69ef9fc7f094ca8b00610833ac72fccb232fc0cb61f09723136e0f8e79a1b97f']
+ ARGS: ['a89a5d4b843eafd0b8df1cfff80f2e7892dc436c4c83b593135c248f39834e1d']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['39eec1766b0f8e0f748b03cbd72e2785e572b93daba5a14a94f9f14a2b7fe61d', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648747600, 4, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'to3smBgLHlfrrvSO9JhM90dDpZbk1tw4jTaf9l/gGq4=?iv=3F9hQM4vsBqS0bG0Sw9K9A==', '16243169f5fb0ad1f93c1a04423858fe877ff0575329142adf968bf8a51620a0db75ee47b53f15c240db85f5b411bc07af3cd5905a88c2d9b4d77ea44d78ab82']
+ ARGS: ['7d85f5ec1b7609f4a525860718bbdf9b5db6f05bb1db2e6bdebbd212d0e738e8', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648798116, 4, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', '1+7K7vl7oF7O5pLxB+cpnklu9/ikf3sPpJ3D54EQrq0=?iv=nhN3ic8uQIrHfW4P7UvGsA==', '53230d07cf21bd09bccaa0b2c54d6e4e111dc73e03a076925b3ff8e4a5a164aede42d99cfcd678dbdd1adfe812b4344c0378b1096dae3736ca7aed3318df35d6']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['39eec1766b0f8e0f748b03cbd72e2785e572b93daba5a14a94f9f14a2b7fe61d']
+ ARGS: ['7d85f5ec1b7609f4a525860718bbdf9b5db6f05bb1db2e6bdebbd212d0e738e8']
 DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
- ARGS: ['23646c4299c3490900811c4d6348fde1f64470f8deee353da4849f100fb7ef2b', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648747890, 4, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', '8V64hGZHc6QthWuao4CAcg==?iv=GhBbeJqgknMrhO9SH6oQvQ==', 'd08f1209677d5116d27ff2cafdc388ac6b4acd4c1af0a88ebb6d9763856a477f6ec80e71f61907bbe10e61a809864b4a07e3954f75dfd399fddcddb2614124ca']
+ ARGS: ['6facec960b11280156bf04f49a88440981c526ffe7a636ab9ac6a55c3bf5a915', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648798649, 4, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', '5MY1V0AcJC2+nFliZ6Wrbg==?iv=J0Q5VF9jzwz1xBmgCGuFJQ==', 'bd4bf8aa86ebb23a78bed3bfeacd9f2f4778b438af91483918674a8ff3173a45ad4d8a8cde8f5b666fed2e02b61b4242851a9b858185258077f413b1f281c90c']
 DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
 DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
- ARGS: ['23646c4299c3490900811c4d6348fde1f64470f8deee353da4849f100fb7ef2b']
+ ARGS: ['6facec960b11280156bf04f49a88440981c526ffe7a636ab9ac6a55c3bf5a915']
+DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
+ ARGS: ['6aaa07b53f115d5c36328be1d3306d305f89e189695bd8110c2c08153b89f3aa', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1648798665, 4, '[["p", "3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3"]]', 'tG/o2MSEexrZ0RUvI5Y54g==?iv=jIZhTUUxUB8AkhhGgRkIQw==', '82c1035e26b1c0f6be5bbd25b44c08d87bec5f65adc76dbc905098065b776054b26cb22b36a801f9f51ccd431043cd1bcaab15bdc3175c0dfac899374b4b9042']
+DEBUG:root:Database::execute_batch error - not committed UNIQUE constraint failed: events.event_id
+DEBUG:root:Database::select_sql - SQL: SELECT  e.id, er.relay_url from events e inner join event_relay er on e.id = er.id where e.event_id = ? 
+ ARGS: ['6aaa07b53f115d5c36328be1d3306d305f89e189695bd8110c2c08153b89f3aa']

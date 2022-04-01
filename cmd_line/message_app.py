@@ -5,9 +5,11 @@ from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.layout.layout import Layout
 from prompt_toolkit.layout import ScrollablePane
+from prompt_toolkit.widgets import VerticalLine, Button,TextArea
 from prompt_toolkit.key_binding import KeyBindings
 from nostr.ident import Profile
 from nostr.event import Event
+
 
 class MessageApp:
     """
@@ -69,18 +71,26 @@ class MessageApp:
         self._scroll = ScrollablePane(content=self._msg_area,
                                       keep_cursor_visible=True)
 
+
         self._enter_bar = VSplit([
             Window(height=1,
                    width=len(self._enter_prompt),
                    content=FormattedTextControl(self._enter_prompt)),
-            Window(height=3, content=BufferControl(buffer=self._prompt))
+            Window(height=3, content=BufferControl(buffer=self._prompt)),
+            Button(text='send')
         ])
 
         # struct
         self._root_container = HSplit([
             # content
             # ScrollablePane(self._main_window, keep_cursor_visible=True),
-            self._scroll,
+            # self._scroll,
+            VSplit([
+                # profile data here
+                Window(width=20, content=FormattedTextControl('WTF!!!!!!')),
+                VerticalLine(),
+                self._scroll
+            ]),
             # msg entry
 
             self._enter_bar
@@ -94,6 +104,7 @@ class MessageApp:
                                 mouse_support=True)
 
     def run(self):
+
         self._app.run()
 
     def set_messages(self, msgs):
@@ -134,4 +145,8 @@ class MessageApp:
 
         self._msgs_height = total_height
         self._app.invalidate()
-        self._scroll.vertical_scroll = self._msgs_height - os.get_terminal_size().lines+3
+
+        if self._msgs_height+3 <= os.get_terminal_size().lines:
+            self._scroll.vertical_scroll = 0
+        else:
+            self._scroll.vertical_scroll = self._msgs_height - os.get_terminal_size().lines + 3
