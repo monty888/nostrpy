@@ -12,6 +12,8 @@
 """
 
 import base64
+import logging
+
 from nostr.ident import Profile
 from nostr.client.persist import ClientStoreInterface
 from nostr.client.client import Client
@@ -127,21 +129,20 @@ class MessageThreads:
 
             except Exception as e:
                 msg_evt.content = '!!!unable to decrypt!!!'
-
         self._msg_threads[to_id][msg_evt.kind]['msgs'].append(msg_evt)
         self._msg_lookup.add(msg_evt.id)
         return True
 
     def do_event(self, sub_id, evt: Event, relay):
         if self._add_msg(evt) and self._on_message:
-            self._on_message()
+            self._on_message(evt)
         # print(self._msgs)
 
     def post_message(self,
                      the_client: Client,
                      from_user: Profile,
                      to_user: Profile,
-                     msg,
+                     text,
                      kind=Event.KIND_TEXT_NOTE):
         """
         :param from_user:
@@ -150,14 +151,14 @@ class MessageThreads:
         :param kind:
         :return:
         """
-        the_content = msg
+        the_content = text
 
         # # encrypt text as NIP4 if encrypted kind
         if kind == Event.KIND_ENCRYPT:
             my_enc = SharedEncrypt(self._from.private_key)
             my_enc.derive_shared_key('02' + to_user.public_key)
             # crypt_message = my_enc.encrypt_message(b'a very simple message to test encrypt')
-            crypt_message = my_enc.encrypt_message(bytes(msg.encode('utf8')))
+            crypt_message = my_enc.encrypt_message(bytes(text.encode('utf8')))
             enc_message = base64.b64encode(crypt_message['text'])
             iv_env = base64.b64encode(crypt_message['iv'])
             the_content = '%s?iv=%s' % (enc_message.decode(), iv_env.decode())
@@ -171,8 +172,19 @@ class MessageThreads:
         n_event.sign(from_user.private_key)
         the_client.publish(n_event)
 
-    def messages(self, pub_k, kind):
+    def messages(self, pub_k, kind, since=None, received_only=False):
         ret = []
         if pub_k in self._msg_threads:
             ret = self._msg_threads[pub_k][kind]['msgs']
+            if since:
+                ret = [msg for msg in ret if msg.created_at > since]
+            if received_only:
+                ret = [msg for msg in ret if pub_k not in msg.get_tags('p')[0][0]]
+
         return ret
+
+    def messaged(self):
+        """
+        :return: pub_keys of anyone that we have messages to
+        """
+        return self._msg_threads.keys()

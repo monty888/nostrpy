@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 import sys
 import time
+
+import geventwebsocket
 import websocket
 from websocket._exceptions import WebSocketConnectionClosedException
 import json
@@ -98,10 +100,19 @@ class Client:
         self._last_con = None
         self._con_fail_count = 0
         self._on_connect = on_connect
+        self._is_connected = False
 
     @property
     def url(self):
         return self._url
+
+    def set_on_connect(self, on_connect):
+        # probably should either pass in on create or call this before start()
+        # anyway if we already connected the func passed in will be called straight away
+        # and then again whenever we reconnect e.g. after losing connection
+        self._on_connect = on_connect
+        if self._is_connected:
+            self._on_connect(self)
 
     def subscribe(self, sub_id=None, handlers=None, filters={}):
         """
@@ -195,6 +206,7 @@ class Client:
 
     def _on_open(self, ws):
         logging.debug('Client::_on_open %s' % self._url)
+        self._is_connected = True
         if self._on_connect:
             self._on_connect(self)
 
@@ -223,8 +235,8 @@ class Client:
                           'should try to reestablish but for now it dead!' % (wsc, self._url))
                 time.sleep(1)
                 self._ws = None
-                self._con_fail_count +=1
-
+                self._con_fail_count += 1
+                self._is_connected = False
 
         Thread(target=my_thread).start()
         # time.sleep(1)
@@ -247,6 +259,16 @@ class Client:
     def __str__(self):
         return self._url
 
+    @property
+    def connected(self):
+        return self._is_connected
+
+    @property
+    def last_connected(self):
+        # this is actually the last message we did but probably we can get a better last con time from the
+        # ws object itself
+        #
+        return self._last_con
 
 class ClientPool:
     """
@@ -305,12 +327,21 @@ class ClientPool:
             except Exception as e:
                 logging.debug('ClientPool::__init__ - %s' % e)
 
+    def set_on_connect(self, on_connect):
+        for c_client in self._clients:
+            the_client = self._clients[c_client]['client']
+            the_client.set_on_connect(on_connect)
 
     # methods work on all but we'll probably want to be able to name on calls
     def start(self):
         for c_client in self._clients:
             the_client = self._clients[c_client]['client']
             the_client.start()
+
+    def end(self):
+        for c_client in self._clients:
+            the_client = self._clients[c_client]['client']
+            the_client.end()
 
     def subscribe(self, sub_id=None, handlers=None, filters={}):
 

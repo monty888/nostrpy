@@ -14,12 +14,8 @@ import sys
 
 from nostr.ident import Profile, UnknownProfile
 from nostr.client.client import Client
-from nostr.client.persist import  SQLStore
-from nostr.client.event_handlers import PersistEventHandler
-from nostr.client.messaging import MessageThreads
-from nostr.event import Event
 from db.db import Database, SQLiteDatabase
-from cmd_line.message_app import MessageApp
+from cmd_line.message_app import ChatApp
 
 # TODO: also postgres
 DB = SQLiteDatabase('/home/shaun/.nostrpy/nostr-client.db')
@@ -81,76 +77,24 @@ def get_profiles(from_user, to_user, db: Database=None):
         'to' : to_p
     }
 
-# TODO: most of this can probably be moved to cmd_line/message_app.py too
-def plain_text_chat(from_user, to_user, db: Database=None):
-    # with what we've been given attempt to get profiles for the from and to users
-    # will just exit if it can't create from user with priv_k and to_user with pub_k
-    profiles = get_profiles(from_user=from_user,
-                            to_user=to_user,
-                            db=db)
-    from_p: Profile = profiles['from']
-    to_p: Profile = profiles['to']
-
-    note_kind = Event.KIND_ENCRYPT
-
-    my_store = None
-    if db:
-        my_store = SQLStore(db)
-
-    def do_message(text):
-        my_msg_thread.post_message(my_client, from_p, to_p, text,kind=note_kind)
-
-    my_display = MessageApp(from_p=from_p,
-                            to_p=to_p,
-                            on_message_enter=do_message)
-
-    def draw_msgs():
-        my_display.set_messages(my_msg_thread.messages(to_p.public_key,
-                                                       note_kind))
-
-    my_msg_thread = MessageThreads(from_p=from_p,
-                                   evt_store=my_store,
-                                   on_message=draw_msgs,
-                                   kinds=note_kind)
-
-    def my_subscribe(the_client: Client):
-        # sub for messages we don't have
-        handlers = [my_msg_thread]
-        if my_store:
-            handlers.append(PersistEventHandler(my_store))
-
-        # important, on_connect is current called without spawning off so if you don't return from here
-        # handlers won't see anything... or at least things will get odd
-        the_client.subscribe(handlers=handlers,
-                             filters={
-                                 'kinds': note_kind,
-                                 'authors': [
-                                     from_p.public_key, to_p.public_key
-                                 ],
-                                 '#p': [
-                                     from_p.public_key, to_p.public_key
-                                 ]
-                             })
-
-    my_client = Client('ws://192.168.0.17:8081', on_connect=my_subscribe).start()
-    draw_msgs()
-
-    # import signal
-    # def sigint_handler(signal, frame):
-    #     logging.debug('RESIZED!!!!!!')
-    # signal.signal(signal.SIGWINCH, sigint_handler)
-
-    my_display.run()
+def run_chat_app():
+    from nostr.client.client import ClientPool
+    my_client = ClientPool('ws://192.168.0.17:8081')
+    ChatApp('message_to', my_client, DB).start()
     my_client.end()
+
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
+    run_chat_app()
 
-    plain_text_chat(
-        from_user='firedragon888',
-        to_user='3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3',
-        db=DB
-    )
+    # plain_text_chat(
+    #     from_user='firedragon888',
+    #     to_user='3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3',
+    #     db=DB
+    # )
+
+
 
     #
     # def my_connect(the_client):

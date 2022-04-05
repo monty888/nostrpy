@@ -206,7 +206,7 @@ def main():
     elif config['store'] == 'transient':
         my_store = MemoryStore()
     else:
-        print('--store most be sqlite or postgres')
+        print('--store most be sqlite, postgres or transient')
         sys.exit(2)
 
     if is_wipe:

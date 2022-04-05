@@ -24,6 +24,7 @@ from nostr.util import util_funcs
 class UnknownProfile(Exception):
     pass
 
+
 class Profile:
 
     @classmethod
@@ -259,9 +260,12 @@ class Profile:
             loc = 'remote'
             if self.private_key:
                 loc = 'local'
-            ret = '%s/%s' % (loc, self.name)
+            name = self.name
+            if not name:
+                name = util_funcs.str_tails(self.public_key, 4)
+            ret = '%s/%s' % (loc, name)
 
-        if with_pub:
+        if with_pub and self.name:
             ret = '%s<%s>' % (ret, util_funcs.str_tails(self.public_key, 4))
 
         return ret
@@ -342,6 +346,7 @@ class SQLiteProfileStore(SQLProfileStore):
             }
         })
 
+
 class ProfileList:
     """
         collection of profiles, for now were using this for profiles other than us,
@@ -365,9 +370,9 @@ class ProfileList:
         profiles = []
         for c_r in data:
             profiles.append(Profile(
-                None,                   # don't have as not us
+                priv_k=c_r['priv_k'],
                 pub_k=c_r['pub_k'],
-                profile_name=None,      # only defined for our profiles
+                profile_name=c_r['profile_name'],
                 attrs=c_r['attrs'],
                 update_at=c_r['updated_at']
             ))
@@ -384,9 +389,19 @@ class ProfileList:
 
     def __init__(self, profiles):
         self._profiles = profiles
-        self._key_lookup = {}
+
+        # make some lookups, in most cases pub_key lookup will be the one that gets used
+        # it'll also be the one that we should have for everyone
+        self._pub_key_lookup = {}
+        self._priv_key_lookup = {}
+        self._pname_lookup = {}
+        c_p: Profile
         for c_p in self._profiles:
-            self._key_lookup[c_p.public_key] = c_p
+            self._pub_key_lookup[c_p.public_key] = c_p
+            if c_p.private_key:
+                self._priv_key_lookup[c_p.private_key] = c_p
+            if c_p.profile_name:
+                self._pname_lookup[c_p.profile_name] = c_p
 
     def append(self, profile: Profile):
         self._profiles.append(profile)
@@ -398,13 +413,31 @@ class ProfileList:
             ret.append(c_p.as_dict())
         return ret
 
-    def lookup(self, pub_key):
+    def lookup_pub_key(self, key):
         """
             return profile obj for pubkey if we have it
         """
         ret = None
-        if pub_key in self._key_lookup:
-            ret = self._key_lookup[pub_key]
+        if key in self._pub_key_lookup:
+            ret = self._pub_key_lookup[key]
+        return ret
+
+    def lookup_priv_key(self, key):
+        """
+            return profile obj for pubkey if we have it
+        """
+        ret = None
+        if key in self._priv_key_lookup:
+            ret = self._priv_key_lookup[key]
+        return ret
+
+    def lookup_profilename(self, key):
+        """
+            return profile obj for pubkey if we have it
+        """
+        ret = None
+        if key in self._pname_lookup:
+            ret = self._pname_lookup[key]
         return ret
 
     def matches(self, m_str):
@@ -536,7 +569,7 @@ class ProfileEventHandler:
         TODO: check and verify NIP05 if profile has it
     """
 
-    def __init__(self, db, on_update=None):
+    def __init__(self, db: Database, on_update=None):
         self._db = db
         self._profiles = ProfileList.create_profiles_from_db(self._db)
         self._on_update = on_update
