@@ -1,4 +1,3 @@
-import rel
 from bottle import request, Bottle, abort
 import logging
 from gevent.pywsgi import WSGIServer
@@ -16,7 +15,6 @@ from nostr.exception import NostrCommandException
 from sqlite3 import IntegrityError
 import psycopg2.errors as pg_errors
 from nostr.util import util_funcs
-
 
 
 class Relay:

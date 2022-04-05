@@ -136,7 +136,6 @@ class MessageThreads:
     def do_event(self, sub_id, evt: Event, relay):
         if self._add_msg(evt) and self._on_message:
             self._on_message(evt)
-        # print(self._msgs)
 
     def post_message(self,
                      the_client: Client,

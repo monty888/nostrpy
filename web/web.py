@@ -2,6 +2,7 @@ import json
 
 from bottle import request, Bottle, static_file, abort
 import logging
+from pathlib import Path
 from nostr.ident import ProfileList
 from data.data import DataSet
 from gevent.pywsgi import WSGIServer
@@ -103,7 +104,7 @@ class NostrWeb(StaticServer):
             the_client.subscribe('web', self, {
                 # 'since': self._store.get_oldest()
             })
-        self._nostr_client = Client('ws://localhost:8082/', on_connect=my_connect).start()
+        self._nostr_client = Client('ws://192.168.0.17:8081', on_connect=my_connect).start()
 
         self._web_sockets = {}
         # initial load of profiles, after that shoudl track events
@@ -231,8 +232,8 @@ class NostrWeb(StaticServer):
         self._nostr_client.end()
 
 def nostr_web():
-    nostr_db_file = '/home/shaun/.nostrpy/nostr-client.db'
-    my_server = NostrWeb(file_root='/home/shaun/PycharmProjects/nostrpy/web/static/',
+    nostr_db_file = '%s/.nostrpy/nostr-client.db' % Path.home()
+    my_server = NostrWeb(file_root='%s/PycharmProjects/nostrpy/web/static/' % Path.home(),
                          db_file=nostr_db_file)
 
     # example clean exit... need to look into more though
@@ -256,7 +257,4 @@ def nostr_web():
 
 if __name__ == '__main__':
     logging.getLogger().setLevel(logging.DEBUG)
-
-
-
     nostr_web()

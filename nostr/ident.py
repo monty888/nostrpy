@@ -407,6 +407,7 @@ class ProfileList:
         self._profiles.append(profile)
         self._key_lookup[profile.public_key] = profile
 
+    # TODO: remove this and see if it breaks anyhting...
     def as_arr(self):
         ret = []
         for c_p in self._profiles:
