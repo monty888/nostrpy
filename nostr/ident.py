@@ -10,6 +10,7 @@ different db/persistance layer with min code changes
 
 """
 import json
+import sys
 from json import JSONDecodeError
 import secp256k1
 import logging
@@ -441,9 +442,12 @@ class ProfileList:
             ret = self._pname_lookup[key]
         return ret
 
-    def matches(self, m_str):
-        if m_str.replace(' ','') =='':
-            return self._profiles
+    def matches(self, m_str, max_match=None):
+        if m_str.replace(' ','') == '':
+            ret = self._profiles
+            if max_match:
+                ret = ret[:max_match]
+            return ret
 
         # simple text text lookup against name/pubkey
         ret = []
@@ -453,6 +457,10 @@ class ProfileList:
             # pubkey should be lowercase but name we convert
             if m_str in c_p.public_key or c_p.name and m_str in c_p.name.lower():
                 ret.append(c_p)
+
+            # found enough matches
+            if max_match and len(ret) >= max_match:
+                break
         return ret
 
     def __getitem__(self, item):

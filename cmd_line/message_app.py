@@ -1,9 +1,11 @@
+import asyncio
 import logging
 import os
 import time
 
 from abc import abstractmethod
 from prompt_toolkit import Application
+from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.layout.containers import HSplit, Window, VSplit, WindowAlign
 from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
 from prompt_toolkit.buffer import Buffer
@@ -15,7 +17,7 @@ from prompt_toolkit.widgets import VerticalLine, Button,TextArea, HorizontalLine
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.mouse_events import MouseEvent,MouseButton, MouseEventType
-from nostr.ident import Profile, ProfileEventHandler, UnknownProfile
+from nostr.ident import Profile, ProfileEventHandler, UnknownProfile, ProfileList
 from nostr.client.event_handlers import PersistEventHandler
 from nostr.event import Event
 from nostr.client.persist import SQLStore
@@ -76,23 +78,120 @@ class DialogBase:
 
 class SearchContactDialog(DialogBase):
 
-    def __init__(self, app: Application, on_close=None):
+    def __init__(self, app: Application,
+                 profiles: ProfileList,
+                 on_close=None):
 
         # inputs/widget
         # text area input contact search
-        self._search_in = None
 
+
+        def my_cancel():
+            self.hide()
+
+        def my_select():
+            self.hide()
+
+        self._search_in = None
+        self._search_in_buf_con = None
+
+        self._cancel_but = Button('cancel', handler=my_cancel)
+        self._select_but = Button('select', handler=my_select)
+
+        self._profiles = profiles
+        self._highlight_index = 0
         super().__init__(title='start messaging contact',
                          app=app,
                          on_close=on_close)
 
+        # couldn't work out how to get the autocomplete working in prompt toolkit in full screen app
+        # so we'll do it ourself, maybe revisit in future
+
+        self._match_con = None
+        self._suggest_con = None
+        self._matches = []
+        self._search_text = ''
+
+        @self._kb.add('down')
+        def _(e):
+            self._highlight_index += 1
+            if self._highlight_index>=len(self._matches):
+                self._highlight_index = 0
+            self._prep_suggest_con()
+
+        @self._kb.add('up')
+        def _(e):
+            self._highlight_index -= 1
+            if self._highlight_index<0:
+                self._highlight_index = len(self._matches)-1
+            self._prep_suggest_con()
+
+
+    def _prep_suggest_con(self):
+        self._matches = []
+        self._suggest_con = []
+        in_str = self._search_text
+        if len(in_str.replace(' ', '')) > 0:
+            self._matches = self._profiles.matches(self._search_text, 20)
+
+        to_add = []
+        for i, c_p in enumerate(self._matches):
+            color = ''
+            if i == self._highlight_index:
+                color = 'green'
+
+            to_add.append(Window(
+                content=FormattedTextControl(text=[(color, c_p.display_name(with_pub=True))]),
+                height=1
+            ))
+
+        self._match_con.children = to_add
+
     def create_content(self):
-        self._search_in = TextArea(width=32)
+        from prompt_toolkit.layout.containers import ConditionalContainer
+        @Condition
+        def _():
+            return len(self._matches) > 0
+
+        def my_change(buf: Buffer):
+            self._highlight_index = 0
+            self._search_text = buf.text
+            self._prep_suggest_con()
+
+        def my_complete(buf: Buffer):
+            if self._matches:
+                buf.text = self._matches[self._highlight_index].public_key
+            self._app.layout.focus(self._select_but)
+            return True
+
+        self._search_in = Buffer(on_text_changed=my_change,
+                                 multiline=False,
+                                 accept_handler=my_complete)
+        self._search_in_buf_con = BufferControl(self._search_in,
+                                                preview_search=True)
+        self._match_con = HSplit(children=[])
+        self._suggest_con = ConditionalContainer(content=self._match_con, filter=_)
+
         self._content = HSplit(children=[
-                self._search_in,
-                Window(content=FormattedTextControl(text='findings!!!!'))
+                Window(content=self._search_in_buf_con, width=32, height=1),
+                self._suggest_con,
+                Window(content=FormattedTextControl(text=''), width=32),
+                VSplit(children=[
+                    self._select_but,
+                    Window(content=FormattedTextControl(text='')),
+                    self._cancel_but
+                ], height=1)
             ],
             key_bindings=self._kb)
+        self._app.invalidate()
+
+    def show(self):
+        super().show()
+        self._app.layout.focus(self._search_in)
+
+    def hide(self):
+        self._search_in.text = ''
+        super().hide()
 
 
 class SwitchProfileDialog(DialogBase):
@@ -296,19 +395,22 @@ class ChatGui:
         def new_contact():
             self._new_contact_dialog.show()
 
-        self._new_contact_dialog = SearchContactDialog(self._app, on_close=self._focus_prompt)
+        self._new_contact_dialog = SearchContactDialog(self._app,
+                                                       profiles=self._chat_app.get_profile_lookup(),
+                                                       on_close=self._focus_prompt)
 
         self._nav_contacts = HSplit([])
         self._nav_controls = HSplit([
             Button(text='new contact', handler=new_contact),
-            Button(text='relays'),
-            Button(text='switch user')
+            # Button(text='relays'),
+            # Button(text='switch user')
         ])
 
         self._nav_pane = HSplit([
-            ScrollablePane(content=self._nav_contacts),
+            self._nav_controls,
             HorizontalLine(),
-            self._nav_controls
+            ScrollablePane(content=self._nav_contacts),
+
         ], width=24)
 
     def set_contacts(self, contacts):
@@ -585,14 +687,23 @@ class ChatApp:
 
     @property
     def profile(self):
+        # profile we're currently logged in as, the from profile
         return self._profile
 
     @property
     def view_profile(self):
+        # msgs we're viewing and where any post will be sent, the to profile
         return self._current_to
+
+    def get_profile_lookup(self) -> ProfileList:
+        # obj that gives us a way to look up profiles as we currently know them
+        return self._profiles.profiles
 
     @property
     def messages(self):
+        # this will return msgs between current from/to profiles
+        # at the moment we recreate threads on switching profile
+        # TODO: keep threads keyed on from_p pub_k
         return self._threads.messages(self._current_to.public_key,
                                       kind=self._kind)
 
@@ -631,5 +742,8 @@ class ChatApp:
         return ret
 
     def start(self):
-        self._display.run()
+        try:
+            self._display.run()
+        except Exception as e:
+            logging.debug(e)
 
