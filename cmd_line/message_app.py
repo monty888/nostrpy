@@ -140,13 +140,23 @@ class SearchContactDialog(DialogBase):
             self._matches = self._profiles.matches(self._search_text, 20)
 
         to_add = []
+
+        def get_complete(item_index):
+            def my_complete(e):
+                if is_left_click(e):
+                    self._highlight_index = item_index
+                    self._search_in.text = self._matches[self._highlight_index].public_key
+                    self._app.layout.focus(self._select_but)
+                    return True
+            return my_complete
+
         for i, c_p in enumerate(self._matches):
             color = ''
             if i == self._highlight_index:
                 color = 'green'
 
             to_add.append(Window(
-                content=FormattedTextControl(text=[(color, c_p.display_name(with_pub=True))]),
+                content=FormattedTextControl(text=[(color, c_p.display_name(with_pub=True), get_complete(i))]),
                 height=1
             ))
 
