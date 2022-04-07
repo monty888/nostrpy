@@ -90,6 +90,8 @@ class SearchContactDialog(DialogBase):
             self.hide()
 
         def my_select():
+            if len(self._search_in.text) == 64:
+                self._profile_key = self._search_in.text
             self.hide()
 
         self._search_in = None
@@ -111,6 +113,9 @@ class SearchContactDialog(DialogBase):
         self._suggest_con = None
         self._matches = []
         self._search_text = ''
+
+        # set when a valid key is entered and dialog closed with select
+        self._profile_key = None
 
         @self._kb.add('down')
         def _(e):
@@ -192,6 +197,10 @@ class SearchContactDialog(DialogBase):
     def hide(self):
         self._search_in.text = ''
         super().hide()
+
+    @property
+    def selected_profile_key(self):
+        return self._profile_key
 
 
 class SwitchProfileDialog(DialogBase):
@@ -395,9 +404,15 @@ class ChatGui:
         def new_contact():
             self._new_contact_dialog.show()
 
+        def contact_selected():
+            if self._new_contact_dialog.selected_profile_key:
+                self._chat_app.add_contact(self._new_contact_dialog.selected_profile_key)
+                self._chat_app._draw_contacts()
+            self._focus_prompt()
+
         self._new_contact_dialog = SearchContactDialog(self._app,
                                                        profiles=self._chat_app.get_profile_lookup(),
-                                                       on_close=self._focus_prompt)
+                                                       on_close=contact_selected)
 
         self._nav_contacts = HSplit([])
         self._nav_controls = HSplit([
@@ -542,8 +557,9 @@ class ChatApp:
         if self._db:
             # we'll want to listen eventually and add as handler to client sub
             self._profiles = ProfileEventHandler(db, None)
-            # TODO: we'll need to create a transient version now we can switch profiles,
-            #  else
+            # TODO: we'll probably need to create a transient version now we can switch profiles,
+            #  check what needs to happen in case where we have no store but want to add a contact
+            #  user will need the full pubkey
             self._event_store = SQLStore(self._db)
 
         self._profile = self._get_profile(as_profile,
@@ -559,19 +575,15 @@ class ChatApp:
         # init gui
         self._display = ChatGui(chat_app=self)
 
-        # track messages for my profile
-        self._threads = MessageThreads(from_p=self._profile,
-                                       evt_store=self._event_store,
-                                       on_message=self._new_message,
-                                       kinds=self._kind)
+        # in here we keep message threads and contacts per profile
+        self._threads = {}
+        # we do the same thing for contacts per profile
+        self._contacts = {}
 
         # self._current_to = self._get_profile('3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3')
         self._current_to = None
         # move to connect...
-        self._contacts = {}
-        self._update_contacts()
         self._draw_contacts()
-
         self._draw_messages()
 
         self._start_client()
@@ -583,67 +595,54 @@ class ChatApp:
             handlers = [self]
             if self._event_store:
                 handlers.append(PersistEventHandler(self._event_store))
+            if self._profiles:
+                handlers.append(self._profiles)
 
-            the_client.subscribe(handlers=handlers,
-                                 filters=[
-                                     {
-                                         'kinds': self._kind,
-                                         'authors': [
-                                             self._profile.public_key
-                                         ]
-                                     },
-                                     {
-                                         'kinds': self._kind,
-                                         '#p': [
-                                             self._profile.public_key
-                                         ]
-                                     }
-                                 ]
-                                 )
+            # because we added switching profiles simpler just to look at all events of correct kind
+            the_client.subscribe(handlers=handlers, filters={
+                'kinds': [self._kind, Event.KIND_META]
+            })
 
         self._client.set_on_connect(my_connect)
         self._client.start()
 
     def do_event(self, sub_id, evt: Event, relay):
-        self._threads.do_event(sub_id, evt, relay)
+        # we only need to forward evts for profiles we already looked at, as others
+        # will be picked up on load from db on create msgthread
+        if evt.pub_key in self._threads:
+            self._threads[evt.pub_key].do_event(sub_id, evt, relay)
+        if evt.p_tags and evt.p_tags[0] in self._threads:
+            self._threads[evt.p_tags[0]].do_event(sub_id, evt, relay)
 
     def do_message(self, text):
-        self._threads.post_message(the_client=self._client,
-                                   from_user=self._profile,
-                                   to_user=self._current_to,
-                                   text=text,
-                                   kind=self._kind)
-
-    def _update_contacts(self):
-        for c_key in self._threads.messaged():
-            if c_key not in self._contacts:
-                self._contacts[c_key] = {
-                    'last_view': None
-                }
-
-        # in case wehere we start open with current to that we never msged before
-        if self._current_to and self._current_to.public_key not in self._contacts:
-            self._contacts[self._current_to.public_key] = {
-                'last_view': None
-            }
+        self.profile_threads.post_message(the_client=self._client,
+                                          from_user=self._profile,
+                                          to_user=self._current_to,
+                                          text=text,
+                                          kind=self._kind)
 
     def _draw_contacts(self):
         profiles = []
-        for c_key in self._contacts:
+        for c_key in self.profile_contacts:
+            contact = self.profile_contacts[c_key]
             profiles.append({
                 'profile': self._get_profile(c_key),
-                'new_count': len(self._threads.messages(pub_k=c_key,
-                                                        kind=self._kind,
-                                                        since=self._contacts[c_key]['last_view'],
-                                                        received_only=True))
+                'new_count': len(self.profile_threads.messages(pub_k=c_key,
+                                                               kind=self._kind,
+                                                               since=contact['last_view'],
+                                                               received_only=True))
             })
 
         self._display.set_contacts(profiles)
 
     def _new_message(self, msg: Event):
-        if msg.pub_key not in self._contacts \
-                or msg.get_tags('p')[0][0] not in self._contacts:
-            self._update_contacts()
+        if msg.pub_key not in self.profile_contacts \
+                or msg.p_tags[0] not in self.profile_contacts:
+            pub_k = msg.pub_key
+            if pub_k == self.profile.public_key:
+                pub_k = msg.p_tags[0]
+
+            self.add_contact(pub_k)
 
         # new message on profile we're looking at
         if self._current_to and msg.pub_key == self._current_to.public_key or msg.pub_key == self._profile.public_key:
@@ -653,10 +652,10 @@ class ChatApp:
 
     def _draw_messages(self):
         if self._current_to:
-            msgs = self._threads.messages(self._current_to.public_key,
-                                          self._kind)
+            msgs = self.profile_threads.messages(self._current_to.public_key,
+                                                 self._kind)
             if msgs:
-                self._contacts[self._current_to.public_key]['last_view'] = msgs[len(msgs) - 1].created_at
+                self.profile_contacts[self._current_to.public_key]['last_view'] = msgs[len(msgs) - 1].created_at
 
         self._display.update_messages()
 
@@ -669,16 +668,8 @@ class ChatApp:
     def set_from_profile(self, p: Profile):
         self._profile = p
 
-        # change the msg thread/ maybe add multi profile support to message thread?
-        self._threads = MessageThreads(from_p=self._profile,
-                                       evt_store=self._event_store,
-                                       on_message=self._new_message,
-                                       kinds=self._kind)
         # to back to nothing
         self._current_to = None
-        # contacts back to nothing and update for this profile
-        self._contacts = {}
-        self._update_contacts()
 
         # update display for this new profile
         self._draw_messages()
@@ -686,12 +677,44 @@ class ChatApp:
         self._display.update_title()
 
     @property
-    def profile(self):
+    def profile(self) -> Profile:
         # profile we're currently logged in as, the from profile
         return self._profile
 
     @property
-    def view_profile(self):
+    def profile_threads(self) -> MessageThreads:
+        # threads for the currently logged in profile
+        if self.profile.public_key not in self._threads:
+            # creates new thread if we don't already have it for this profile
+            self._threads[self.profile.public_key] = MessageThreads(from_p=self._profile,
+                                                                    evt_store=self._event_store,
+                                                                    on_message=self._new_message,
+                                                                    kinds=self._kind)
+
+        return self._threads[self.profile.public_key]
+
+    @property
+    def profile_contacts(self):
+        if self.profile.public_key not in self._contacts:
+            to_add = self._contacts[self.profile.public_key] = {}
+            # make the intial list by looking at what messages we've received
+            for c_key in self.profile_threads.messaged():
+                if c_key not in self._contacts:
+                    to_add[c_key] = {
+                        'last_view': None
+                    }
+
+        return self._contacts[self.profile.public_key]
+
+    def add_contact(self, pub_k):
+        # add contact for the profile we're currently using
+        if pub_k not in self.profile_contacts:
+            self.profile_contacts[pub_k] = {
+                'last_view': None
+            }
+
+    @property
+    def view_profile(self) -> Profile:
         # msgs we're viewing and where any post will be sent, the to profile
         return self._current_to
 
@@ -703,9 +726,8 @@ class ChatApp:
     def messages(self):
         # this will return msgs between current from/to profiles
         # at the moment we recreate threads on switching profile
-        # TODO: keep threads keyed on from_p pub_k
-        return self._threads.messages(self._current_to.public_key,
-                                      kind=self._kind)
+        return self.profile_threads.messages(self._current_to.public_key,
+                                             kind=self._kind)
 
     def get_local_profiles(self):
         # profiles where we have a provate key, i.e. we can make posts

@@ -217,6 +217,24 @@ class Event:
         """
         return [t[1:] for t in self._tags if len(t) >= 1 and t[0] == tag_name]
 
+    @property
+    def tags(self):
+        return self._tags
+
+    @property
+    def e_tags(self):
+        """
+        :return: all ref'd events/#e tag in [evt_id, evt_id,...] makes sure evt_id is correct len
+        """
+        return [t[0] for t in self.get_tags('e') if len(t[0]) == 64]
+
+    @property
+    def p_tags(self):
+        """
+        :return: all ref'd profile/#p tag in [pub_k, pub_k,...] makes sure pub_k is correct len
+        """
+        return [t[0] for t in self.get_tags('p') if len(t[0]) == 64]
+
     """
         get/set various event properties
         Note changing is going to make event_data that has been signed incorrect, probably the caller should be aware
@@ -240,26 +258,6 @@ class Event:
     def short_id(self):
         # shorter version of id for display, note id doesn't until signing
         return util_funcs.str_tails(self.id, 4)
-
-    @property
-    def tags(self):
-        return self._tags
-
-    @property
-    def e_tags(self):
-        """
-        :return: all ref'd events/#e tag in [evt_id, evt_id,...] makes sure evt_id is correct len
-        """
-        ret = []
-        for c_e in self._tags:
-            if len(c_e) >= 2 and c_e[0] == 'e' and len(c_e[1]) == 64:
-                ret.append(c_e[1])
-
-        return ret
-
-    # TODO: same e for p
-    # def get_p_tags(self):
-    #     return self.get_tags('#p')
 
     @property
     def created_at(self):

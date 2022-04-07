@@ -258,13 +258,14 @@ class Profile:
         # any thing with profile is assumed to be local
         ret = self.profile_name
         if not ret:
-            loc = 'remote'
-            if self.private_key:
-                loc = 'local'
+            # loc = 'remote'
+            # if self.private_key:
+            #     loc = 'local'
             name = self.name
             if not name:
                 name = util_funcs.str_tails(self.public_key, 4)
-            ret = '%s/%s' % (loc, name)
+            # ret = '%s/%s' % (loc, name)
+            ret = name
 
         if with_pub and self.name:
             ret = '%s<%s>' % (ret, util_funcs.str_tails(self.public_key, 4))
@@ -293,61 +294,6 @@ class Profile:
         return e
 
 
-class SQLProfileStore:
-
-    def __init__(self, db: Database):
-        self._db = db
-
-    def add_profile(self, p: Profile):
-        sql = """
-            insert into 
-                profiles (priv_k, pub_k, profile_name, attrs, name, picture, updated_at) 
-                        values(?,?,?,?,?,?,?)
-            """
-        args = [
-            p.private_key, p.public_key,
-            p.profile_name, json.dumps(p.attrs),
-            p.get_attr('name'), p.get_attr('picture'),
-            util_funcs.date_as_ticks(p.update_at)
-        ]
-
-        self._db.execute_sql(sql, args)
-
-    def update_profile(self, p: Profile):
-        sql = """
-                update profiles 
-                    set profile_name=?, attrs=?, name=?, picture=?, updated_at=?
-                    where pub_k=?
-            """
-        args = [
-            p.profile_name, json.dumps(p.attrs),
-            p.get_attr('name'), p.get_attr('picture'),
-            util_funcs.date_as_ticks(p.update_at),
-            p.public_key
-        ]
-        logging.debug('SQLProfileStore::update profile sql: %s args: %s' % (sql, args))
-        self._db.execute_sql(sql, args)
-
-
-class SQLiteProfileStore(SQLProfileStore):
-
-    def __init__(self, db_file):
-        self._db_file = db_file
-        super().__init__(SQLiteDatabase(self._db_file))
-
-    def create(self):
-        profile_tmpl = DataSet(heads=['priv_k', 'pub_k', 'profile_name', 'attrs', 'name', 'picture', 'updated_at'])
-        profile_tmpl.create_sqlite_table(self._db_file, 'profiles', {
-            # because we alway have to have
-            'pub_k': {
-                'type': 'primary key not null'
-            },
-            'updated_at': {
-                'type': 'int'
-            }
-        })
-
-
 class ProfileList:
     """
         collection of profiles, for now were using this for profiles other than us,
@@ -367,26 +313,16 @@ class ProfileList:
         :param db_file:
         :return:
         """
-        data = db.select_sql('select * from profiles --where priv_k isnull')
-        profiles = []
-        for c_r in data:
-            profiles.append(Profile(
-                priv_k=c_r['priv_k'],
-                pub_k=c_r['pub_k'],
-                profile_name=c_r['profile_name'],
-                attrs=c_r['attrs'],
-                update_at=c_r['updated_at']
-            ))
-
-        return ProfileList(profiles)
+        # data = db.select_sql('select * from profiles --where priv_k isnull')
+        return SQLProfileStore(db).select()
 
     @classmethod
     def add_profile_db(cls, db: Database, p: Profile):
-        SQLProfileStore(db).add_profile(p)
+        SQLProfileStore(db).add(p)
 
     @classmethod
     def update_profile_db(cls, db: Database, p: Profile):
-        SQLProfileStore(db).update_profile(p)
+        SQLProfileStore(db).update(p)
 
     def __init__(self, profiles):
         self._profiles = profiles
@@ -406,7 +342,7 @@ class ProfileList:
 
     def append(self, profile: Profile):
         self._profiles.append(profile)
-        self._key_lookup[profile.public_key] = profile
+        self._pub_key_lookup[profile.public_key] = profile
 
     # TODO: remove this and see if it breaks anyhting...
     def as_arr(self):
@@ -570,7 +506,7 @@ class ContactList:
                 except JSONDecodeError as e:
                     logging.debug('ContactList::import_from_events error with tags %s' % e)
 
-# here pr in event_handlers.py????
+
 class ProfileEventHandler:
     """
         loads all profiles from db and then keeps that mem copy up to date whenever any meta events are recieved
@@ -589,7 +525,7 @@ class ProfileEventHandler:
 
         if evt.kind == Event.KIND_META:
             pubkey = evt.pub_key
-            c_profile = self._profiles.lookup(pubkey)
+            c_profile = self._profiles.lookup_pub_key(pubkey)
             evt_profile = Profile(pub_k=pubkey, attrs=evt.content, update_at=evt.created_at_ticks)
 
             # we only need to do something if the profile is newer than we already have
@@ -611,6 +547,81 @@ class ProfileEventHandler:
 
     def set_on_update(self, on_update):
         self._on_update = on_update
+
+
+class SQLProfileStore:
+
+    def __init__(self, db: Database):
+        self._db = db
+
+    def add(self, p: Profile):
+        sql = """
+            insert into 
+                profiles (priv_k, pub_k, profile_name, attrs, name, picture, updated_at) 
+                        values(?,?,?,?,?,?,?)
+            """
+        args = [
+            p.private_key, p.public_key,
+            p.profile_name, json.dumps(p.attrs),
+            p.get_attr('name'), p.get_attr('picture'),
+            util_funcs.date_as_ticks(p.update_at)
+        ]
+
+        self._db.execute_sql(sql, args)
+
+    def update(self, p: Profile):
+        sql = """
+                update profiles 
+                    set profile_name=?, attrs=?, name=?, picture=?, updated_at=?
+                    where pub_k=?
+            """
+        args = [
+            p.profile_name, json.dumps(p.attrs),
+            p.get_attr('name'), p.get_attr('picture'),
+            util_funcs.date_as_ticks(p.update_at),
+            p.public_key
+        ]
+        logging.debug('SQLProfileStore::update profile sql: %s args: %s' % (sql, args))
+        self._db.execute_sql(sql, args)
+
+    def select(self) -> ProfileList:
+        data = self._db.select_sql("""
+        select * from profiles 
+            order by 
+            case when profile_name ISNULL or profile_name='' then 1 else 0 end, profile_name,
+            case when name ISNULL or name='' then 1 else 0 end, name
+        """)
+        profiles = []
+        for c_r in data:
+            profiles.append(Profile(
+                priv_k=c_r['priv_k'],
+                pub_k=c_r['pub_k'],
+                profile_name=c_r['profile_name'],
+                attrs=c_r['attrs'],
+                update_at=c_r['updated_at']
+            ))
+
+        return ProfileList(profiles)
+
+
+class SQLiteProfileStore(SQLProfileStore):
+
+    def __init__(self, db_file):
+        self._db_file = db_file
+        super().__init__(SQLiteDatabase(self._db_file))
+
+    def create(self):
+        profile_tmpl = DataSet(heads=['priv_k', 'pub_k', 'profile_name', 'attrs', 'name', 'picture', 'updated_at'])
+        profile_tmpl.create_sqlite_table(self._db_file, 'profiles', {
+            # because we alway have to have
+            'pub_k': {
+                'type': 'primary key not null'
+            },
+            'updated_at': {
+                'type': 'int'
+            }
+        })
+
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)

@@ -211,14 +211,16 @@ class Relay:
 
     def _do_sub(self, req_json, ws: WebSocket):
         logging.info('subscription requested')
+        # get sub_id and filter fro the json
         if len(req_json) <= 1:
             raise NostrCommandException('REQ command missing sub_id')
-        if len(req_json) <= 2:
-            raise NostrCommandException('REQ command missing filter')
-
-        # get sub_id and filter fro the json
         sub_id = req_json[1]
-        filter = req_json[2]
+        # if we don't get a filter default to {} rather than error?
+        # did this because loquaz doesnt supply so assuming this is permited
+        filter = {}
+        if len(req_json) > 2:
+            filter = req_json[2]
+            # raise NostrCommandException('REQ command missing filter')
 
         # this user already subscribed under same sub_id
         if sub_id in self._ws[ws]['subs']:

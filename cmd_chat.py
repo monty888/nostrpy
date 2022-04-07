@@ -20,66 +20,11 @@ from cmd_line.message_app import ChatApp
 # TODO: also postgres
 DB = SQLiteDatabase('/home/shaun/.nostrpy/nostr-client.db')
 
-def get_profiles(from_user, to_user, db: Database=None):
-    from_p: Profile = None
-    to_p: Profile = None
-
-    def create_from_hex(key, is_priv_key):
-        ret = None
-        priv_key = None
-        pub_key = None
-        try:
-            # we're expecting a key so it better be 64bytes
-            if len(key) == 64:
-                # and also hex, will throw otherwise
-                bytearray.fromhex(from_user)
-                # needs to priv_key if it's out local profile
-                if is_priv_key:
-                    priv_key = key
-                else:
-                    pub_key = key
-                ret = Profile(profile_name=None,
-                              priv_k=priv_key,
-                              pub_k=pub_key)
-
-        # can't be private key as not hex
-        except ValueError:
-            pass
-
-        # all being well this should be a profile
-        return ret
-
-    if db:
-        try:
-            from_p = Profile.load_from_db(db, from_user)
-        except UnknownProfile:
-            pass
-
-        try:
-            to_p = Profile.load_from_db(db, to_user)
-        except UnknownProfile:
-            pass
-
-    if not from_p:
-        from_p = create_from_hex(from_user, True)
-    if not to_p:
-        to_p = create_from_hex(to_user, False)
-
-    if from_p is None:
-        print('unable to create local user with key=%s' % from_user)
-        sys.exit(2)
-    if to_p is None:
-        print('unable to create local user with key=%s' % from_user)
-        sys.exit(2)
-
-    return {
-        'from' : from_p,
-        'to' : to_p
-    }
-
 def run_chat_app():
     from nostr.client.client import ClientPool
-    my_client = ClientPool('ws://192.168.0.17:8081')
+    # my_client = ClientPool('ws://192.168.0.17:8081')
+    # my_client = ClientPool(['ws://localhost:8081'])
+    my_client = ClientPool(['wss://nostr-pub.wellorder.net'])
     ChatApp('message_to', my_client, DB).start()
     my_client.end()
 
