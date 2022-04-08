@@ -5,8 +5,6 @@ from __future__ import annotations
 import logging
 import sys
 import time
-
-import geventwebsocket
 import websocket
 from websocket._exceptions import WebSocketConnectionClosedException
 import json
@@ -92,15 +90,19 @@ class Client:
                 except Exception as e:
                     print(e)
 
-    def __init__(self, relay_url, on_connect=None):
+    def __init__(self, relay_url, on_connect=None, read=True, write=True):
         self._url = relay_url
         self._handlers = {}
         self._run = True
         self._ws = None
         self._last_con = None
+        self._last_err = None
         self._con_fail_count = 0
         self._on_connect = on_connect
+        self._on_status = None
         self._is_connected = False
+        self._read = read
+        self._write = write
 
     @property
     def url(self):
@@ -113,6 +115,9 @@ class Client:
         self._on_connect = on_connect
         if self._is_connected:
             self._on_connect(self)
+
+    def set_status_listener(self, on_status):
+        self._on_status = on_status
 
     def subscribe(self, sub_id=None, handlers=None, filters={}):
         """
@@ -144,6 +149,7 @@ class Client:
             self._handlers[sub_id] = handlers
 
         self._ws.send(the_req)
+        self._reset_status()
         return sub_id
 
     def _get_sub_id(self):
@@ -156,11 +162,19 @@ class Client:
         ret = md5(ret.encode('utf8')).hexdigest()[:4]
         return ret
 
+    def _reset_status(self):
+        self._last_con = datetime.now()
+        self._con_fail_count = 0
+        self._is_connected = True
+        self._last_err = None
+
     def unsubscribe(self, sub_id):
         # if subscribed, should we error if unknown sub_id?
         if sub_id in self._handlers:
             self._ws.send(json.dumps(['CLOSE', sub_id]))
             self._handlers[sub_id]
+            self._reset_status()
+        self._reset_status()
 
     def publish(self, evt: Event):
         logging.debug('Client::publish - %s', evt.event_data())
@@ -169,10 +183,10 @@ class Client:
         ])
 
         self._ws.send(to_pub)
+        self._reset_status()
 
     def _on_message(self, ws, message):
-        self._con_fail_count = 0
-        self._last_con = datetime.now()
+        self._reset_status()
 
         message = json.loads(message)
 
@@ -199,6 +213,7 @@ class Client:
                 sub_id, message))
 
     def _on_error(self, ws, error):
+        self._last_err = error
         logging.debug('Client::_on_error %s' % error)
 
     def _on_close(self, ws, close_status_code, close_msg):
@@ -206,9 +221,10 @@ class Client:
 
     def _on_open(self, ws):
         logging.debug('Client::_on_open %s' % self._url)
-        self._is_connected = True
+        self._reset_status()
         if self._on_connect:
             self._on_connect(self)
+
 
     def start(self):
         # should probably check self._run and error if already true
@@ -223,7 +239,25 @@ class Client:
                                               on_close=self._on_close)
             self._ws.run_forever()  # Set dispatcher to automatic reconnection
 
+        def monitor_thread():
+            while self._run:
+                try:
+                    status = {
+                        'connected': self._is_connected,
+                        'fail_count': self._con_fail_count,
+                        'last_connect': self._last_con,
+                        'last_err': self._last_err
+                    }
+                    if self._on_status:
+                        self._on_status(status)
+                except Exception as e:
+                    logging.debug(e)
+                time.sleep(1)
+
+
         def my_thread():
+            Thread(target=monitor_thread).start()
+
             while self._run:
                 try:
                     get_con()
@@ -239,6 +273,7 @@ class Client:
                 self._is_connected = False
 
         Thread(target=my_thread).start()
+
         # time.sleep(1)
         # so can open.start() and asign in one line
         return self
@@ -259,6 +294,15 @@ class Client:
     def __str__(self):
         return self._url
 
+    def __len__(self):
+        return 1
+
+    def __iter__(self):
+        yield self
+
+    def __getitem__(self, i):
+        return self
+
     @property
     def connected(self):
         return self._is_connected
@@ -278,7 +322,7 @@ class ClientPool:
             [Client,...]        -   alrady created objs
             [
                 {
-                    client : urel_str/Client,
+                    client : relay_url,
                     read : bool
                     write : bool
                 }
@@ -293,36 +337,46 @@ class ClientPool:
         # subscription event handlers keyed on sub ids
         self._handlers = {}
 
+        # merge of status from pool, for example a single client connected means we consider connected to be True
+        # last con will be newest of any relay we have etc....
+        # indivdual relay status also stored here keyed on url
+        self._status = {
+            'connected': False,
+            'relays': {}
+        }
+        # if want to listen for status changes from this group of relays
+        self._on_status = None
+
         # for whatever reason using pool but only a single client handed in
         if isinstance(clients, str):
             clients = [clients]
 
+        def get_on_status(relay_url):
+            def on_status(status):
+                self._on_pool_status(relay_url, status)
+            return on_status
+
         for c_client in clients:
             try:
                 if isinstance(c_client, str):
-                    self._clients[c_client] = {
-                        'client': Client(c_client, on_connect=on_connect),
-                        'read': True,
-                        'write': True
-                    }
+                    # read/write default True
+                    self._clients[c_client] = Client(c_client,
+                                                     on_connect=on_connect)
                 elif isinstance(c_client, Client):
-                    self._clients[c_client] = {
-                        'client': Client(c_client, on_connect=on_connect),
-                        'read': True,
-                        'write': True
-                    }
+                    self._clients[c_client.url] = c_client
                 elif isinstance(c_client, dict):
-                    to_add = {
-                        'client': c_client['client'],
-                        'read': True,
-                        'write': True
-                    }
-                    if isinstance(to_add['client'], str):
-                        to_add['client'] = Client(to_add['client'], on_connect=on_connect)
-                        if 'read' in c_client:
-                            to_add['read'] = c_client['read']
-                        if 'write' in c_client:
-                            to_add['write'] = c_client['write']
+                    read = True
+                    if read in c_client:
+                        read = c_client['read']
+                    write = True
+                    if write in c_client:
+                        write = c_client['write']
+                    self._clients[c_client] = Client(c_client,
+                                                     on_connect=on_connect,
+                                                     read=read,
+                                                     write=write)
+
+                self._clients[c_client].set_status_listener(get_on_status(self._clients[c_client].url))
 
             except Exception as e:
                 logging.debug('ClientPool::__init__ - %s' % e)
@@ -331,6 +385,60 @@ class ClientPool:
         for c_client in self._clients:
             the_client = self._clients[c_client]['client']
             the_client.set_on_connect(on_connect)
+
+    def _on_pool_status(self, relay_url, status):
+        # the status we return gives each individual relay status at ['relays']
+        self._status['relays'][relay_url] = status
+
+        # high level to mimic single relay, any single relay connected counts as connected
+        # we also add a count/connected count for use by caller
+        n_status = {
+            'relay_count': 0,
+            'connect_count': 0,
+            'connected': False,
+            'last_connect': None,
+            'fail_count': None
+        }
+
+        # see how many relays we have and how many are connected and give a value for each of
+        # connected, fail_count, last_connect, last_err merged
+        # as long as any single relay is connected all will look ood unless you look at
+        # the relay/connect count
+        for c_relay in self._status['relays']:
+            r_status = self._status['relays'][c_relay]
+            n_status['relay_count'] += 1
+            if r_status['connected']:
+                n_status['connected'] = True
+                n_status['fail_count'] = 0
+                n_status['connect_count'] += 1
+                n_status['last_err'] = None
+
+            # only fill in err counts if we're not connected (wiped if we find we're connected later)
+            # last_err comes from relay with highest fail_count
+            if not n_status['connected']:
+                if n_status['fail_count'] is None or r_status['fail_count'] > n_status['fail_count']:
+                    n_status['fail_count'] = r_status['fail_count']
+                    n_status['last_err'] = r_status['last_err']
+
+            # probably this comes from a connected relay but guess it could come from one that went bad now
+            if n_status['last_connect'] is None or (r_status['last_connect']
+                                                    and r_status['last_connect'] > n_status['last_connect']):
+                n_status['last_connect'] = r_status['last_connect']
+
+        # hopefully this is safe... self._status will be getting hit by mutiple threads so...
+        status_copy = self._status.copy()
+        status_copy.update(n_status)
+        self._status = status_copy
+
+        if self._on_status:
+            self._on_status(self._status)
+
+    def set_status_listener(self, on_status):
+        self._on_status = on_status
+
+    @property
+    def connected(self):
+        return self._status['connected']
 
     # methods work on all but we'll probably want to be able to name on calls
     def start(self):
@@ -364,7 +472,7 @@ class ClientPool:
                 try:
                     self._clients[c_client]['client'].publish(evt)
                 except Exception as e:
-                    print(e)
+                    logging.debug(e)
 
     def do_event(self, sub_id, evt, relay):
         # shouldn't be possible...
@@ -392,3 +500,14 @@ class ClientPool:
             ret_arr.append(str(self._clients[c_client]['client']))
 
         return ', '.join(ret_arr)
+
+    def __len__(self):
+        return len(self._clients)
+
+    def __iter__(self):
+        for c_client in self._clients:
+            yield c_client
+
+    def __getitem__(self, i):
+        # row at i
+        return self._clients[i]

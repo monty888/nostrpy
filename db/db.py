@@ -144,6 +144,7 @@ class SQLiteDatabase(Database, ABC):
         """
         ret = False
         was_err = None
+        c = None
         try:
             c = self._get_con()
             curs = c.cursor()

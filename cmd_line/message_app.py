@@ -20,6 +20,7 @@ from prompt_toolkit.mouse_events import MouseEvent,MouseButton, MouseEventType
 from nostr.ident import Profile, ProfileEventHandler, UnknownProfile, ProfileList
 from nostr.client.event_handlers import PersistEventHandler
 from nostr.event import Event
+from nostr.client.client import Client
 from nostr.client.persist import SQLStore
 from nostr.client.messaging import MessageThreads
 from nostr.util import util_funcs
@@ -354,7 +355,7 @@ class ChatGui:
         ])
 
         self._title = self._create_title()
-        self._title['update'](self._chat_app.profile)
+        self._title['update_profile'](self._chat_app.profile)
 
         # now we have the parts ready actually construct the screen
         self._root_con.content = HSplit([
@@ -378,12 +379,21 @@ class ChatGui:
         self._layout.focus(self._prompt)
 
     def _create_title(self):
-        my_con = FormattedTextControl('')
-        my_win = Window(
-            height=1,
-            content=my_con,
-            align=WindowAlign.CENTER
+        profile_con = FormattedTextControl('')
+        profile_win = Window(
+            content=profile_con,
+            align=WindowAlign.LEFT
         )
+        status_con = FormattedTextControl('<connection status>')
+        status_win = Window(
+            content=status_con,
+            align=WindowAlign.RIGHT
+        )
+
+        con_con = VSplit(children=[
+            profile_win,
+            status_win
+        ], height=1)
 
         def switch_profile(e):
             if is_left_click(e):
@@ -391,7 +401,7 @@ class ChatGui:
                 self._p_switch_dialog.show(from_p=self._chat_app.profile,
                                            all_profiles=self._chat_app.get_local_profiles())
 
-        def update(from_p: Profile):
+        def update_profile(from_p: Profile):
             profile_text = '<no profile>'
             if from_p:
                 profile_text = self._chat_app.profile.display_name(with_pub=True)
@@ -400,15 +410,32 @@ class ChatGui:
                 ('', 'Nostrpy CLI message v0.1, user: '),
                 ('green', profile_text, switch_profile)
             ]
-            my_con.text = child_arr
+            profile_con.text = child_arr
+
+        def update_status():
+            status_text = [('red', 'not connected!')]
+
+            if self._chat_app.connected:
+                con_counts = self._chat_app.connect_count
+                if con_counts[0] == con_counts[1]:
+                    status_text = [('green', 'connected')]
+                else:
+                    status_text = [('orange', 'connected %s/%s' % (con_counts[1], con_counts[0]))]
+
+            status_con.text = status_text
+
 
         return {
-            'title_con': my_win,
-            'update': update
+            'title_con': con_con,
+            'update_profile': update_profile,
+            'update_status': update_status
         }
 
     def update_title(self):
-        self._title['update'](self._chat_app.profile)
+        # we could expose this seperately but doesn't seem worth it
+        self._title['update_profile'](self._chat_app.profile)
+        self._title['update_status']()
+        self._app.invalidate()
 
     def _create_nav_pane(self):
         def new_contact():
@@ -596,12 +623,18 @@ class ChatApp:
         self._draw_contacts()
         self._draw_messages()
 
+        self._status = {
+            'connected': None,
+            'relay_count': 0,
+            'connect_count': 0
+        }
+
         self._start_client()
 
     def _start_client(self):
         # at the moment we're passing in actual client obj, think better to pass in urls and create ourself
 
-        def my_connect(the_client):
+        def my_connect(the_client: Client):
             handlers = [self]
             if self._event_store:
                 handlers.append(PersistEventHandler(self._event_store))
@@ -609,12 +642,39 @@ class ChatApp:
                 handlers.append(self._profiles)
 
             # because we added switching profiles simpler just to look at all events of correct kind
-            the_client.subscribe(handlers=handlers, filters={
+            filter = {
                 'kinds': [self._kind, Event.KIND_META]
-            })
+            }
+            # to stop us always asking for everything, in the case of using a pool this might result in
+            # missing events from certain relays so maybe add as option to Client where it'll get add since as
+            # newest events per relay before making the subscribe. To do this clients will need to take the eventstore
+            # on init, we could then also then just make some of the persistance stuff as bool flags on create?
+            if self._event_store:
+                filter['since'] = self._event_store.get_newest()
+
+            the_client.subscribe(handlers=handlers, filters=filter)
+
+        def my_status(status):
+            last_connect_count = self.connect_count
+            self._status = status
+            if last_connect_count != self.connect_count:
+                self._display.update_title()
 
         self._client.set_on_connect(my_connect)
+        self._client.set_status_listener(my_status)
         self._client.start()
+
+    @property
+    def connected(self):
+        return self._status['connected']
+
+    @property
+    def connect_count(self):
+        if len(self._client) == 1:
+            return 1, 1
+        else:
+            return self._status['relay_count'], self._status['connect_count']
+
 
     def do_event(self, sub_id, evt: Event, relay):
         # we only need to forward evts for profiles we already looked at, as others

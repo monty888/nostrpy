@@ -168,9 +168,9 @@ class SQLStore(ClientStoreInterface, ABC):
     def __init__(self, db: Database):
         self._db = db
 
-    def get_oldest(self):
+    def get_newest(self):
         """
-            gets the oldest event in the database, this can then be used when subscribing as the since var
+            gets the newest event in the database, this can then be used when subscribing as the since var
             so we don't have to fetch everything. Maybe just use as guide and lookback a little further as may not have
             seen some events on some relays e.g if lost connection so could be some gaps.
             Change this so that it can be oldest of events matching filter
