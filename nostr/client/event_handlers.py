@@ -132,7 +132,6 @@ class PersistEventHandler:
             # linking evets with every relay we saw them from
 
 
-
 class RepostEventHandler:
     """
     reposts events seen  on to given Client/ClientPool object

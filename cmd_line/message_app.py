@@ -12,6 +12,7 @@ from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.layout.layout import Layout
 from prompt_toolkit.layout.containers import FloatContainer, Float
 from prompt_toolkit.layout import ScrollablePane
+from prompt_toolkit.layout.containers import ConditionalContainer
 from prompt_toolkit.widgets import VerticalLine, Button,TextArea, HorizontalLine, Dialog, \
     SearchToolbar, Frame, RadioList
 from prompt_toolkit.key_binding import KeyBindings
@@ -54,8 +55,7 @@ class DialogBase:
         self._my_diag = None
         self._my_float = None
 
-        # the actual dialog obj that contains our content as it's body
-
+    # the actual dialog obj that contains our content as it's body
     @abstractmethod
     def create_content(self):
         pass
@@ -69,6 +69,7 @@ class DialogBase:
         self._my_float = Float(self._my_diag)
 
         self._con.floats.append(self._my_float)
+
         self._app.layout.focus(self._my_diag)
 
     def hide(self):
@@ -164,7 +165,6 @@ class SearchContactDialog(DialogBase):
         self._match_con.children = to_add
 
     def create_content(self):
-        from prompt_toolkit.layout.containers import ConditionalContainer
         @Condition
         def _():
             return len(self._matches) > 0
@@ -260,6 +260,52 @@ class SwitchProfileDialog(DialogBase):
         super().show()
 
 
+class RelayInfoDialog(DialogBase):
+
+    def __init__(self, app: Application,
+                 chat_app,
+                 on_close=None):
+
+        self._chat_app = chat_app
+        self._relay_con = None
+        super().__init__(title='relay status',
+                         app=app,
+                         on_close=on_close)
+
+    def create_content(self):
+        def do_close():
+            self.hide()
+
+        self._relay_con = HSplit([])
+        self._content = HSplit([
+            self._relay_con,
+            VSplit([
+                Window(),
+                Button('ok', handler=do_close)
+            ])
+        ])
+        self.update_relay_status()
+
+    def update_relay_status(self):
+        if self._content is None:
+            return
+
+        c_client: Client
+        relay_info = []
+        for c_client in self._chat_app.client:
+            color = ''
+            info_text = '%s - OK' % c_client.url
+            if not c_client.connected:
+                info_text = '%s - %s' % (c_client.url, c_client.last_error)
+                color = 'red'
+
+            relay_info.append(Window(FormattedTextControl(text=[(color, info_text)])))
+        self._relay_con.children = relay_info
+
+    def show(self):
+        super().show()
+
+
 class ChatGui:
     """
         interface for a simple 1 page app for viewing messages in the terminal
@@ -316,9 +362,14 @@ class ChatGui:
                                 key_bindings=kb,
                                 mouse_support=True)
         # create our dialogs
+        # profile switch dialog
         self._p_switch_dialog = SwitchProfileDialog(self._app,
                                                     on_close=self._focus_prompt,
                                                     on_profile_change=self._chat_app.set_from_profile)
+        # relay info dialog
+        self._relay_info_dialog = RelayInfoDialog(self._app,
+                                                  self._chat_app,
+                                                  on_close=self._focus_prompt)
 
         # events
         def msg_entered(buffer):
@@ -401,6 +452,10 @@ class ChatGui:
                 self._p_switch_dialog.show(from_p=self._chat_app.profile,
                                            all_profiles=self._chat_app.get_local_profiles())
 
+        def relay_click(e):
+            if is_left_click(e):
+                self._relay_info_dialog.show()
+
         def update_profile(from_p: Profile):
             profile_text = '<no profile>'
             if from_p:
@@ -413,17 +468,17 @@ class ChatGui:
             profile_con.text = child_arr
 
         def update_status():
-            status_text = [('red', 'not connected!')]
+
+            status_text = [('red', 'not connected!', relay_click)]
 
             if self._chat_app.connected:
                 con_counts = self._chat_app.connect_count
                 if con_counts[0] == con_counts[1]:
-                    status_text = [('green', 'connected')]
+                    status_text = [('green', 'connected', relay_click)]
                 else:
-                    status_text = [('orange', 'connected %s/%s' % (con_counts[1], con_counts[0]))]
+                    status_text = [('orange', 'connected %s/%s' % (con_counts[1], con_counts[0]), relay_click)]
 
             status_con.text = status_text
-
 
         return {
             'title_con': con_con,
@@ -435,6 +490,7 @@ class ChatGui:
         # we could expose this seperately but doesn't seem worth it
         self._title['update_profile'](self._chat_app.profile)
         self._title['update_status']()
+        self._relay_info_dialog.update_relay_status()
         self._app.invalidate()
 
     def _create_nav_pane(self):
@@ -675,6 +731,9 @@ class ChatApp:
         else:
             return self._status['relay_count'], self._status['connect_count']
 
+    @property
+    def client(self):
+        return self._client
 
     def do_event(self, sub_id, evt: Event, relay):
         # we only need to forward evts for profiles we already looked at, as others
@@ -737,6 +796,7 @@ class ChatApp:
 
     def set_from_profile(self, p: Profile):
         self._profile = p
+        self._contacts = {}
 
         # to back to nothing
         self._current_to = None

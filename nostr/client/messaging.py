@@ -13,7 +13,7 @@
 
 import base64
 import logging
-
+from gevent.lock import BoundedSemaphore
 from nostr.ident import Profile
 from nostr.client.persist import ClientStoreInterface
 from nostr.client.client import Client
@@ -52,7 +52,11 @@ class MessageThreads:
 
         self._kinds = kinds
 
+        # record of messages we've seen by eventid
         self._msg_lookup = set()
+        # lock for above so we can prevent duplicates, for example
+        # we'll see the same event multiple times if we're attached to multiple relays
+        self._msg_lookup_lock = BoundedSemaphore()
 
         self._evt_store = evt_store
 
@@ -61,6 +65,9 @@ class MessageThreads:
 
         self.load_local()
         self._on_message = on_message
+
+
+
 
     def load_local(self):
         """
@@ -94,8 +101,10 @@ class MessageThreads:
         tags = msg_evt.get_tags('p')
         # we've already seen this event either from local store or previous sub recieved
         # or it's not 1-1 msg
-        if msg_evt.id in self._msg_lookup or len(tags) != 1:
-            return False
+        with self._msg_lookup_lock:
+            if msg_evt.id in self._msg_lookup or len(tags) != 1:
+                return False
+            self._msg_lookup.add(msg_evt.id)
 
         to_id = tags[0][0]
         # must be our event to them
@@ -130,7 +139,7 @@ class MessageThreads:
             except Exception as e:
                 msg_evt.content = '!!!unable to decrypt!!!'
         self._msg_threads[to_id][msg_evt.kind]['msgs'].append(msg_evt)
-        self._msg_lookup.add(msg_evt.id)
+
         return True
 
     def do_event(self, sub_id, evt: Event, relay):
@@ -186,4 +195,5 @@ class MessageThreads:
         """
         :return: pub_keys of anyone that we have messages to
         """
+        logging.debug('>>>>>>> %s' % self._msg_threads.keys())
         return self._msg_threads.keys()

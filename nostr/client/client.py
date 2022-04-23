@@ -6,6 +6,7 @@ import logging
 import sys
 import time
 import websocket
+from collections import OrderedDict
 from websocket._exceptions import WebSocketConnectionClosedException
 import json
 import random
@@ -314,6 +315,10 @@ class Client:
         #
         return self._last_con
 
+    @property
+    def last_error(self):
+        return self._last_err
+
 class ClientPool:
     """
         a collection of Clients so we can subscribe/post to a number of relays with single call
@@ -331,7 +336,7 @@ class ClientPool:
             where read/write not passed in they'll be True
 
     """
-    def __init__(self, clients, on_connect=None):
+    def __init__(self, clients, on_connect=None, max_deduplicate=1000):
         # Clients (Relays) we connecting to
         self._clients = {}
         # subscription event handlers keyed on sub ids
@@ -346,6 +351,9 @@ class ClientPool:
         }
         # if want to listen for status changes from this group of relays
         self._on_status = None
+        # used to prevent posting duplicates unless handler wants them
+        self._duplicates = OrderedDict()
+        self._max_dedup = max_deduplicate
 
         # for whatever reason using pool but only a single client handed in
         if isinstance(clients, str):
@@ -506,7 +514,7 @@ class ClientPool:
 
     def __iter__(self):
         for c_client in self._clients:
-            yield c_client
+            yield self._clients[c_client]
 
     def __getitem__(self, i):
         # row at i

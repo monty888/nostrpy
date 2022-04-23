@@ -290,4 +290,5 @@ class Event:
         ret = super(Event, self).__str__()
         # on signed events we can retrn something more useful
         if self.id:
-            return '%s@%s' % (self.id,self._created_at)
+            ret =  '%s@%s' % (self.id,self._created_at)
+        return ret

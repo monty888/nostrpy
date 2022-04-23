@@ -96,7 +96,7 @@ class SQLStore(ClientStoreInterface, ABC):
             # changed back to where because of change to above
             join = 'where'
             args = []
-            if 'since' in filter:
+            if 'since' in filter and filter['since'] is not None:
                 sql_arr.append(' %s created_at>=%s' % (join, placeholder))
                 args.append(filter['since'])
                 join = 'and'

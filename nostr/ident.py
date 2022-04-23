@@ -18,6 +18,7 @@ import logging
 from data.data import DataSet
 from db.db import Database, SQLiteDatabase
 from nostr.client.client import Event
+from nostr.client.persist import ClientStoreInterface, SQLLiteStore
 from datetime import datetime
 from nostr.util import util_funcs
 
@@ -146,15 +147,16 @@ class Profile:
         profiles.save_csv(filename)
 
     @classmethod
-    def import_from_file(cls, filename, db, names=None):
+    def import_from_file(cls, filename,
+                         profile_store,
+                         names=None):
         profiles = DataSet.from_CSV(filename)
         if names:
             profiles = profiles.value_in('profile_name', names)
 
         for p in profiles:
             try:
-                profile_store = SQLProfileStore(db)
-                profile_store.add_profile(Profile(
+                profile_store.add(Profile(
                     priv_k=p['priv_k'],
                     pub_k=p['pub_k'],
                     profile_name=p['profile_name'],
@@ -215,6 +217,10 @@ class Profile:
             ret = self.attrs['name']
         return ret
 
+    @name.setter
+    def name(self, name):
+        self._attrs['name'] = name
+
     # only exists if us
     @property
     def private_key(self):
@@ -241,10 +247,22 @@ class Profile:
             ret = self._attrs[name]
         return ret
 
+    def set_attr(self, name, value):
+        self._attrs[name] = value
+
     @property
     def update_at(self):
         # note as datetime - convert to ticks before storing in dd
         return self._update_at
+
+    def get_meta_event(self):
+        """
+            returns a meta event for this profile that once signed can be posted to relay for update
+        """
+        return Event(kind=Event.KIND_META,
+                     # possible only output a sub section of the attrs?
+                     content=json.dumps(self.attrs, separators=[',', ':']),
+                     pub_key=self.public_key)
 
     def __str__(self):
 
@@ -464,7 +482,10 @@ class Contact:
 class ContactList:
 
     @classmethod
-    def import_from_events(cls, db_file, since=None):
+    def import_from_events(cls,
+                           event_store: ClientStoreInterface,
+                           profile_store,
+                           since=None):
         """
         :param db_file:
         :param since: ticks or datetime
@@ -474,38 +495,64 @@ class ContactList:
         source. Also this would allow update of local profile if pushed from somewhere else
 
         """
-        s = Store(db_file)
+
         # contact lists from events
-        c_list_updates = s.load_events(Event.KIND_CONTACT_LIST,since)
+        c_list_updates = event_store.get_filter({
+            'since': since,
+            'kinds': Event.KIND_CONTACT_LIST
+        })
+
         # to check if event is newer than what we already have if any
-        existing = DataSet.from_sqlite(db_file, 'select pub_k_owner, updated_at from contacts')
+        existing = profile_store.contacts()
 
         """
             in the case of contact list when a user updates its done from fresh so we just check that the list
             event is newer then any contact we have if any for the owner and if so delete all thier contacts and import 
             from the new list...
         """
-
-        for c_p in c_list_updates:
-            exists = existing.matches('pub_k_owner', c_p['pubkey'])
+        c_evt: Event
+        for c_evt in c_list_updates:
+            exists = existing.matches('pub_k_owner', c_evt.pub_key)
             is_newer = True
-            if exists and exists[0]['updated_at']<=c_p['created_at']:
+            if exists and exists[0]['updated_at'] <= c_evt.created_at_ticks:
                 is_newer = False
 
+            contacts = []
             if is_newer:
-                contacts = []
-                try:
-                    tag_str = c_p['tags'].replace('\'','"')
-                    tags = json.loads(tag_str)
 
-                    for c_con in tags:
-                        contacts.append(Contact(c_p['pubkey'], c_p['created_at'], c_con))
+                for c_tag in c_evt.tags:
+                    contacts.append(Contact(c_evt.pub_key,
+                                            c_evt.created_at_ticks,
+                                            c_tag))
+                if contacts:
+                    profile_contacts = ContactList(contacts)
+                    profile_store.set_contacts(profile_contacts)
 
-                    s.update_contact_list(c_p['pubkey'], contacts)
+    def __init__(self, contacts):
+        self._contacts = contacts
 
-                except JSONDecodeError as e:
-                    logging.debug('ContactList::import_from_events error with tags %s' % e)
+    # because a list should only contain the contacts for a single profile
+    # this methods jsut look at the 0 element if it exists and return value from there
+    @property
+    def owner_public_key(self):
+        ret = None
+        if self._contacts:
+            ret = self._contacts[0].owner_public_key
+        return ret
 
+    @property
+    def updated_at(self):
+        ret = None
+        if self._contacts:
+            ret = self._contacts[0].updated_at
+        return ret
+
+    def __len__(self):
+        return len(self._contacts)
+
+    def __iter__(self):
+        for c in self._contacts:
+            yield c
 
 class ProfileEventHandler:
     """
@@ -572,11 +619,11 @@ class SQLProfileStore:
     def update(self, p: Profile):
         sql = """
                 update profiles 
-                    set profile_name=?, attrs=?, name=?, picture=?, updated_at=?
+                    set attrs=?, name=?, picture=?, updated_at=?
                     where pub_k=?
             """
         args = [
-            p.profile_name, json.dumps(p.attrs),
+            json.dumps(p.attrs),
             p.get_attr('name'), p.get_attr('picture'),
             util_funcs.date_as_ticks(p.update_at),
             p.public_key
@@ -603,6 +650,34 @@ class SQLProfileStore:
 
         return ProfileList(profiles)
 
+    def contacts(self):
+        return self._db.select_sql('select * from contacts')
+
+    def set_contacts(self, contacts: ContactList):
+        c_contact: Contact
+        add_data = []
+        for c_contact in contacts:
+            add_data.append([
+                contacts.owner_public_key,
+                c_contact.contact_public_key,
+                contacts.updated_at
+            ])
+
+
+        self._db.execute_batch(
+            [
+                {
+                    'sql': 'delete from contacts where pub_k_owner=%s' % self._db.placeholder,
+                    'args': [contacts.owner_public_key]
+                },
+                {
+                    'sql': """insert into contacts (pub_k_owner, pub_k_contact, updated_at) 
+                                values (%s)""" % ','.join([self._db.placeholder]*3),
+                    'args': add_data
+                }
+            ]
+        )
+
 
 class SQLiteProfileStore(SQLProfileStore):
 
@@ -611,21 +686,56 @@ class SQLiteProfileStore(SQLProfileStore):
         super().__init__(SQLiteDatabase(self._db_file))
 
     def create(self):
-        profile_tmpl = DataSet(heads=['priv_k', 'pub_k', 'profile_name', 'attrs', 'name', 'picture', 'updated_at'])
-        profile_tmpl.create_sqlite_table(self._db_file, 'profiles', {
-            # because we alway have to have
-            'pub_k': {
-                'type': 'primary key not null'
+        self._db.execute_batch([
+            {
+                'sql': """
+                    create table profiles(
+                        priv_k text,
+                        pub_k text primary key,  
+                        profile_name text,
+                        attrs text,
+                        name text,
+                        picture text,
+                        updated_at int
+                    )
+            """
             },
-            'updated_at': {
-                'type': 'int'
+            {
+                'sql': """
+                    create table contacts(
+                        pub_k_owner text,
+                        pub_k_contact text,
+                        alias text,
+                        source text,
+                        updated_at int
+                    )
+                """
             }
-        })
 
+        ])
+
+    def destroy(self):
+        self._db.execute_batch([
+            {
+                'sql': 'drop table profiles'
+            },
+            {
+                'sql': 'drop table contacts'
+            }
+        ])
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
     nostr_db_file = '/home/shaun/.nostrpy/nostr-client.db'
     backup_dir = '/home/shaun/.nostrpy/'
-    # s = Store(nostr_db_file)
-    Profile.import_from_file(backup_dir+'local_profiles.csv', SQLiteDatabase(nostr_db_file))
+    ps = SQLiteProfileStore(nostr_db_file)
+
+
+    ContactList.import_from_events(SQLLiteStore(nostr_db_file), SQLProfileStore(SQLiteDatabase(nostr_db_file)))
+
+
+
+    # Profile.import_from_file('/home/shaun/.nostrpy/local_profiles.csv',SQLiteProfileStore(nostr_db_file))
+
+
+

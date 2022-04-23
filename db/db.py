@@ -156,7 +156,12 @@ class SQLiteDatabase(Database, ABC):
                     args = c_cmd['args']
                 logging.debug('Database::execute_batch SQL: %s\n ARGS: %s' % (sql,
                                                                               args))
-                curs.execute(sql,args)
+                # as execute_sql to do multiple row insert if [[]]
+                if args and isinstance(args[0], list):
+                    curs.executemany(sql, args)
+                else:
+                    curs.execute(sql, args)
+
 
             c.commit()
             logging.debug('Database::execute_batch commit done')
