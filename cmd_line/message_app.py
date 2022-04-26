@@ -17,14 +17,14 @@ from prompt_toolkit.widgets import VerticalLine, Button,TextArea, HorizontalLine
     SearchToolbar, Frame, RadioList
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.filters import Condition
-from prompt_toolkit.mouse_events import MouseEvent,MouseButton, MouseEventType
-from nostr.ident import Profile, ProfileEventHandler, UnknownProfile, ProfileList
+from prompt_toolkit.mouse_events import MouseEvent, MouseButton, MouseEventType
+from nostr.ident.profile import Profile, ProfileEventHandler, UnknownProfile, ProfileList
+from nostr.ident.persist import SQLProfileStore
 from nostr.client.event_handlers import PersistEventHandler
 from nostr.event import Event
 from nostr.client.client import Client
 from nostr.client.persist import SQLStore
 from nostr.client.messaging import MessageThreads
-from nostr.util import util_funcs
 from db.db import Database
 
 def is_left_click(e):
@@ -314,7 +314,7 @@ class ChatGui:
     def __init__(self, chat_app):
 
         # app logic
-        self._chat_app = chat_app
+        self._chat_app: ChatApp = chat_app
 
         self._msgs_height = 0
 
@@ -468,9 +468,7 @@ class ChatGui:
             profile_con.text = child_arr
 
         def update_status():
-
             status_text = [('red', 'not connected!', relay_click)]
-
             if self._chat_app.connected:
                 con_counts = self._chat_app.connect_count
                 if con_counts[0] == con_counts[1]:
@@ -499,8 +497,9 @@ class ChatGui:
 
         def contact_selected():
             if self._new_contact_dialog.selected_profile_key:
-                self._chat_app.add_contact(self._new_contact_dialog.selected_profile_key)
-                self._chat_app._draw_contacts()
+                self._chat_app.set_view_profile(self._new_contact_dialog.selected_profile_key)
+
+
             self._focus_prompt()
 
         self._new_contact_dialog = SearchContactDialog(self._app,
@@ -649,14 +648,25 @@ class ChatApp:
 
         if self._db:
             # we'll want to listen eventually and add as handler to client sub
-            self._profiles = ProfileEventHandler(db, None)
+            self._profiles = ProfileEventHandler(SQLProfileStore(self._db), None)
             # TODO: we'll probably need to create a transient version now we can switch profiles,
             #  check what needs to happen in case where we have no store but want to add a contact
             #  user will need the full pubkey
             self._event_store = SQLStore(self._db)
 
-        self._profile = self._get_profile(as_profile,
-                                          key_type='private')
+        # passed profile directly
+        if isinstance(as_profile, Profile):
+            self._profile = as_profile
+        # key or profile name
+        elif as_profile is not None:
+            self._profile = self._get_profile(as_profile)
+        # nothing generate adhoc
+        else:
+            adhoc_keys = Profile.get_new_key_pair()
+            self._profile = Profile(priv_k=adhoc_keys['priv_k'],
+                                    profile_name='adhoc_profile')
+            # needed to show in switch profile
+            self._profiles.profiles.append(self._profile)
 
         if not self._profile or not self._profile.private_key:
             raise UnknownProfile('unable to find profile %s or we don\'t have the private key for it')
@@ -710,11 +720,13 @@ class ChatApp:
 
             the_client.subscribe(handlers=handlers, filters=filter)
 
+
         def my_status(status):
             last_connect_count = self.connect_count
             self._status = status
             if last_connect_count != self.connect_count:
                 self._display.update_title()
+
 
         self._client.set_on_connect(my_connect)
         self._client.set_status_listener(my_status)
@@ -726,10 +738,7 @@ class ChatApp:
 
     @property
     def connect_count(self):
-        if len(self._client) == 1:
-            return 1, 1
-        else:
-            return self._status['relay_count'], self._status['connect_count']
+        return self._status['relay_count'], self._status['connect_count']
 
     @property
     def client(self):
@@ -755,7 +764,8 @@ class ChatApp:
         for c_key in self.profile_contacts:
             contact = self.profile_contacts[c_key]
             profiles.append({
-                'profile': self._get_profile(c_key),
+                'profile': self._get_profile(c_key,
+                                             create_type='public'),
                 'new_count': len(self.profile_threads.messages(pub_k=c_key,
                                                                kind=self._kind,
                                                                since=contact['last_view'],
@@ -788,8 +798,18 @@ class ChatApp:
 
         self._display.update_messages()
 
-    def set_view_profile(self, p: Profile):
-        if p != self._current_to:
+    def set_view_profile(self, p):
+        """
+        :param p: key or profile obj
+        :return:
+        """
+        if isinstance(p, str):
+            p = self._get_profile(p, create_type='public')
+
+        # nothing to do if we're already msging and setting view to profile we're using not allowed
+        if p != self._current_to and p != self._profile:
+            # add to contacts if not already there
+            self.add_contact(p.public_key)
             self._current_to = p
             self._draw_messages()
             self._draw_contacts()
@@ -860,11 +880,11 @@ class ChatApp:
                                              kind=self._kind)
 
     def get_local_profiles(self):
-        # profiles where we have a provate key, i.e. we can make posts
+        # profiles where we have a private key, i.e. we can make posts
         ret = [pp for pp in self._profiles.profiles if pp.private_key]
         return ret
 
-    def _get_profile(self, as_profile, key_type='public'):
+    def _get_profile(self, as_profile, create_type=None):
         # if str maybe its a profile_name, privkey or pubkey
         ret = None
 
@@ -881,14 +901,14 @@ class ChatApp:
 
         # we didn't find a profile but we'll see if we can just use as priv key...
         # also fallback we don't have db
-        if not ret:
+        if not ret and create_type is not None:
             if len(as_profile) == 64:
                 # and also hex, will throw otherwise
                 bytearray.fromhex(as_profile)
-                if key_type=='private':
+                if create_type == 'private':
                     ret = Profile(priv_k=as_profile,
                                   profile_name='adhoc_user')
-                else:
+                elif create_type == 'public':
                     ret = Profile(pub_k=as_profile)
 
         return ret

@@ -7,15 +7,11 @@
     This it to get the basics together before doing a gui based chat app probably using Kivy
 
 """
-# from gevent import monkey
-# monkey.patch_all()
 import logging
-import sys
-from pathlib import Path
 
-from nostr.ident import Profile, UnknownProfile
+from pathlib import Path
 from nostr.client.client import Client
-from db.db import Database, SQLiteDatabase
+from db.db import SQLiteDatabase
 from cmd_line.message_app import ChatApp
 
 # TODO: also postgres
@@ -25,9 +21,10 @@ DB = SQLiteDatabase('%s/nostr-client.db' % WORK_DIR)
 def run_chat_app():
     from nostr.client.client import ClientPool
     # my_client = Client('ws://192.168.0.17:8081')
-    my_client = ClientPool(['ws://localhost:8081', 'ws://localhost:8082','wss://nostr-pub.wellorder.net'])
+    # my_client = ClientPool(['ws://localhost:8081', 'ws://localhost:8082','wss://nostr-pub.wellorder.net'])
     # my_client = Client('wss://nostr-pub.wellorder.net')
-    ChatApp('firedragon888', my_client, DB).start()
+    my_client = Client('wss://nostr-pub.wellorder.net')
+    ChatApp('monty888', my_client, DB).start()
     my_client.end()
 
 

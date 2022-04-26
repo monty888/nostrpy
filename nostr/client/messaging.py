@@ -14,7 +14,7 @@
 import base64
 import logging
 from gevent.lock import BoundedSemaphore
-from nostr.ident import Profile
+from nostr.ident.profile import Profile
 from nostr.client.persist import ClientStoreInterface
 from nostr.client.client import Client
 from nostr.event import Event
@@ -41,8 +41,8 @@ class MessageThreads:
         :param to_pub_k:
         :param kinds:
         """
-
         self._from = from_p
+
         if not to_pub_k:
             to_pub_k = []
         if isinstance(to_pub_k, str):
@@ -65,9 +65,6 @@ class MessageThreads:
 
         self.load_local()
         self._on_message = on_message
-
-
-
 
     def load_local(self):
         """

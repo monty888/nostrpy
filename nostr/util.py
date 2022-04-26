@@ -26,6 +26,23 @@ class util_funcs:
                 ret = '%s...%s' % (the_str[:taillen], the_str[len(the_str)-taillen:])
         return ret
 
+    @classmethod
+    def is_nostr_key(cls, key_str):
+        """
+        basic check that key_str is a nostr_key
+        :param key_str:
+        :return:
+        """
+        ret = False
+        if len(key_str) == 64:
+            # and also hex, will throw otherwise
+            try:
+                bytearray.fromhex(key_str)
+                ret = True
+            except:
+                pass
+        return ret
+
     def sql_lite_destroy(self, db_file, export_profiles=None):
         """
             completely removes the sql_lite db that we're currently using for our nostr client

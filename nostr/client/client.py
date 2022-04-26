@@ -243,11 +243,18 @@ class Client:
         def monitor_thread():
             while self._run:
                 try:
+                    con_count = 0
+                    if self._is_connected:
+                        con_count = 1
+
                     status = {
                         'connected': self._is_connected,
                         'fail_count': self._con_fail_count,
                         'last_connect': self._last_con,
-                        'last_err': self._last_err
+                        'last_err': self._last_err,
+                        # so status from single Client looks same as ClientPool
+                        'relay_count': 1,
+                        'connect_count': con_count
                     }
                     if self._on_status:
                         self._on_status(status)
