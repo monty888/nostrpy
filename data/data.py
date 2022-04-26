@@ -105,47 +105,6 @@ class DataSet:
 				
 		return DataSet(heads, data)
 
-	# @classmethod
-	# def from_sqlite(cls, fname, sql, args=[]):
-	# 	"""
-	# 		will create a dataset with the results of query against sqlite db
-	# 		NOTE: As CSV but probably less so some typing might need to be done
-	# 		e.g. sqlite doesn't support an datetype so it'll be str/int here so will
-	# 		need coversion if you want to use at date
-	#
-	# 		At the moment for both this and CSV we do by iter and correct after but we could pass
-	# 		a col_name map to covert func or something similar...
-	# 	"""
-	# 	if args is None:
-	# 		args = []
-	#
-	# 	# create con
-	# 	con = sqlite3.connect(fname)
-	#
-	# 	# get result set of query
-	# 	logging.debug('DataSet::from_sqlite sql: %s args: %s' %(sql, args))
-	# 	rs = con.execute(sql, args)
-	#
-	# 	# extract the heads
-	# 	heads = []
-	# 	for c_h in rs.description:
-	# 		# col name in 0 the rest are always None and contain no useful info for us
-	# 		heads.append(c_h[0])
-	#
-	# 	# now extract the data
-	# 	data = []
-	# 	for c_r in rs:
-	# 		# we change to [] as there are some places where being a turple will be a problem
-	# 		data.append(list(c_r))
-	#
-	# 	# clean up, not sure require to close rs if closing con
-	# 	# but what the hell
-	# 	rs.close()
-	# 	con.close()
-	#
-	# 	# now return as a dataset
-	# 	return DataSet(heads, data)
-
 	@classmethod
 	def from_db(cls, db: Database, sql, args=[]):
 		"""

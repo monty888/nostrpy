@@ -31,6 +31,15 @@ class ProfileStoreInterface(ABC):
         """
 
     @abstractmethod
+    def update_profile_local(self, p: Profile):
+        """
+        associates a profile with a local name
+        :param profile_name:
+        :param private_key:
+        :return:
+        """
+
+    @abstractmethod
     def select(self) -> ProfileList:
         """
         :return: returns all profiles in store -
@@ -73,7 +82,9 @@ class ProfileStoreInterface(ABC):
         p = Profile(priv_k=keys['priv_k'],
                     pub_k=keys['pub_k'][2:],
                     profile_name=name,
-                    attrs=attrs)
+                    attrs=attrs,
+                    # update_at as zero so attrs will be update over if we get anything from relay
+                    update_at=0)
 
         all = self.select()
 
@@ -84,9 +95,38 @@ class ProfileStoreInterface(ABC):
 
         return p
 
-    def import_from_file(self,
-                         filename,
-                         names=None):
+    def export_file(self, filename, names=None):
+        """
+        export local profiles to backup file in csv format
+
+        :param filename:    csv export file
+        :param db_file:     sql_lite db file
+        :param names:       if supplied only these profiles will be exported
+        :return:
+        """
+
+        profiles = self.select()
+        c_p: Profile
+        to_output = []
+        for c_p in profiles:
+            if c_p.private_key:
+                if names is None or c_p.profile_name in names:
+                    to_output.append([
+                        c_p.private_key,
+                        c_p.public_key,
+                        c_p.profile_name,
+                        json.dumps(c_p.attrs),
+                        util_funcs.date_as_ticks(c_p.update_at)
+                    ])
+
+        if to_output:
+            DataSet([
+                'priv_k', 'pub_k', 'profile_name', 'attrs', 'updated_at'
+            ], to_output).save_csv(filename)
+
+    def import_file(self,
+                    filename,
+                    names=None):
         """
         import profiles into a db that were previously output to file using <name>
         :param filename:
@@ -96,6 +136,7 @@ class ProfileStoreInterface(ABC):
         """
 
         profiles = DataSet.from_CSV(filename)
+
         if names:
             profiles = profiles.value_in('profile_name', names)
 
@@ -105,7 +146,8 @@ class ProfileStoreInterface(ABC):
                     priv_k=p['priv_k'],
                     pub_k=p['pub_k'],
                     profile_name=p['profile_name'],
-                    attrs=p['attrs'],
+                    # probably some issue with csv/json together code work out why just the attrs str is no good at some point
+                    attrs=p['attrs'].replace('""', '"').replace('"{', "{").replace('}"', "}"),
                     update_at=util_funcs.date_as_ticks(datetime.now())
                 ))
             except Exception as e:
@@ -147,7 +189,20 @@ class SQLProfileStore(ProfileStoreInterface):
             util_funcs.date_as_ticks(p.update_at),
             p.public_key
         ]
-        logging.debug('SQLProfileStore::update profile sql: %s args: %s' % (sql, args))
+        logging.debug('SQLProfileStore::update sql: %s args: %s' % (sql, args))
+        self._db.execute_sql(sql, args)
+
+    def update_profile_local(self, p: Profile):
+        sql = """
+                update profiles 
+                    set profile_name=?, priv_k=?
+                    where pub_k=?
+            """
+        args = [
+            p.profile_name, p.private_key,
+            p.public_key
+        ]
+        logging.debug('SQLProfileStore::update_profile_local sql: %s args: %s' % (sql, args))
         self._db.execute_sql(sql, args)
 
     def select(self) -> ProfileList:

@@ -24,7 +24,7 @@ def run_chat_app():
     # my_client = ClientPool(['ws://localhost:8081', 'ws://localhost:8082','wss://nostr-pub.wellorder.net'])
     # my_client = Client('wss://nostr-pub.wellorder.net')
     my_client = Client('wss://nostr-pub.wellorder.net')
-    ChatApp('monty888', my_client, DB).start()
+    ChatApp('firedragon888', my_client, DB).start()
     my_client.end()
 
 

@@ -32,7 +32,7 @@ class Profile:
         if priv_key is None:
             pk = secp256k1.PrivateKey()
         else:
-            pk =secp256k1.PrivateKey(priv_key)
+            pk = secp256k1.PrivateKey(priv_key)
 
         return {
             'priv_k' : pk.serialize(),
@@ -103,23 +103,6 @@ class Profile:
             update_at=p['updated_at']
         )
 
-    @classmethod
-    def export_from_db(cls, filename, db_file, names=None):
-        """
-        export local profiles to backup file in csv format
-
-        :param filename:    csv export file
-        :param db_file:     sql_lite db file
-        :param names:       if supplied only these profiles will be exported
-        :return:
-        """
-        sql = 'select priv_k,pub_k,profile_name,attrs from profiles where priv_k is not null'
-        profiles = DataSet.from_sqlite(db_file, sql)
-        if names:
-            profiles = profiles.value_in('profile_name', names)
-
-        profiles.save_csv(filename)
-
     def __init__(self, priv_k=None, pub_k=None, attrs=None, profile_name='', update_at=None):
         """
             create a new ident/person that posts can be followed etc.
@@ -163,6 +146,10 @@ class Profile:
     def profile_name(self):
         return self._profile_name
 
+    @profile_name.setter
+    def profile_name(self, name):
+        self._profile_name = name
+
     @property
     def name(self):
         ret = None
@@ -178,6 +165,10 @@ class Profile:
     @property
     def private_key(self):
         return self._priv_k
+
+    @private_key.setter
+    def private_key(self, priv_key):
+        self._priv_k = priv_key
 
     @property
     def public_key(self):
@@ -275,14 +266,6 @@ class ProfileList:
         actually probbly just implemnt the special methods we need rather than subclass...
 
     """
-
-    @classmethod
-    def add_profile_db(cls, db: Database, p: Profile):
-        SQLProfileStore(db).add(p)
-
-    @classmethod
-    def update_profile_db(cls, db: Database, p: Profile):
-        SQLProfileStore(db).update(p)
 
     def __init__(self, profiles):
         self._profiles = profiles
