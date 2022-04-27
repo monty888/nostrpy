@@ -15,7 +15,7 @@ import base64
 import logging
 from gevent.lock import BoundedSemaphore
 from nostr.ident.profile import Profile
-from nostr.client.persist import ClientStoreInterface
+from nostr.client.persist import ClientEventStoreInterface
 from nostr.client.client import Client
 from nostr.event import Event
 from nostr.encrypt import SharedEncrypt
@@ -29,7 +29,7 @@ class MessageThreads:
     """
     def __init__(self,
                  from_p: Profile,
-                 evt_store: ClientStoreInterface,
+                 evt_store: ClientEventStoreInterface,
                  on_message=None,
                  to_pub_k=None,
                  kinds=[Event.KIND_TEXT_NOTE]):

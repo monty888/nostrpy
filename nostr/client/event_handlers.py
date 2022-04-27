@@ -8,7 +8,7 @@ import base64
 import logging
 import json
 from collections import OrderedDict
-from nostr.client.persist import ClientStoreInterface
+from nostr.client.persist import ClientEventStoreInterface
 from nostr.encrypt import SharedEncrypt
 from nostr.util import util_funcs
 from nostr.event import Event
@@ -31,11 +31,15 @@ class PrintEventHandler:
     def view_off(self):
         self._view_on = False
 
-    def do_event(self, sub_id, evt:Event, relay):
+    def do_event(self, sub_id, evt: Event, relay):
         if self._view_on:
-            print('%s: %s - %s' % (util_funcs.ticks_as_date(evt['created_at']),
-                                   util_funcs.str_tails(evt.pub_key, 4),
-                                   evt.content))
+            self.display_func(sub_id, evt, relay)
+
+    def display_func(self, sub_id, evt: Event, relay):
+        print('%s: %s - %s' % (evt.created_at,
+                               util_funcs.str_tails(evt.pub_key, 4),
+                               evt.content))
+
 
 
 class DecryptPrintEventHandler(PrintEventHandler):
@@ -117,7 +121,7 @@ class PersistEventHandler:
         TODO: either add back in persist profile here or move to own handler
     """
 
-    def __init__(self, store: ClientStoreInterface):
+    def __init__(self, store: ClientEventStoreInterface):
         self._store = store
         # to check if new or update profile
         # self._profiles = DataSet.from_sqlite(db_file,'select pub_k from profiles')

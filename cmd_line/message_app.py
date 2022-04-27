@@ -23,7 +23,7 @@ from nostr.ident.persist import SQLProfileStore
 from nostr.client.event_handlers import PersistEventHandler
 from nostr.event import Event
 from nostr.client.client import Client
-from nostr.client.persist import SQLStore
+from nostr.client.persist import SQLEventStore
 from nostr.client.messaging import MessageThreads
 from db.db import Database
 
@@ -652,7 +652,7 @@ class ChatApp:
             # TODO: we'll probably need to create a transient version now we can switch profiles,
             #  check what needs to happen in case where we have no store but want to add a contact
             #  user will need the full pubkey
-            self._event_store = SQLStore(self._db)
+            self._event_store = SQLEventStore(self._db)
 
         # passed profile directly
         if isinstance(as_profile, Profile):

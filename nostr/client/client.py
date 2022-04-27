@@ -343,7 +343,7 @@ class ClientPool:
             where read/write not passed in they'll be True
 
     """
-    def __init__(self, clients, on_connect=None, max_deduplicate=1000):
+    def __init__(self, clients, on_connect=None):
         # Clients (Relays) we connecting to
         self._clients = {}
         # subscription event handlers keyed on sub ids
@@ -358,9 +358,6 @@ class ClientPool:
         }
         # if want to listen for status changes from this group of relays
         self._on_status = None
-        # used to prevent posting duplicates unless handler wants them
-        self._duplicates = OrderedDict()
-        self._max_dedup = max_deduplicate
 
         # for whatever reason using pool but only a single client handed in
         if isinstance(clients, str):

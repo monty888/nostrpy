@@ -28,7 +28,7 @@ usage:
 
     python cmd_profile.py -l <private_key> <profile_name>, link to existing profile - seen via META event
     
-    python cmd_profile.py -f <file_name>
+    python cmd_profile.py -i <file_name>
     profile_name/private_key that already exist will be skipped
     
  

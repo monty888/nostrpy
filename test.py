@@ -8,7 +8,7 @@ from db.db import SQLiteDatabase as Database
 from nostr.client.client import Client
 from nostr.event import Event
 from nostr.client.event_handlers import PrintEventHandler, PersistEventHandler
-from nostr.client.persist import SQLLiteStore
+from nostr.client.persist import SQLLiteEventStore
 from nostr.util import util_funcs
 from nostr.ident import ProfileList, Profile
 from nostr.encrypt import SharedEncrypt
@@ -102,7 +102,7 @@ def command_line(relay_url, db_file):
             self._c_profile = None
             self._db_file = db_file
             self._db = Database(self._db_file)
-            self._store = SQLLiteStore(db_file)
+            self._store = SQLLiteEventStore(db_file)
 
             self._print_view = PrintEventHandler(False)
             self._event_handler = [PersistEventHandler(self._store),

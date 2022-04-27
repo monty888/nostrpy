@@ -10,7 +10,6 @@
     what you get back from the relay/
 
 """
-
 from abc import ABC, abstractmethod
 import logging
 from datetime import datetime
@@ -21,10 +20,9 @@ from data.data import DataSet
 from db.db import SQLiteDatabase, Database
 from nostr.util import util_funcs
 from nostr.event import Event
-from nostr.relay.persist import SQLStore as RelayStore
 
 
-class ClientStoreInterface(ABC):
+class ClientEventStoreInterface(ABC):
     # TODO:
     #  add method that returns the most recent create date for all relays we've seen
 
@@ -54,7 +52,7 @@ class ClientStoreInterface(ABC):
         """
 
 
-class SQLStore(ClientStoreInterface, ABC):
+class SQLEventStore(ClientEventStoreInterface, ABC):
     """
     sql version of ClientStoreInterface, we won't bother with mem only version for the client
     as with the relay we'll do 2 versions just to add the correct create and destroy sql
@@ -181,7 +179,7 @@ class SQLStore(ClientStoreInterface, ABC):
         if created_by:
             ret = created_by[0]['created_at']
         else:
-            logging.debug('Store::get_oldest - no created_at found, db empty?')
+            logging.debug('Store::get_newest - no created_at found, db empty?')
 
         return ret
 
@@ -245,8 +243,8 @@ class SQLStore(ClientStoreInterface, ABC):
         :param filter: {} or [{},...] or filters
         :return:
         """
-        filter_query = SQLStore.make_filter_sql(filter,
-                                                placeholder=self._db.placeholder)
+        filter_query = SQLEventStore.make_filter_sql(filter,
+                                                     placeholder=self._db.placeholder)
 
         # print(filter_query['sql'], filter_query['args'])
 
@@ -325,7 +323,7 @@ class SQLStore(ClientStoreInterface, ABC):
                 self._db.executemany_sql(insert_sql,insert_data)
 
 
-class SQLLiteStore(SQLStore):
+class SQLiteEventStore(SQLEventStore):
 
     def __init__(self, db_file):
         self._db_file = db_file

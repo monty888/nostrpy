@@ -17,7 +17,7 @@ import logging
 from data.data import DataSet
 from db.db import Database, SQLiteDatabase
 from nostr.client.client import Event
-from nostr.client.persist import ClientStoreInterface, SQLLiteStore
+from nostr.client.persist import ClientEventStoreInterface, SQLiteEventStore
 from datetime import datetime
 from nostr.util import util_funcs
 
@@ -39,69 +39,33 @@ class Profile:
             'pub_k' : pk.pubkey.serialize(compressed=True).hex()
         }
 
-    @classmethod
-    def import_from_events(cls, db_file, since=None):
-        """
-        :param db_file:
-        :param since: ticks or datetime
-        :return:
-
-        """
-        s = Store(db_file)
-
-        # profiles from events
-        profile_updates = s.load_events(Event.KIND_META, since)
-        # profile info as we have it, ignore are local profiles
-        profiles = DataSet.from_sqlite(db_file, 'select * from profiles --where priv_k isNull')
-
-        """
-            now cycle through either adding or inserting only the most recent profile update
-        """
-        updated = set()
-
-        for c_p in profile_updates:
-            p = Profile(pub_k=c_p['pubkey'],attrs=c_p['content'],update_at=c_p['created_at'])
-            if p.public_key not in updated:
-
-                exists = profiles.matches('pub_k', p.public_key)
-                if not exists:
-                    s.add_profile(p)
-                else:
-                    if(util_funcs.date_as_ticks(p.update_at) > exists[0]['updated_at']):
-                        s.update_profile(p)
-                    else:
-                        logging.debug('Profile:import_from_events %s already up to date, ignored' % p.public_key)
-
-                # done with this key, any other events are older
-                updated.add(p.public_key)
-
-    @classmethod
-    def load_from_db(cls, db: Database, key):
-        """
-            load a single profile from db using key which should be either profilename, private key, or publickey
-            where it's profilename or privatekey then we're able to sign, its a local/users profile
-            if the match is found on pubkey then it's a remote key and can't be used to post messages
-            match must be exact
-        """
-        sql = """
-            select * from profiles 
-                -- see why we have profiles that are emptystr? anyway we want one with a priv_k if its us to sign key 
-                where profile_name=:? or priv_k=:? or pub_k=:? 
-                --and priv_k NOTNULL
-                order by updated_at desc
-        """
-
-        profiles = db.select_sql(sql, [key, key, key])
-        if not profiles:
-            raise UnknownProfile('Profile::load_from_db using key=%s, not found' % key)
-        p = profiles[0]
-        return Profile(
-            priv_k=p['priv_k'],
-            pub_k=p['pub_k'],
-            profile_name=p['profile_name'],
-            attrs=p['attrs'],
-            update_at=p['updated_at']
-        )
+    # @classmethod
+    # def load_from_db(cls, db: Database, key):
+    #     """
+    #         load a single profile from db using key which should be either profilename, private key, or publickey
+    #         where it's profilename or privatekey then we're able to sign, its a local/users profile
+    #         if the match is found on pubkey then it's a remote key and can't be used to post messages
+    #         match must be exact
+    #     """
+    #     sql = """
+    #         select * from profiles
+    #             -- see why we have profiles that are emptystr? anyway we want one with a priv_k if its us to sign key
+    #             where profile_name=:? or priv_k=:? or pub_k=:?
+    #             --and priv_k NOTNULL
+    #             order by updated_at desc
+    #     """
+    #
+    #     profiles = db.select_sql(sql, [key, key, key])
+    #     if not profiles:
+    #         raise UnknownProfile('Profile::load_from_db using key=%s, not found' % key)
+    #     p = profiles[0]
+    #     return Profile(
+    #         priv_k=p['priv_k'],
+    #         pub_k=p['pub_k'],
+    #         profile_name=p['profile_name'],
+    #         attrs=p['attrs'],
+    #         update_at=p['updated_at']
+    #     )
 
     def __init__(self, priv_k=None, pub_k=None, attrs=None, profile_name='', update_at=None):
         """
@@ -183,6 +147,10 @@ class Profile:
     @property
     def attrs(self):
         return self._attrs
+
+    @attrs.setter
+    def attrs(self, attrs):
+        self._attrs = attrs
 
     def get_attr(self, name):
         # returns vale for named atr, None if it isn't defined
@@ -342,6 +310,40 @@ class ProfileList:
                 break
         return ret
 
+    def get_profile(self, profile_key, create_type=None) -> Profile:
+        """
+        :param profile_key: either priv_key, profile_name or pub_key
+        :param create_type: None, 'private' or 'public' if we don't find then an empty profile will be created
+                            with profile_key as either public/private ot not if None. This is enough for use in many
+                            cases.
+        :return: Hopefully found Profile, or if create_type then stub Profile assuming key looked correct else None
+        """
+
+        ret = None
+
+        # we were handed a profile obj so everything is probably cool...
+        if isinstance(profile_key, Profile):
+            ret = profile_key
+        # ok assuming we have a db lets see if we can find this profile
+        elif isinstance(profile_key, str) and self._profiles:
+            ret = self.lookup_priv_key(profile_key)
+            if not ret:
+                ret = self.lookup_profilename(profile_key)
+            if not ret:
+                ret = self.lookup_pub_key(profile_key)
+
+        # we didn't find a profile but we'll see if we can just use as priv key...
+        # also fallback we don't have db
+        if not ret and create_type is not None and util_funcs.is_nostr_key(profile_key):
+            if len(profile_key) == 64:
+                if create_type == 'private':
+                    ret = Profile(priv_k=profile_key,
+                                  profile_name='adhoc_user')
+                elif create_type == 'public':
+                    ret = Profile(pub_k=profile_key)
+
+        return ret
+
     def __getitem__(self, item):
         return self._profiles[item]
 
@@ -405,51 +407,6 @@ class Contact:
 
 
 class ContactList:
-
-    @classmethod
-    def import_from_events(cls,
-                           event_store: ClientStoreInterface,
-                           profile_store,
-                           since=None):
-        """
-        look other events we have in db and create contacts from these
-        TODO: client currently doesnt delete old contact events like the relay does so it probable that more updates
-                are being done then required..FIX
-                in anycase it's likely we wouldn't normally use this and it'd be done adhoc in the same way we build up
-                profiles as event handler on client
-        """
-
-        # contact lists from events
-        c_list_updates = event_store.get_filter({
-            'since': since,
-            'kinds': Event.KIND_CONTACT_LIST
-        })
-
-        # to check if event is newer than what we already have if any
-        existing = profile_store.contacts()
-
-        """
-            in the case of contact list when a user updates its done from fresh so we just check that the list
-            event is newer then any contact we have if any for the owner and if so delete all thier contacts and import 
-            from the new list...
-        """
-        c_evt: Event
-        for c_evt in c_list_updates:
-            exists = existing.matches('pub_k_owner', c_evt.pub_key)
-            is_newer = True
-            if exists and exists[0]['updated_at'] <= c_evt.created_at_ticks:
-                is_newer = False
-
-            contacts = []
-            if is_newer:
-
-                for c_tag in c_evt.tags:
-                    contacts.append(Contact(c_evt.pub_key,
-                                            c_evt.created_at_ticks,
-                                            c_tag))
-                if contacts:
-                    profile_contacts = ContactList(contacts)
-                    profile_store.set_contacts(profile_contacts)
 
     def __init__(self, contacts):
         self._contacts = contacts
@@ -516,7 +473,7 @@ class ProfileEventHandler:
                     self._on_update(evt_profile, c_profile)
 
     @property
-    def profiles(self):
+    def profiles(self) -> ProfileList:
         return self._profiles
 
     def set_on_update(self, on_update):
@@ -529,13 +486,13 @@ if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
     nostr_db_file = '/home/shaun/.nostrpy/nostr-client.db'
     backup_dir = '/home/shaun/.nostrpy/'
-    ps = SQLLiteStore(nostr_db_file)
+    ps = SQLLiteEventStore(nostr_db_file)
 
     from nostr.client.client import Client
     from nostr.client.event_handlers import PersistEventHandler
 
     def my_start(the_client: Client):
-        the_client.subscribe(handlers=PersistEventHandler(SQLLiteStore(nostr_db_file)))
+        the_client.subscribe(handlers=PersistEventHandler(SQLLiteEventStore(nostr_db_file)))
 
     # my_client = Client('wss://nostr-pub.wellorder.net', on_connect=my_start).start()
 

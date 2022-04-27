@@ -93,7 +93,6 @@ def get_postgres_store(db_name, user, password):
     return ret
 
 
-
 def load_toml(filename):
     ret = {}
     f = Path(filename)
@@ -196,7 +195,7 @@ def main():
         del config['pg_user']
         del config['pg_password']
 
-    # create storage object which is either to sqllite or posgres db
+    # create storage object which is either to sqllite, posgres or transient
     if config['store'] == 'sqlite':
         my_store = get_sql_store(config['dbfile'])
     elif config['store'] == 'postgres':

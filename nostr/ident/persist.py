@@ -3,6 +3,8 @@ import logging
 from datetime import datetime
 from abc import ABC, abstractmethod
 from nostr.ident.profile import Profile, ProfileList, Contact, ContactList
+from nostr.client.persist import ClientEventStoreInterface
+from nostr.event import Event
 from db.db import Database, SQLiteDatabase
 from data.data import DataSet
 from nostr.util import util_funcs
@@ -49,8 +51,7 @@ class ProfileStoreInterface(ABC):
     @abstractmethod
     def contacts(self):
         """
-        working on not sure
-        :return:
+        :return: contact list that owner_pk is following
         """
 
     @abstractmethod
@@ -153,6 +154,125 @@ class ProfileStoreInterface(ABC):
             except Exception as e:
                 # already exists?
                 logging.debug('Profile::import_from_file - profile: %s - %s' % (p['profile_name'], e))
+
+    def import_profiles_from_events(self,
+                                    event_store: ClientEventStoreInterface,
+                                    since=None):
+        """
+        :param event_store:
+        :param since:
+        :return:
+        """
+
+        # get profile update events
+        evts = event_store.get_filter({
+            'kinds': [Event.KIND_META],
+            'since': since
+        })
+
+        profiles = self.select()
+        """
+            now cycle through either adding or inserting only the most recent profile update
+        """
+        updated = set()
+        evt : Event
+        for evt in evts:
+            p = Profile(pub_k=evt.pub_key,
+                        attrs=evt.content,
+                        update_at=evt.created_at)
+            if p.public_key not in updated:
+
+                exists = profiles.matches('pub_k', p.public_key)
+                if not exists:
+                    self.add(p)
+                else:
+                    if (util_funcs.date_as_ticks(p.update_at) > exists[0]['updated_at']):
+                        self.update(p)
+                    else:
+                        logging.debug('Profile:import_from_events %s already up to date, ignored' % p.public_key)
+
+                # done with this key, any other events are older
+                updated.add(p.public_key)
+
+    def import_contacts_from_events(self,
+                                    event_store: ClientEventStoreInterface,
+                                    since=None):
+        """
+        look other events we have in db and create contacts from these
+        TODO: client currently doesnt delete old contact events like the relay does so it probable that more updates
+                are being done then required..FIX
+                in anycase it's likely we wouldn't normally use this and it'd be done adhoc in the same way we build up
+                profiles as event handler on client
+        """
+
+        # contact lists from events
+        c_list_updates = event_store.get_filter({
+            'since': since,
+            'kinds': Event.KIND_CONTACT_LIST
+        })
+
+        # to check if event is newer than what we already have if any
+        existing = self.contacts()
+
+        """
+            in the case of contact list when a user updates its done from fresh so we just check that the list
+            event is newer then any contact we have if any for the owner and if so delete all thier contacts and import 
+            from the new list...
+        """
+        c_evt: Event
+        for c_evt in c_list_updates:
+            exists = existing.matches('pub_k_owner', c_evt.pub_key)
+            is_newer = True
+            if exists and exists[0]['updated_at'] <= c_evt.created_at_ticks:
+                is_newer = False
+
+            contacts = []
+            if is_newer:
+
+                for c_tag in c_evt.tags:
+                    contacts.append(Contact(c_evt.pub_key,
+                                            c_evt.created_at_ticks,
+                                            c_tag))
+                if contacts:
+                    profile_contacts = ContactList(contacts)
+                    self.set_contacts(profile_contacts)
+
+
+class TransientProfileStore(ProfileStoreInterface):
+    """
+        in memory profile store - normally we wouldn't, you have to request all META, CONTACT_LIST events
+        from relays again on start up
+    """
+    def __init__(self):
+        self._profiles = {}
+
+    def add(self, p: Profile):
+        self._profiles[p.public_key] = p
+
+    def update(self, p: Profile):
+        if p.public_key in self._profiles:
+            to_update: Profile = self._profiles[p.public_key]
+            to_update.attrs = p.attrs
+            to_update.update_at = p.update_at
+
+    def update_profile_local(self, p: Profile):
+        if p.public_key in self._profiles:
+            to_update: Profile = self._profiles[p.public_key]
+            to_update.profile_name = p.profile_name
+            to_update.private_key = p.private_key
+
+    def select(self) -> ProfileList:
+        profiles = []
+        for i, c_p in enumerate(self._profiles):
+            profiles.append(c_p)
+
+        return ProfileList(profiles)
+
+    def contacts(self):
+        pass
+
+    def set_contacts(self, contacts: ContactList):
+        pass
 
 
 class SQLProfileStore(ProfileStoreInterface):

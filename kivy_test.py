@@ -46,7 +46,7 @@ from db.db import SQLiteDatabase
 from kivy_components.screens import SearchContactScreen, MessageScreen
 from nostr.event import Event
 from nostr.util import util_funcs
-from nostr.client.persist import SQLLiteStore
+from nostr.client.persist import SQLLiteEventStore
 
 DB = SQLiteDatabase('/home/shaun/.nostrpy/nostr-client.db')
 
@@ -56,7 +56,7 @@ class Demo(MDApp):
         self._scr_man = None
         self._con_sel_screen = None
         self._client = None
-        self._store = SQLLiteStore(DB.file)
+        self._store = SQLLiteEventStore(DB.file)
 
         self._c_profile = Profile.load_from_db(DB,'firedragon888')
 
