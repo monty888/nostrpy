@@ -167,6 +167,10 @@ class Profile:
         # note as datetime - convert to ticks before storing in dd
         return self._update_at
 
+    @update_at.setter
+    def update_at(self, at_date):
+        self._update_at = at_date
+
     def get_meta_event(self):
         """
             returns a meta event for this profile that once signed can be posted to relay for update
@@ -451,26 +455,30 @@ class ProfileEventHandler:
         self._on_update = on_update
 
     def do_event(self, sub_id, evt: Event, relay):
-        c_profile: Profile
-        evt_profile: Profile
+        try:
+            c_profile: Profile
+            evt_profile: Profile
 
-        if evt.kind == Event.KIND_META:
-            pubkey = evt.pub_key
-            c_profile = self._profiles.lookup_pub_key(pubkey)
-            evt_profile = Profile(pub_k=pubkey, attrs=evt.content, update_at=evt.created_at_ticks)
+            if evt.kind == Event.KIND_META:
+                pubkey = evt.pub_key
+                c_profile = self._profiles.lookup_pub_key(pubkey)
+                evt_profile = Profile(pub_k=pubkey, attrs=evt.content, update_at=evt.created_at_ticks)
 
-            # we only need to do something if the profile is newer than we already have
-            if c_profile is None or c_profile.update_at < evt_profile.update_at:
-                # not sure about this... probably OK most of the time...
-                if c_profile:
-                    self._store.update(evt_profile)
-                else:
-                    self._store.add(evt_profile)
-                    self._profiles.append(evt_profile)
+                # we only need to do something if the profile is newer than we already have
+                if c_profile is None or c_profile.update_at < evt_profile.update_at:
+                    # not sure about this... probably OK most of the time...
+                    if c_profile:
+                        self._store.update(evt_profile)
+                    else:
+                        self._store.add(evt_profile)
+                        self._profiles.append(evt_profile)
 
-                # if owner gave us an on_update call with pubkey that has changed, they may want to do something...
-                if self._on_update:
-                    self._on_update(evt_profile, c_profile)
+                    # if owner gave us an on_update call with pubkey that has changed, they may want to do something...
+                    if self._on_update:
+                        self._on_update(evt_profile, c_profile)
+        except Exception as e:
+            print(e)
+
 
     @property
     def profiles(self) -> ProfileList:

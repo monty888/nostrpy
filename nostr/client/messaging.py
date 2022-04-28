@@ -122,20 +122,16 @@ class MessageThreads:
             }
 
         if msg_evt.kind == Event.KIND_ENCRYPT:
-            my_enc = SharedEncrypt(self._from.private_key)
-            msg_split = msg_evt.content.split('?iv')
-            msg_evt = Event.create_from_JSON(msg_evt.event_data())
-            msg_evt.content = '!unable to decrypt!'
-
+            # we keep in memory unecrypted, probably we should decrypt at the point
+            # we're outputing to screen
+            msg_copy = Event.create_from_JSON(msg_evt.event_data())
             try:
-                text = base64.b64decode(msg_split[0])
-                iv = base64.b64decode(msg_split[1])
 
-                msg_evt.content = my_enc.decrypt_message(text, iv, '02'+to_id).decode('utf8')
+                msg_copy.content = msg_evt.decrypted_content(self._from.private_key, to_id)
 
             except Exception as e:
-                msg_evt.content = '!!!unable to decrypt!!!'
-        self._msg_threads[to_id][msg_evt.kind]['msgs'].append(msg_evt)
+                msg_copy.content = '!!!unable to decrypt!!!'
+        self._msg_threads[to_id][msg_evt.kind]['msgs'].append(msg_copy)
 
         return True
 
@@ -160,6 +156,7 @@ class MessageThreads:
 
         # # encrypt text as NIP4 if encrypted kind
         if kind == Event.KIND_ENCRYPT:
+            # as decrypt add this as event method
             my_enc = SharedEncrypt(self._from.private_key)
             my_enc.derive_shared_key('02' + to_user.public_key)
             # crypt_message = my_enc.encrypt_message(b'a very simple message to test encrypt')

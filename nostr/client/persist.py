@@ -1,13 +1,14 @@
 """
-    The client store just keeps a local copy of nostr events that we have seen before and is almost the relay store.
-    it adds relay_url so that we can see which relay
-    and the delete just deletes events from event tbl - actually no delete at mo....
+    The clientevent store just keeps a local copy of nostr events that we have seen before.
+    Similar to relay store but:
+        record is kept of every relay is seen from
+        queries return in date order
+        method to get newest from given relay so we can have record sets that are mix of local and then fetch newest from relays
 
-    The same db we'll use elsewhere for keeping data about profiles, contacts and any extra data specific to a
-    client implementation. In many cases this data is just derived from the events table for example profiles tbl
-    is created from meta event types, so you can delete all profiles and the reacreate from events tbl
-    or you could event not persist the events but subscribe to a relay and create just the profiles data from
-    what you get back from the relay/
+    Other Client stores should be possible to create via query from this event store rather than relay
+    and most clients will use a combined local/remote store
+    TODO: at the moment deletes are not implemented here nor are deletes of events that have be superseeded (not really
+    problem though it does mean that recreate from events is doing unnecessary updates)
 
 """
 from abc import ABC, abstractmethod
@@ -45,11 +46,56 @@ class ClientEventStoreInterface(ABC):
     #     """
 
     @abstractmethod
+    def get_newest(self, for_relay):
+        """
+        return ticks of the newest event we have for given relay for use in since filter
+        :param for_relay:
+        :return:
+        """
+
+    @abstractmethod
     def get_filter(self, filter):
         """
         :param filter: [{filter}...] nostr filter
         :return: all evts in store that passed the filter
         """
+
+
+class TransientEventStore(ClientEventStoreInterface, ABC):
+
+    def __init__(self):
+        self._events = {}
+
+    def add_event(self, evt: Event, relay_url: str):
+        if not evt.id in self._events:
+            self._events[evt.id] = {
+                'event': evt,
+                'relays': set(relay_url)
+            }
+        else:
+            self._events[evt.id]['relays'].add(relay_url)
+
+    def get_newest(self, for_relay):
+        ret = 0
+        evt: Event
+        for i, o in enumerate(self._events):
+            if for_relay in o['relays']:
+                evt = o['event']
+                if evt.created_at_ticks > ret:
+                    ret = evt.created_at_ticks
+
+        return ret
+
+    def get_filter(self, filter):
+        ret = []
+        evt: Event
+        for i, o in enumerate(self._events):
+            evt = o['event']
+            if evt.test(filter):
+                ret.append(evt)
+
+        #TODO: needs to be sorted as
+        return ret
 
 
 class SQLEventStore(ClientEventStoreInterface, ABC):
@@ -166,16 +212,16 @@ class SQLEventStore(ClientEventStoreInterface, ABC):
     def __init__(self, db: Database):
         self._db = db
 
-    def get_newest(self):
-        """
-            gets the newest event in the database, this can then be used when subscribing as the since var
-            so we don't have to fetch everything. Maybe just use as guide and lookback a little further as may not have
-            seen some events on some relays e.g if lost connection so could be some gaps.
-            Change this so that it can be oldest of events matching filter
-            A Client might want to give the user option to scan back anyway to check for any gaps
-        """
+    def get_newest(self, for_relay):
+        my_sql = """
+        select created_at from events e 
+        inner join event_relay er on e.id = er.id
+        where er.relay_url = %s
+        order by created_at desc limit 1
+        """ % self._db.placeholder
+
         ret = 0
-        created_by = self._db.select_sql('select created_at from events order by created_at desc limit 1')
+        created_by = self._db.select_sql(my_sql, [for_relay])
         if created_by:
             ret = created_by[0]['created_at']
         else:

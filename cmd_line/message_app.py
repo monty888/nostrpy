@@ -19,11 +19,11 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.mouse_events import MouseEvent, MouseButton, MouseEventType
 from nostr.ident.profile import Profile, ProfileEventHandler, UnknownProfile, ProfileList
-from nostr.ident.persist import SQLProfileStore
+from nostr.ident.persist import SQLProfileStore, TransientProfileStore
 from nostr.client.event_handlers import PersistEventHandler
 from nostr.event import Event
 from nostr.client.client import Client
-from nostr.client.persist import SQLEventStore
+from nostr.client.persist import SQLEventStore, TransientEventStore
 from nostr.client.messaging import MessageThreads
 from db.db import Database
 
@@ -643,28 +643,27 @@ class ChatApp:
         self._db = db
         # helps us present friendly ident info rather then having to show keys
         self._profiles: ProfileEventHandler = None
-        # we store we only have to subscribe for event since we have local
-        self._event_store = None
 
         if self._db:
             # we'll want to listen eventually and add as handler to client sub
             self._profiles = ProfileEventHandler(SQLProfileStore(self._db), None)
-            # TODO: we'll probably need to create a transient version now we can switch profiles,
-            #  check what needs to happen in case where we have no store but want to add a contact
-            #  user will need the full pubkey
             self._event_store = SQLEventStore(self._db)
-
-        # passed profile directly
-        if isinstance(as_profile, Profile):
-            self._profile = as_profile
-        # key or profile name
-        elif as_profile is not None:
-            self._profile = self._get_profile(as_profile)
-        # nothing generate adhoc
         else:
-            adhoc_keys = Profile.get_new_key_pair()
-            self._profile = Profile(priv_k=adhoc_keys['priv_k'],
-                                    profile_name='adhoc_profile')
+            self._profiles = ProfileEventHandler(TransientProfileStore(), None)
+            self._event_store = TransientEventStore()
+
+
+        self._profile = self._profiles.profiles.get_profile(as_profile,None)
+
+        # nothing generate either using passed in value as priv_key or if that isn't valid generate one
+        if not self._profile:
+            if as_profile is not None:
+                self._profile = self._profiles.profiles.get_profile(as_profile,
+                                                                create_type='private')
+            if not self._profile:
+                adhoc_keys = Profile.get_new_key_pair()
+                self._profile = Profile(priv_k=adhoc_keys['priv_k'],
+                                        profile_name='adhoc_profile')
             # needed to show in switch profile
             self._profiles.profiles.append(self._profile)
 
@@ -702,10 +701,10 @@ class ChatApp:
 
         def my_connect(the_client: Client):
             handlers = [self]
-            if self._event_store:
-                handlers.append(PersistEventHandler(self._event_store))
-            if self._profiles:
-                handlers.append(self._profiles)
+
+            # we always create version of this now they just might not be to perm store
+            handlers.append(PersistEventHandler(self._event_store))
+            handlers.append(self._profiles)
 
             # because we added switching profiles simpler just to look at all events of correct kind
             filter = {
@@ -716,7 +715,11 @@ class ChatApp:
             # newest events per relay before making the subscribe. To do this clients will need to take the eventstore
             # on init, we could then also then just make some of the persistance stuff as bool flags on create?
             if self._event_store:
-                filter['since'] = self._event_store.get_newest()
+                evts = self._event_store.get_filter(filter)
+                filter['since'] = self._event_store.get_newest(the_client.url)
+                for c_evt in evts:
+                    self.do_event(None, c_evt, None)
+
 
             the_client.subscribe(handlers=handlers, filters=filter)
 

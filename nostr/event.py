@@ -1,9 +1,11 @@
 from datetime import datetime
+import base64
 import json
 from json import JSONDecodeError
 import secp256k1
 import hashlib
 from nostr.util import util_funcs
+from nostr.encrypt import SharedEncrypt
 
 
 class Event:
@@ -274,6 +276,32 @@ class Event:
     @property
     def content(self):
         return self._content
+
+    def decrypted_content(self, priv_key, pub_key):
+        """
+        dycrypts a NIP04 encoded event...
+        :param priv_key:
+        :return:
+        """
+        if self.kind != Event.KIND_ENCRYPT:
+            raise Exception('attempt to decrypt non encrypted event %s' % self.id)
+
+        my_enc = SharedEncrypt(priv_key)
+        msg_split = self.content.split('?iv')
+
+        try:
+            text = base64.b64decode(msg_split[0])
+            iv = base64.b64decode(msg_split[1])
+
+            if len(pub_key) == 64:
+                pub_key = '02' + pub_key
+
+            ret = my_enc.decrypt_message(text, iv, pub_key).decode('utf8')
+
+        except Exception as e:
+            raise Exception('unable to decrypt event %s using given priv_k' % priv_key)
+
+        return ret
 
     # FIXME:
     #  setters should probably invalidate the id and sig as they'll need to be done again,

@@ -160,4 +160,3 @@ class RepostEventHandler:
             # evt = Event.create_from_JSON(evt)
             self._to_client.publish(evt)
             print('RepostEventHandler::sent event %s to %s' % (evt, self._to_client))
-
