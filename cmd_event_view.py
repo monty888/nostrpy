@@ -24,7 +24,7 @@ EVENT_STORE = SQLEventStore(DB)
 PROFILE_STORE = SQLProfileStore(DB)
 # RELAYS = ['wss://rsslay.fiatjaf.com','wss://nostr-pub.wellorder.net']
 # RELAYS = ['wss://rsslay.fiatjaf.com']
-RELAYS = ['wss://nostr-pub.wellorder.net']
+RELAYS = ['wss://nostr-pub.wellorder.net','ws://localhost:8081']
 AS_PROFILE = None
 VIEW_PROFILE = None
 

@@ -13,13 +13,10 @@ import json
 from json import JSONDecodeError
 import secp256k1
 import logging
-
-from data.data import DataSet
-from db.db import Database, SQLiteDatabase
 from nostr.client.client import Event
-from nostr.client.persist import ClientEventStoreInterface, SQLiteEventStore
 from datetime import datetime
 from nostr.util import util_funcs
+
 
 class UnknownProfile(Exception):
     pass
@@ -38,34 +35,6 @@ class Profile:
             'priv_k' : pk.serialize(),
             'pub_k' : pk.pubkey.serialize(compressed=True).hex()
         }
-
-    # @classmethod
-    # def load_from_db(cls, db: Database, key):
-    #     """
-    #         load a single profile from db using key which should be either profilename, private key, or publickey
-    #         where it's profilename or privatekey then we're able to sign, its a local/users profile
-    #         if the match is found on pubkey then it's a remote key and can't be used to post messages
-    #         match must be exact
-    #     """
-    #     sql = """
-    #         select * from profiles
-    #             -- see why we have profiles that are emptystr? anyway we want one with a priv_k if its us to sign key
-    #             where profile_name=:? or priv_k=:? or pub_k=:?
-    #             --and priv_k NOTNULL
-    #             order by updated_at desc
-    #     """
-    #
-    #     profiles = db.select_sql(sql, [key, key, key])
-    #     if not profiles:
-    #         raise UnknownProfile('Profile::load_from_db using key=%s, not found' % key)
-    #     p = profiles[0]
-    #     return Profile(
-    #         priv_k=p['priv_k'],
-    #         pub_k=p['pub_k'],
-    #         profile_name=p['profile_name'],
-    #         attrs=p['attrs'],
-    #         update_at=p['updated_at']
-    #     )
 
     def __init__(self, priv_k=None, pub_k=None, attrs=None, profile_name='', update_at=None):
         """
@@ -239,6 +208,9 @@ class ProfileList:
 
     """
 
+    CREATE_PRIVATE = 'private'
+    CREATE_PUBLIC = 'public'
+
     def __init__(self, profiles):
         self._profiles = profiles
 
@@ -340,10 +312,10 @@ class ProfileList:
         # also fallback we don't have db
         if not ret and create_type is not None and util_funcs.is_nostr_key(profile_key):
             if len(profile_key) == 64:
-                if create_type == 'private':
+                if create_type == ProfileList.CREATE_PRIVATE:
                     ret = Profile(priv_k=profile_key,
                                   profile_name='adhoc_user')
-                elif create_type == 'public':
+                elif create_type == ProfileList.CREATE_PUBLIC:
                     ret = Profile(pub_k=profile_key)
 
         return ret
@@ -455,29 +427,27 @@ class ProfileEventHandler:
         self._on_update = on_update
 
     def do_event(self, sub_id, evt: Event, relay):
-        try:
-            c_profile: Profile
-            evt_profile: Profile
+        c_profile: Profile
+        evt_profile: Profile
 
-            if evt.kind == Event.KIND_META:
-                pubkey = evt.pub_key
-                c_profile = self._profiles.lookup_pub_key(pubkey)
-                evt_profile = Profile(pub_k=pubkey, attrs=evt.content, update_at=evt.created_at_ticks)
+        if evt.kind == Event.KIND_META:
+            pubkey = evt.pub_key
+            c_profile = self._profiles.lookup_pub_key(pubkey)
+            evt_profile = Profile(pub_k=pubkey, attrs=evt.content, update_at=evt.created_at_ticks)
 
-                # we only need to do something if the profile is newer than we already have
-                if c_profile is None or c_profile.update_at < evt_profile.update_at:
-                    # not sure about this... probably OK most of the time...
-                    if c_profile:
-                        self._store.update(evt_profile)
-                    else:
-                        self._store.add(evt_profile)
-                        self._profiles.append(evt_profile)
+            # we only need to do something if the profile is newer than we already have
+            if c_profile is None or c_profile.update_at < evt_profile.update_at:
+                # not sure about this... probably OK most of the time...
+                if c_profile:
+                    self._store.update(evt_profile)
+                else:
+                    self._store.add(evt_profile)
+                    self._profiles.append(evt_profile)
 
-                    # if owner gave us an on_update call with pubkey that has changed, they may want to do something...
-                    if self._on_update:
-                        self._on_update(evt_profile, c_profile)
-        except Exception as e:
-            print(e)
+                # if owner gave us an on_update call with pubkey that has changed, they may want to do something...
+                if self._on_update:
+                    self._on_update(evt_profile, c_profile)
+
 
 
     @property
@@ -494,18 +464,21 @@ if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
     nostr_db_file = '/home/shaun/.nostrpy/nostr-client.db'
     backup_dir = '/home/shaun/.nostrpy/'
-    ps = SQLLiteEventStore(nostr_db_file)
-
     from nostr.client.client import Client
     from nostr.client.event_handlers import PersistEventHandler
+    from nostr.client.persist import SQLiteEventStore
+
+    ps = SQLiteEventStore(nostr_db_file)
+
+
 
     def my_start(the_client: Client):
-        the_client.subscribe(handlers=PersistEventHandler(SQLLiteEventStore(nostr_db_file)))
+        the_client.subscribe(handlers=PersistEventHandler(SQLiteEventStore(nostr_db_file)))
 
     # my_client = Client('wss://nostr-pub.wellorder.net', on_connect=my_start).start()
 
     # ContactList.import_from_events(SQLLiteStore(nostr_db_file), SQLProfileStore(SQLiteDatabase(nostr_db_file)))
-    Profile.import_from_file('/home/shaun/.nostrpy/local_profiles.csv',SQLProfileStore(SQLiteDatabase(nostr_db_file)))
+    # Profile.import_from_file('/home/shaun/.nostrpy/local_profiles.csv',SQLProfileStore(SQLiteDatabase(nostr_db_file)))
 
 
 
