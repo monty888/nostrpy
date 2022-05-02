@@ -104,7 +104,7 @@ class MessageThreads:
             self._msg_lookup.add(msg_evt.id)
 
         to_id = tags[0][0]
-        # must be our event to them
+        # must there event to us
         if to_id == self._from.public_key:
             to_id = msg_evt.pub_key
 

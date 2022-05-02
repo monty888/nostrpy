@@ -91,7 +91,11 @@ class Client:
                 except Exception as e:
                     print(e)
 
-    def __init__(self, relay_url, on_connect=None, read=True, write=True):
+    def __init__(self, relay_url,
+                 on_connect=None,
+                 on_status=None,
+                 read=True,
+                 write=True):
         self._url = relay_url
         self._handlers = {}
         self._run = True
@@ -100,7 +104,7 @@ class Client:
         self._last_err = None
         self._con_fail_count = 0
         self._on_connect = on_connect
-        self._on_status = None
+        self._on_status = on_status
         self._is_connected = False
         self._read = read
         self._write = write

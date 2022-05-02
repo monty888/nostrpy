@@ -8,7 +8,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 import getopt
 from db.db import SQLiteDatabase
-from nostr.ident.profile import Profile, ProfileEventHandler
+from nostr.ident.profile import Profile, ProfileEventHandler, ProfileList
 from nostr.ident.persist import SQLProfileStore, TransientProfileStore
 from nostr.client.client import ClientPool, Client
 from nostr.client.persist import SQLEventStore, TransientEventStore
@@ -24,7 +24,8 @@ EVENT_STORE = SQLEventStore(DB)
 PROFILE_STORE = SQLProfileStore(DB)
 # RELAYS = ['wss://rsslay.fiatjaf.com','wss://nostr-pub.wellorder.net']
 # RELAYS = ['wss://rsslay.fiatjaf.com']
-RELAYS = ['wss://nostr-pub.wellorder.net','ws://localhost:8081']
+# RELAYS = ['wss://nostr-pub.wellorder.net']
+RELAYS = ['ws://localhost:8081']
 AS_PROFILE = None
 VIEW_PROFILE = None
 
@@ -81,34 +82,54 @@ def run_watch(config):
 
     def my_display(sub_id, evt: Event, relay):
         p: Profile
-        if (to_view is None or evt.pub_key in to_view):
+        def make_head_str():
+            ret_arr = []
+            p = my_profiles.profiles.get_profile(evt.pub_key,
+                                                 create_type=ProfileList.CREATE_PUBLIC)
+            ret_arr.append('-- %s --' % p.display_name())
 
+            to_list = []
+            for c_pk in evt.p_tags:
+                to_list.append(my_profiles.profiles.get_profile(c_pk,
+                                                                create_type=ProfileList.CREATE_PUBLIC).display_name())
+            if to_list:
+                ret_arr.append('-> %s' % to_list)
 
+            ret_arr.append('%s@%s' % (evt.id, evt.created_at))
+
+            return '\n'.join(ret_arr)
+
+        if to_view is None or evt.pub_key in to_view or as_user.public_key in evt.p_tags:
             if evt.kind in (Event.KIND_ENCRYPT, Event.KIND_TEXT_NOTE):
-                p = my_profiles.profiles.lookup_pub_key(evt.pub_key)
-                p_display = util_funcs.str_tails(evt.pub_key)
-                if p:
-                    p_display = p.display_name()
-
-                print('-- %s --' % p_display)
-                print('%s@%s' % (evt.id, evt.created_at))
+                # p = my_profiles.profiles.lookup_pub_key(evt.pub_key)
+                # p_display = util_funcs.str_tails(evt.pub_key)
+                # if p:
+                #     p_display = p.display_name()
                 if evt.kind == Event.KIND_TEXT_NOTE:
+                    print(make_head_str())
                     print(evt.content)
 
-                # encrypted we can only view if they are to or from as_user if that has been
-                # set, possibly outputing encryped should be an option
+                # explain this...!
                 elif as_user and evt.kind == Event.KIND_ENCRYPT:
                     try:
-                        print(evt.decrypted_content(as_user.private_key, evt.p_tags[0]))
+                        # a message we sent, we our crude group send we expect theres one we can decrypt using
+                        # the 0 ptag, tags 1+ are just the same mesage so we don't want to decrypt anyhow
+                        if evt.pub_key == as_user.public_key:
+                            content = evt.decrypted_content(as_user.private_key, evt.p_tags[0])
+                        # message to us
+                        else:
+                            content = evt.decrypted_content(as_user.private_key, evt.pub_key)
+                        print(make_head_str())
+                        print(content)
                     except Exception as e:
-                        print(e)
+                        pass
 
     # attach are own display func
     my_print.display_func = my_display
 
     def my_connect(the_client: Client):
         client_filter = {
-            'since': EVENT_STORE.get_newest(the_client.url)
+            'since': EVENT_STORE.get_newest(the_client.url)+1
         }
         the_client.subscribe(handlers=[my_persist, my_profiles, my_print],
                              filters=client_filter
@@ -119,14 +140,14 @@ def run_watch(config):
         'kinds': [Event.KIND_TEXT_NOTE, Event.KIND_ENCRYPT, Event.KIND_META, Event.KIND_CONTACT_LIST],
         'since': util_funcs.date_as_ticks(datetime.now()-timedelta(days=1))
     }
-    if to_view:
-        view_filter['authors'] = to_view
+
+    # if to_view:
+    #     view_filter['authors'] = to_view
+
     existing_evts = EVENT_STORE.get_filter(view_filter)
     existing_evts.reverse()
     for c_evt in existing_evts:
         my_display(None, c_evt, None)
-
-
 
     my_client = ClientPool(RELAYS, on_connect=my_connect).start()
 

@@ -54,7 +54,7 @@ class ClientEventStoreInterface(ABC):
         """
 
     @abstractmethod
-    def get_filter(self, filter):
+    def get_filter(self, filter) -> [Event]:
         """
         :param filter: [{filter}...] nostr filter
         :return: all evts in store that passed the filter
@@ -86,7 +86,7 @@ class TransientEventStore(ClientEventStoreInterface, ABC):
 
         return ret
 
-    def get_filter(self, filter):
+    def get_filter(self, filter) ->[Event]:
         ret = []
         evt: Event
         for i, o in enumerate(self._events):
@@ -281,7 +281,7 @@ class SQLEventStore(ClientEventStoreInterface, ABC):
                 self._db.execute_sql('insert into event_relay values (?, ?)',
                                      args=[data[0]['id'], relay_url])
 
-    def get_filter(self, filter):
+    def get_filter(self, filter) -> [Event]:
         """
         from database returns events that match filter/s
         doesn't do #e and #p filters yet (maybe never)
