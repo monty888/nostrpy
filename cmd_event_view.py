@@ -25,7 +25,7 @@ PROFILE_STORE = SQLProfileStore(DB)
 # RELAYS = ['wss://rsslay.fiatjaf.com','wss://nostr-pub.wellorder.net']
 # RELAYS = ['wss://rsslay.fiatjaf.com']
 # RELAYS = ['wss://nostr-pub.wellorder.net']
-RELAYS = ['ws://localhost:8081']
+RELAYS = ['ws://localhost:8081','wss://nostr-pub.wellorder.net']
 AS_PROFILE = None
 VIEW_PROFILE = None
 

@@ -305,7 +305,7 @@ class ProfileList:
             ret = self.lookup_priv_key(profile_key)
             if not ret:
                 ret = self.lookup_profilename(profile_key)
-            if not ret:
+            if not ret and create_type != ProfileList.CREATE_PRIVATE:
                 ret = self.lookup_pub_key(profile_key)
 
         # we didn't find a profile but we'll see if we can just use as priv key...

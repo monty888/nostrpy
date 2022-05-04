@@ -11,12 +11,15 @@ from cryptography.hazmat.primitives import serialization
 import secp256k1
 from enum import Enum
 
+
 # TODO: sort something out about the different key formats....
 class KeyEnc(Enum):
     BYTES = 1
     HEX = 2
 
 class SharedEncrypt:
+
+
     def __init__(self, priv_k_hex):
         """
         :param priv_k_hex:              our private key
@@ -33,9 +36,6 @@ class SharedEncrypt:
         # shared key for priv/pub ECDH
         self._shared_key = None
 
-    def get_keys(self, as_type=KeyEnc.HEX):
-        pass
-
     @property
     def public_key_hex(self):
         return self.public_key_bytes.hex()
@@ -45,18 +45,24 @@ class SharedEncrypt:
         return self._pub_key.public_bytes(encoding=serialization.Encoding.X962,
                                           format=serialization.PublicFormat.CompressedPoint)
 
-    def derive_shared_key(self, pub_key_hex):
+    def derive_shared_key(self, pub_key_hex, as_type=KeyEnc.HEX):
         pk = secp256k1.PublicKey()
+        if len(pub_key_hex) == 64:
+            pub_key_hex = '02' + pub_key_hex
+
         pk.deserialize(bytes.fromhex(pub_key_hex))
         pub_key = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), pk.serialize(False))
         self._shared_key = self._key.exchange(ec.ECDH(), pub_key)
+
+        # added return so we don't have to do as 2 step all the time
+        return self.shared_key(as_type)
 
     def shared_key(self, as_type=KeyEnc.HEX):
         if self._shared_key is None:
             raise Exception('SharedEncrypt::shared_key hasn\'t been derived yet')
 
         ret = self._shared_key
-        if as_type==KeyEnc.HEX:
+        if as_type == KeyEnc.HEX:
             ret = self._shared_key.hex()
 
         return ret

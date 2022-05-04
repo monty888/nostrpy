@@ -8,9 +8,9 @@ from db.db import SQLiteDatabase as Database
 from nostr.client.client import Client
 from nostr.event import Event
 from nostr.client.event_handlers import PrintEventHandler, PersistEventHandler
-from nostr.client.persist import SQLLiteEventStore
+# from nostr.client.persist import SQLLiteEventStore
 from nostr.util import util_funcs
-from nostr.ident import ProfileList, Profile
+# from nostr.ident import ProfileList, Profile
 from nostr.encrypt import SharedEncrypt
 
 def test_client_publish(relay_url):
@@ -240,10 +240,10 @@ def test_encrypt():
 
     sea = SharedEncrypt(a_priv)
     seb = SharedEncrypt(b_priv)
-    sea.derive_shared_key(seb.public_key_hex)
+    sea.derive_shared_key('40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486')
     seb.derive_shared_key(sea.public_key_hex)
 
-    print(sea.shared_key())
+    print('>>>',sea.shared_key())
 
     # encrypted = sea.encrypt_message(b'i am master of all I survey', pub_key_hex=seb.public_key_hex)
     # print(seb.decrypt_message(encrypted['text'],encrypted['iv'], pub_key_hex=sea.public_key_hex))
@@ -286,7 +286,8 @@ if __name__ == "__main__":
 
     # test_client_publish(relay_url)
     # test_client_publish_with_persist(relay_url, nostr_db_file)
-    command_line(relay_url, nostr_db_file)
+    # command_line(relay_url, nostr_db_file)
+    test_encrypt()
 
     # NOTE: each event is json but the file structure isn't correct json there are \n between each event
     # events_backup(relay_url, backup_dir+'events.json')
