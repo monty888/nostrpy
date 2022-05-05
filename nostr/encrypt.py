@@ -17,7 +17,16 @@ class KeyEnc(Enum):
     BYTES = 1
     HEX = 2
 
+
 class SharedEncrypt:
+
+    @classmethod
+    def get_clust_share_key(cls, echd_key):
+        pass
+
+    @classmethod
+    def get_clust_shared_keys(cls, ):
+        pass
 
 
     def __init__(self, priv_k_hex):

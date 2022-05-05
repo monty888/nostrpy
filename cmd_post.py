@@ -5,20 +5,19 @@
 import logging
 import sys
 import time
-import json
-from pathlib import Path
 from datetime import datetime, timedelta
+from pathlib import Path
 import getopt
 from db.db import SQLiteDatabase
 from nostr.ident.profile import Profile, ProfileEventHandler, ProfileList
 from nostr.ident.persist import SQLProfileStore, TransientProfileStore
 from nostr.client.client import ClientPool, Client
 from nostr.client.persist import SQLEventStore, TransientEventStore
-from nostr.client.event_handlers import PrintEventHandler, PersistEventHandler
-from nostr.encrypt import SharedEncrypt
-from nostr.util import util_funcs
+from nostr.client.event_handlers import PersistEventHandler
 from nostr.event import Event
-from cmd_line.post_loop_app import PostApp, PostAppGui
+from app.post import PostApp
+from cmd_line.post_loop_app import PostAppGui
+from nostr.util import util_funcs
 
 # TODO: also postgres
 WORK_DIR = '/home/%s/.nostrpy/' % Path.home().name
@@ -29,6 +28,7 @@ PROFILE_STORE = SQLProfileStore(DB)
 # RELAYS = ['wss://rsslay.fiatjaf.com','wss://nostr-pub.wellorder.net']
 # RELAYS = ['wss://rsslay.fiatjaf.com']
 RELAYS = ['ws://localhost:8081']
+# RELAYS = ['wss://nostr-pub.wellorder.net']
 
 
 def usage():
@@ -46,14 +46,6 @@ def _get_profile(key, peh, err_str):
         print(err_str)
 
     return ret
-
-
-def inbox_unwrap(evt: Event,
-                 as_user: Profile,
-                 public_inbox: Profile):
-
-    evt.content = evt.decrypted_content(public_inbox.private_key, as_user.public_key)
-    return Event.create_from_JSON(json.loads(evt.content))
 
 
 def do_post(the_client: Client,
@@ -115,7 +107,7 @@ def run_post():
 
     try:
         opts, args = getopt.getopt(sys.argv[1:], 'ha:t:piles:r:e:v:', ['help',
-                                                                       'relay='
+                                                                       'relay=',
                                                                        'as_profile=',
                                                                        'plain_text',
                                                                        'to=',
@@ -190,7 +182,7 @@ def run_post():
         if len(args) > 0:
             msg = ' '.join(args)
 
-        my_client = ClientPool(RELAYS)
+        my_client = ClientPool(relays)
         my_post = PostApp(
             use_relay=my_client,
             as_user=as_user,
@@ -200,23 +192,44 @@ def run_post():
             public_inbox=public_inbox
         )
         if is_loop:
-            if PROFILE_STORE is not None:
-                peh = ProfileEventHandler(PROFILE_STORE)
+            # for profile lookup
+            persist_profile = ProfileEventHandler(PROFILE_STORE)
+
+            # pre load local events
+            local_events = EVENT_STORE.get_filter({
+                'kind': [Event.KIND_TEXT_NOTE, Event.KIND_ENCRYPT],
+                'since': util_funcs.date_as_ticks(datetime.now() - timedelta(days=10))
+            })
+            local_events.reverse()
+
+            for c_evt in local_events:
+                my_post.do_event(None, c_evt, None)
+            persist_event = PersistEventHandler(EVENT_STORE)
+
 
             my_gui = PostAppGui(my_post,
-                                profile_handler=peh)
+                                profile_handler=persist_profile)
 
             def my_connect(the_client: Client):
                 the_client.subscribe(filters={
-                    'since': util_funcs.date_as_ticks(datetime.now() - timedelta(hours=1))
-                }, handlers=[my_post, peh])
+                    'kind': [Event.KIND_META]
+                }, handlers=[persist_profile])
+
+                the_client.subscribe(filters={
+                    # rem'd as if we're persisting locally it's best just to get everything else we're more likely
+                    # to end up with gaps
+                    # 'kind': [Event.KIND_TEXT_NOTE, Event.KIND_ENCRYPT],
+                    'since': EVENT_STORE.get_newest(the_client.url)+1
+                }, handlers=[my_post, persist_event])
 
             con_status = my_client.connected
+
             def on_status(status):
                 nonlocal con_status
                 if con_status != status['connected']:
                     con_status = status['connected']
                     my_gui.draw_messages()
+
 
             my_client.set_on_connect(my_connect)
             my_client.set_status_listener(on_status)
@@ -243,5 +256,4 @@ def run_post():
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
     run_post()
-
 

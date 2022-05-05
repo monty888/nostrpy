@@ -170,7 +170,7 @@ class Profile:
             # ret = '%s/%s' % (loc, name)
             ret = name
 
-        if with_pub and self.name:
+        if with_pub and ret:
             ret = '%s<%s>' % (ret, util_funcs.str_tails(self.public_key, 4))
 
         return ret
@@ -227,9 +227,18 @@ class ProfileList:
             if c_p.profile_name:
                 self._pname_lookup[c_p.profile_name] = c_p
 
-    def append(self, profile: Profile):
+    def add(self, profile: Profile):
         self._profiles.append(profile)
         self._pub_key_lookup[profile.public_key] = profile
+        self._priv_key_lookup[profile.private_key] = profile
+        if profile.profile_name is not None:
+            self._pname_lookup[profile.profile_name] = profile
+
+    def update(self, profile: Profile):
+        our_p = self.lookup_pub_key(profile.public_key)
+        if our_p:
+            our_p.attrs = profile.attrs
+            our_p.update_at = profile.update_at
 
     # TODO: remove this and see if it breaks anyhting...
     def as_arr(self):
@@ -286,7 +295,7 @@ class ProfileList:
                 break
         return ret
 
-    def get_profile(self, profile_key, create_type=None) -> Profile:
+    def get_profile(self, profile_key, create_type=None, create_profile_name='adhoc_profile') -> Profile:
         """
         :param profile_key: either priv_key, profile_name or pub_key
         :param create_type: None, 'private' or 'public' if we don't find then an empty profile will be created
@@ -314,7 +323,7 @@ class ProfileList:
             if len(profile_key) == 64:
                 if create_type == ProfileList.CREATE_PRIVATE:
                     ret = Profile(priv_k=profile_key,
-                                  profile_name='adhoc_user')
+                                  profile_name=create_profile_name)
                 elif create_type == ProfileList.CREATE_PUBLIC:
                     ret = Profile(pub_k=profile_key)
 
@@ -440,9 +449,10 @@ class ProfileEventHandler:
                 # not sure about this... probably OK most of the time...
                 if c_profile:
                     self._store.update(evt_profile)
+                    self._profiles.update(evt_profile)
                 else:
                     self._store.add(evt_profile)
-                    self._profiles.append(evt_profile)
+                    self._profiles.add(evt_profile)
 
                 # if owner gave us an on_update call with pubkey that has changed, they may want to do something...
                 if self._on_update:

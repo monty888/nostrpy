@@ -20,17 +20,19 @@ def usage():
     print("""
 usage:
 
-    python cmd_profile.py -n <profile_name>, creates a new profile - key pair is auto generated.
+    python cmd_profile.py -n <profile_name> creates a new profile - key pair is auto generated.
     fails if profile_name already exits
 
-    python cmd_profile.py -n <profile_name>, <private_key> create new profile with supplied private key
+    python cmd_profile.py -n <profile_name> <private_key> - create new profile with supplied private key
     fails if either profile_name or private_key already exits
 
-    python cmd_profile.py -l <private_key> <profile_name>, link to existing profile - seen via META event
+    python cmd_profile.py -l <profile_name> <private_key> - link to existing profile - seen via META event
     
     python cmd_profile.py -i <file_name>
     profile_name/private_key that already exist will be skipped
     
+    python cmd_profile.py -x <file_name>
+    write profiles to csv file
  
     """)
     sys.exit(2)
@@ -66,9 +68,26 @@ def load_file(args):
 
     file_name = args[0]
     # TODO: add support to get names to import
-    PROFILE_STORE.import_file(file_name)
-
     print('load file %s' % file_name)
+    result = PROFILE_STORE.import_file(file_name)
+    print('--Added--')
+    c_p: Profile
+    for c_p in result['added']:
+        print(c_p.display_name())
+
+    # already existing are updated, this only changes the link to profile name, attrs will stay as they are
+    # this will work most of the time but doesn't cover e.g. the profile name exists and is used for another key
+    profiles = PROFILE_STORE.select()
+    if result['existed']:
+        print('--Existed updated--')
+        for c_p in result['existed']:
+            is_change = 'no change'
+            if not profiles.lookup_profilename(c_p.profile_name):
+                is_change = 'updated'
+                PROFILE_STORE.update_profile_local(c_p)
+
+            print('%s, %s' % (c_p.display_name(), is_change))
+
 
 def save_file(args):
     if len(args) != 1:
@@ -86,8 +105,8 @@ def link_profile(args):
         """)
         sys.exit(2)
 
-    profile_name = args[0]
-    priv_key = args[1]
+    priv_key = args[0]
+    profile_name = args[1]
     if not util_funcs.is_nostr_key(priv_key):
         print('%s - doesn\'t look like a nostr private key - should be 64 char hex' % priv_key)
         sys.exit(2)
@@ -142,8 +161,10 @@ def profile_edit():
         print(e)
         usage()
 
+def test_store():
+    pass
 
 
 if __name__ == "__main__":
-    logging.getLogger().setLevel(logging.DEBUG)
+    logging.getLogger().setLevel(logging.ERROR)
     profile_edit()

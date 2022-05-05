@@ -42,10 +42,17 @@ class ProfileStoreInterface(ABC):
         """
 
     @abstractmethod
-    def select(self) -> ProfileList:
+    def select(self, filter={}) -> ProfileList:
         """
+        TODO : filter support
+        :param filter: [
+            {
+                'public_key' : [],
+                'private_key' : [],
+                'profile_name' : []
+            },...
+        ]
         :return: returns all profiles in store -
-        TODO: add filter so we don't have to return everything...
         """
 
     @abstractmethod
@@ -135,25 +142,32 @@ class ProfileStoreInterface(ABC):
         :param names:
         :return:
         """
-
         profiles = DataSet.from_CSV(filename)
-
         if names:
             profiles = profiles.value_in('profile_name', names)
 
+        ret = {
+            'added': set(),
+            'existed': set()
+        }
         for p in profiles:
             try:
-                self.add(Profile(
+                to_add = Profile(
                     priv_k=p['priv_k'],
                     pub_k=p['pub_k'],
                     profile_name=p['profile_name'],
                     # probably some issue with csv/json together code work out why just the attrs str is no good at some point
                     attrs=p['attrs'].replace('""', '"').replace('"{', "{").replace('}"', "}"),
                     update_at=util_funcs.date_as_ticks(datetime.now())
-                ))
+                )
+                self.add(to_add)
+                ret['added'].add(to_add)
             except Exception as e:
                 # already exists?
+                ret['existed'].add(to_add)
                 logging.debug('Profile::import_from_file - profile: %s - %s' % (p['profile_name'], e))
+
+        return ret
 
     def import_profiles_from_events(self,
                                     event_store: ClientEventStoreInterface,
@@ -261,7 +275,7 @@ class TransientProfileStore(ProfileStoreInterface):
             to_update.profile_name = p.profile_name
             to_update.private_key = p.private_key
 
-    def select(self) -> ProfileList:
+    def select(self, filter={}) -> ProfileList:
         profiles = []
         for i, c_p in enumerate(self._profiles):
             profiles.append(c_p)
@@ -325,7 +339,7 @@ class SQLProfileStore(ProfileStoreInterface):
         logging.debug('SQLProfileStore::update_profile_local sql: %s args: %s' % (sql, args))
         self._db.execute_sql(sql, args)
 
-    def select(self) -> ProfileList:
+    def select(self, filter={}) -> ProfileList:
         data = self._db.select_sql("""
         select * from profiles 
             order by 
