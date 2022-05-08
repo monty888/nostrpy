@@ -4,6 +4,14 @@
     plus maybe chain of handlers
 
 """
+from __future__ import annotations
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from nostr.ident.persist import ProfileStoreInterface
+    from nostr.ident.profile import Profile, Contact, ProfileEventHandler, ProfileList
+
+from nostr.ident.profile import ProfileList
+from abc import ABC, abstractmethod
 import base64
 import logging
 import json
@@ -12,18 +20,70 @@ from nostr.client.persist import ClientEventStoreInterface
 from nostr.encrypt import SharedEncrypt
 from nostr.util import util_funcs
 from nostr.event import Event
+from app.post import PostApp
 
 
-class PrintEventHandler:
+class EventAccepter(ABC):
+
+    @abstractmethod
+    def accept_event(self, evt: Event) -> bool:
+        'True/False if the event will be accepted'
+
+
+class DuplicateAcceptor(EventAccepter):
+
+    def __init__(self, max_dedup=1000):
+        # de-duplicating of events for when we're connected to multiple relays
+        self._duplicates = OrderedDict()
+        self._max_dedup = max_dedup
+
+    def accept_event(self, evt: Event) -> bool:
+        ret = True
+        if evt.id not in self._duplicates:
+            self._duplicates[evt.id] = True
+            if len(self._duplicates) >= self._max_dedup:
+                self._duplicates.popitem(False)
+            ret = False
+        return ret
+
+
+class EventHandler(ABC):
+
+    def __init__(self, event_acceptors=[EventAccepter]):
+        if not hasattr(event_acceptors, '__iter__'):
+            event_acceptors = [event_acceptors]
+        self._event_acceptors = event_acceptors
+
+    def accept_event(self, evt: Event):
+        ret = True
+        for accept in self._event_acceptors:
+            if not accept.accept_event(evt):
+                ret = False
+                break
+
+        return ret
+
+    @abstractmethod
+    def do_event(self, sub_id, evt: Event, relay):
+        """
+        if self.accept_event(evt):
+            do_something
+        or just do_something if no accept criteria
+        """
+
+
+class PrintEventHandler(EventHandler):
     """
-        Basic handler that just prints to screen any events it sees.
-        Can be turned off by calling view_off
-
-        TODO: add kinds filter, default NOTE and ENCRYPT only
+       basic handler for outputting events
     """
+    def __init__(self,
+                 event_acceptors=[],
+                 view_on=True,
+                 profile_handler: ProfileEventHandler = None):
 
-    def __init__(self, view_on=True):
         self._view_on = view_on
+        self._profile_handler = profile_handler
+        super().__init__(event_acceptors)
 
     def view_on(self):
         self._view_on = True
@@ -32,14 +92,19 @@ class PrintEventHandler:
         self._view_on = False
 
     def do_event(self, sub_id, evt: Event, relay):
-        if self._view_on:
+        if self._view_on and self.accept_event(evt):
             self.display_func(sub_id, evt, relay)
 
     def display_func(self, sub_id, evt: Event, relay):
-        print('%s: %s - %s' % (evt.created_at,
-                               util_funcs.str_tails(evt.pub_key, 4),
-                               evt.content))
+        # single line basic evt info, override this if you want something more
+        profile_name = evt.pub_key
+        if self._profile_handler is not None:
+            profile_name = self._profile_handler.profiles.get_profile(profile_name,
+                                                                      create_type=ProfileList.CREATE_PUBLIC).display_name()
 
+        print('%s: %s - %s' % (evt.created_at,
+                               util_funcs.str_tails(profile_name, 4),
+                               evt.content))
 
 
 class DecryptPrintEventHandler(PrintEventHandler):

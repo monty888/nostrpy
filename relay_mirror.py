@@ -13,8 +13,8 @@ from nostr.client.event_handlers import RepostEventHandler
 def do_mirror(from_relay, to_relay, filter=None):
     if filter is None:
         filter = {
-            'since': util_funcs.date_as_ticks(datetime.now()-timedelta(days=1)),
-            'kinds': 1
+            # 'since': util_funcs.date_as_ticks(datetime.now()-timedelta(days=1)),
+            # 'kinds': 1
         }
 
     # where we're posting to

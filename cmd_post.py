@@ -27,7 +27,8 @@ EVENT_STORE = SQLEventStore(DB)
 PROFILE_STORE = SQLProfileStore(DB)
 # RELAYS = ['wss://rsslay.fiatjaf.com','wss://nostr-pub.wellorder.net']
 # RELAYS = ['wss://rsslay.fiatjaf.com']
-RELAYS = ['ws://localhost:8081']
+# RELAYS = ['ws://localhost:8081']
+RELAYS = ['ws://localhost:8081','ws://localhost:8082']
 # RELAYS = ['wss://nostr-pub.wellorder.net']
 
 
@@ -48,24 +49,15 @@ def _get_profile(key, peh, err_str):
     return ret
 
 
-def do_post(the_client: Client,
+def do_post(client: Client,
             post_app: PostApp,
             msg):
 
-    is_done = False
-
-    def my_connect(the_client: Client):
-        nonlocal is_done
-        post_app.do_post(msg)
-        is_done = True
-
-    the_client.set_on_connect(my_connect)
-    the_client.start()
-
-    while not is_done:
+    client.start()
+    while not post_app.connection_status:
         time.sleep(0.2)
-
-    the_client.end()
+    post_app.do_post(msg)
+    client.end()
 
 
 def show_post_info(as_user: Profile,
@@ -244,7 +236,7 @@ def run_post():
                 sys.exit(2)
             else:
                 show_post_info(as_user, msg, to_users, is_encrypt, subject, public_inbox)
-                do_post(the_client=my_client,
+                do_post(client=my_client,
                         post_app=my_post,
                         msg=msg)
 

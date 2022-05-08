@@ -1,9 +1,12 @@
+# from __future__ import annotations
+# from typing import TYPE_CHECKING
+# # if TYPE_CHECKING:
 import json
 import hashlib
 from collections import OrderedDict
-from nostr.ident.profile import Profile
 from nostr.encrypt import SharedEncrypt
 from nostr.event import Event
+from nostr.ident.profile import Profile
 
 
 class PostApp:
@@ -12,19 +15,13 @@ class PostApp:
     def get_clust_shared(echd_key):
         return hashlib.sha256(echd_key.encode()).hexdigest()
 
-    # @staticmethod
-    # def get_clust_shared_for_profile(as_user: Profile, to_users: [Profile] = None):
-    #     se = SharedEncrypt(as_user.private_key)
-    #
-    #     ret = [PostApp.get_clust_shared(se.derive_shared_key(as_user.public_key))]
-    #     if to_users:
-    #         ret = ret + [PostApp.get_clust_shared(se.derive_shared_key(p.public_key))
-    #                      for p in to_users]
-    #
-    #     return ret
-
     @staticmethod
-    def get_clust_shared_keymap_for_profile(as_user: Profile, to_users: [Profile] = None):
+    def get_clust_shared_keymap_for_profile(as_user: Profile, to_users: [] = None):
+        """
+        :param as_user: user profile that we're mapping shared keys for
+        :param to_users: [] either of pubkeys or Profiles
+        :return:
+        """
         se = SharedEncrypt(as_user.private_key)
 
         ret = {PostApp.get_clust_shared(se.derive_shared_key(as_user.public_key)): as_user.public_key}
@@ -32,7 +29,11 @@ class PostApp:
         c_p: Profile
         if to_users:
             for c_p in to_users:
-                ret[PostApp.get_clust_shared(se.derive_shared_key(c_p.public_key))] = c_p.public_key
+                for_key = c_p
+                if isinstance(for_key, Profile):
+                    for_key = c_p.public_key
+
+                ret[PostApp.get_clust_shared(se.derive_shared_key(for_key))] = for_key
 
         return ret
 

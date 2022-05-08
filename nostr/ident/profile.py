@@ -9,11 +9,16 @@ FIXME: methods that we have as from_db are actually just sql lite... eventually 
 different db/persistance layer with min code changes
 
 """
+from __future__ import annotations
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from nostr.ident.persist import ProfileStoreInterface
+
 import json
 from json import JSONDecodeError
 import secp256k1
 import logging
-from nostr.client.client import Event
+from nostr.event import Event
 from datetime import datetime
 from nostr.util import util_funcs
 
@@ -51,6 +56,7 @@ class Profile:
         """
 
         self._profile_name = profile_name
+        self._contacts = None
         self._priv_k = priv_k
         self._pub_k = pub_k
         self._attrs = attrs
@@ -82,6 +88,35 @@ class Profile:
     @profile_name.setter
     def profile_name(self, name):
         self._profile_name = name
+
+    def load_contacts(self, profile_store: ProfileStoreInterface) -> ContactList:
+        if self._contacts is None:
+            contacts = profile_store.contacts({
+                'owner': self.public_key
+            })
+            # because the store does't yet give us a contact list
+            my_contacts = []
+            for c_contact in contacts:
+                my_contacts.append(
+                    Contact(owner_pub_k=self.public_key,
+                            updated_at=c_contact['updated_at'],
+                            # need to fix this
+                            args=[
+                                None,
+                                c_contact['pub_k_contact'],
+                                None,
+                                c_contact['alias']
+                            ]
+                            )
+                )
+            self._contacts = ContactList(my_contacts)
+        return self._contacts
+
+    @property
+    def contacts(self) -> ContactList:
+        if self._contacts is None:
+            raise Exception('Profile::contacts - load contacts hasn\'t been called yet for contact %s' % self.display_name())
+        return self._contacts
 
     @property
     def name(self):

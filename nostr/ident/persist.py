@@ -296,6 +296,117 @@ class SQLProfileStore(ProfileStoreInterface):
     def __init__(self, db: Database):
         self._db = db
 
+    @staticmethod
+    def _get_profile_sql_filter(filter={}, placeholder='?'):
+        """
+        :param filter: {
+            public_key : [],
+            profile_name : [],
+            private_key : []
+        }
+        values are or'd
+
+        :return: {
+            sql : str
+            args :[]
+        } to execute the query
+        """
+
+        sql_arr = ['select * from profiles']
+        args = []
+
+        join = ' where '
+
+        def _add_for_field(f_name, db_field):
+            nonlocal args
+            nonlocal join
+
+            if f_name in filter:
+                values = filter[f_name]
+                if not hasattr(values, '__iter__') or isinstance(values, str):
+                    values = [values]
+
+                sql_arr.append(
+                    ' %s %s in (%s) ' % (join,
+                                            db_field,
+                                            ','.join([placeholder] * len(values)))
+                )
+
+                args = args + values
+                join = ' or '
+
+        _add_for_field('public_key','pub_k')
+        _add_for_field('profile_name', 'profile_name')
+        _add_for_field('private_key', 'priv_k')
+
+        # for now we're ordering what we return
+        sql_arr.append("""
+        order by 
+            case when profile_name ISNULL or profile_name='' then 1 else 0 end, profile_name,
+            case when name ISNULL or name='' then 1 else 0 end, name
+        """)
+
+        return {
+            'sql': ''.join(sql_arr),
+            'args': args
+        }
+
+    @staticmethod
+    def _get_contacts_sql_filter(filter={}, placeholder='?'):
+        """
+        :param filter: {
+            owner : [],
+            contact : []
+        }
+        values are or'd
+        probably you'd only use one or the other
+
+        owner, these profile contacts
+        contact, returns those that we are contact of (they follow us) at least as best as we can see from relays
+        we've used
+        NOTE: this all via what has been published as Event kind contact, that is made public but theres no reason that
+        user couldn't have many local follow/contact list that they don't publish... we'll want to do that too
+
+        :return: {
+            sql : str
+            args :[]
+        } to execute the query
+        """
+
+        sql_arr = ['select * from contacts']
+        args = []
+
+        join = ' where '
+
+        # exactly the same as in _get_profile_sql_filter but it's just easier like this
+        def _add_for_field(f_name, db_field):
+            nonlocal args
+            nonlocal join
+
+            if f_name in filter:
+                values = filter[f_name]
+                if not hasattr(values, '__iter__') or isinstance(values, str):
+                    values = [values]
+
+                sql_arr.append(
+                    ' %s %s in (%s) ' % (join,
+                                            db_field,
+                                            ','.join([placeholder] * len(values)))
+                )
+
+                args = args + values
+                join = ' or '
+
+        _add_for_field('owner','pub_k_owner')
+        _add_for_field('contact', 'pub_k_contact')
+
+        # no ordering for contacts currently
+
+        return {
+            'sql': ''.join(sql_arr),
+            'args': args
+        }
+
     def add(self, p: Profile):
         sql = """
             insert into 
@@ -340,12 +451,11 @@ class SQLProfileStore(ProfileStoreInterface):
         self._db.execute_sql(sql, args)
 
     def select(self, filter={}) -> ProfileList:
-        data = self._db.select_sql("""
-        select * from profiles 
-            order by 
-            case when profile_name ISNULL or profile_name='' then 1 else 0 end, profile_name,
-            case when name ISNULL or name='' then 1 else 0 end, name
-        """)
+        filter_query = self._get_profile_sql_filter(filter,
+                                                    placeholder=self._db.placeholder)
+        data = self._db.select_sql(sql=filter_query['sql'],
+                                   args=filter_query['args'])
+
         profiles = []
         for c_r in data:
             profiles.append(Profile(
@@ -358,8 +468,14 @@ class SQLProfileStore(ProfileStoreInterface):
 
         return ProfileList(profiles)
 
-    def contacts(self):
-        return self._db.select_sql('select * from contacts')
+    # note not returning contact list cause it's shit maybe will do eventually or get
+    # rid of contact list class altogether?
+    def contacts(self, filter):
+        filter_query = self._get_contacts_sql_filter(filter,
+                                                     placeholder=self._db.placeholder)
+
+        return self._db.select_sql(sql=filter_query['sql'],
+                                   args=filter_query['args'])
 
     def set_contacts(self, contacts: ContactList):
         c_contact: Contact

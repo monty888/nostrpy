@@ -8,14 +8,15 @@ from pathlib import Path
 from datetime import datetime, timedelta
 import getopt
 from db.db import SQLiteDatabase
-from nostr.ident.profile import Profile, ProfileEventHandler, ProfileList
+from nostr.ident.profile import Profile, ProfileEventHandler, ProfileList, Contact
 from nostr.ident.persist import SQLProfileStore, TransientProfileStore
 from nostr.client.client import ClientPool, Client
 from nostr.client.persist import SQLEventStore, TransientEventStore
-from nostr.client.event_handlers import PrintEventHandler, PersistEventHandler
+from nostr.client.event_handlers import PrintEventHandler, PersistEventHandler, EventAccepter
 from nostr.util import util_funcs
 from nostr.event import Event
 from app.post import PostApp
+from cmd_line.util import EventPrinter, FormattedEventPrinter
 
 # TODO: also postgres
 WORK_DIR = '/home/%s/.nostrpy/' % Path.home().name
@@ -26,10 +27,15 @@ PROFILE_STORE = SQLProfileStore(DB)
 # RELAYS = ['wss://rsslay.fiatjaf.com','wss://nostr-pub.wellorder.net']
 # RELAYS = ['wss://rsslay.fiatjaf.com']
 # RELAYS = ['wss://nostr-pub.wellorder.net']
-RELAYS = ['ws://localhost:8081','wss://nostr-pub.wellorder.net','wss://rsslay.fiatjaf.com']
+# RELAYS = ['ws://localhost:8081','wss://nostr-pub.wellorder.net','wss://rsslay.fiatjaf.com']
+
+# defaults if not provided at command line or from config file
+RELAYS = ['ws://localhost:8081']
 AS_PROFILE = None
 VIEW_PROFILE = None
 INBOX = None
+# default -24 hours from runtime
+SINCE = 24
 
 def usage():
     print("""
@@ -40,123 +46,171 @@ usage:
     """)
     sys.exit(2)
 
-def run_watch(config):
-    my_print = PrintEventHandler()
-    my_persist = PersistEventHandler(EVENT_STORE)
-    my_profiles = ProfileEventHandler(PROFILE_STORE)
+def print_run_info(as_user:Profile, extra_view_profiles, inboxes, profile_handler: ProfileEventHandler, since):
+    # output running info
+    if as_user:
+        print('events will be displayed as user %s' % as_user.display_name())
+        print('--- follows ---')
+        c_c: Contact
+        for c_c in as_user.load_contacts(PROFILE_STORE):
+            print(profile_handler.profiles.get_profile(c_c.contact_public_key).display_name())
+    else:
+        print('runnning without a user')
 
+    c_p: Profile
+    if extra_view_profiles:
+        print('--- extra profiles ---')
+        for c_p in extra_view_profiles:
+            print(c_p.display_name())
+
+    if inboxes:
+        print('--- checking inboxes ---')
+        for c_p in inboxes:
+            print(c_p.display_name())
+
+    print('showing events from now minus %s hours' % since)
+
+
+def get_from_config(config,
+                    profiles: ProfileEventHandler):
     as_user = None
-    # all profiles we're viewing, excludes inboxs
-    to_view_profiles = None
-    # [] of pub_k fo view_profiles including inboxes
-    to_view = None
-    inbox_keys = {}
+    all_view = []
+    view_extra = []
+    inboxes = []
+    inbox_keys = []
+    shared_keys = []
 
-    # view as this profile, show events for public keys that this profile follows
-    # only no reason that couldn't use union of multiple profiles
+    # the profile we'll be viewing as, if any... If it's not set then you'll see everything unless
+    # you specify view_profiles.
+    # in either case without as_user it's not possible to decrypt any evts
     if config['as_user'] is not None:
-        as_user = my_profiles.profiles.get_profile(config['as_user'], create_type='public')
+        as_user = profiles.profiles.get_profile(config['as_user'], create_type='public')
         if not as_user:
             print('unable to find/create as_user profile - %s' % config['as_user'])
             sys.exit(2)
-        else:
-            print('events will be displayed as user %s' % as_user.display_name())
-            print('---follows---')
-            to_view_profiles = []
-            to_view = []
-            # add self - do this always?
-            to_view.append(as_user.public_key)
-
-            contacts = PROFILE_STORE.contacts().value_in('pub_k_owner',as_user.public_key)
-            for c_c in contacts:
-                c_p = my_profiles.profiles.get_profile(c_c['pub_k_contact'], create_type='public')
-                print(c_p.display_name(with_pub=True))
-                to_view_profiles.append(c_p)
-                to_view.append(c_p.public_key)
+        c_c: Contact
+        for c_c in as_user.load_contacts(PROFILE_STORE):
+            all_view.append(profiles.profiles.get_profile(c_c.contact_public_key,
+                                                          create_type=ProfileList.CREATE_PUBLIC))
 
     # view events from this profiles as many as you like
     if config['view_profiles']:
         vps = config['view_profiles'].split(',')
         for vp in vps:
-            p = my_profiles.profiles.get_profile(vp, create_type='public')
+            p = profiles.profiles.get_profile(vp, create_type='public')
             if not p:
                 print('unable to find/create view_profile - %s' % vp)
                 sys.exit(2)
             else:
-                if not to_view:
-                    to_view_profiles = []
-                    to_view = []
-                print('added view for %s' % p.display_name())
-                to_view_profiles.append(p)
-                to_view.append(p.public_key)
+                all_view.append(p)
+                view_extra.append(p)
 
+    # public inboxes for encrypted messages
     if config['inbox']:
-        if not to_view:
-            print('inbox can only be used with as_user that has contacts or with view_profiles set')
+        if as_user is None:
+            print('inbox can only be used with as_user set')
             sys.exit(2)
 
         for c_box in config['inbox'].split(','):
-            p = my_profiles.profiles.get_profile(c_box,
-                                                 create_type=ProfileList.CREATE_PRIVATE)
+            p = profiles.profiles.get_profile(c_box,
+                                              create_type=ProfileList.CREATE_PRIVATE)
             if not p:
                 print('unable to find/create inbox_profile - %s' % c_box)
                 sys.exit(2)
             else:
-                if not inbox_keys:
-                    inbox_keys[p.public_key] = PostApp.get_clust_shared_keymap_for_profile(as_user, to_view_profiles)
+                inboxes.append(p)
+                inbox_keys.append(p.public_key)
 
-                print('added inbox for %s' % p.display_name(True))
-                to_view.append(p.public_key)
+    if as_user is not None:
+        shared_keys = PostApp.get_clust_shared_keymap_for_profile(as_user, all_view)
+
+    try:
+        since = int(config['since'])
+    except ValueError as e:
+        print('since - %s not a numeric value' % config['since'])
+
+    return {
+        'as_user': as_user,
+        'all_view': all_view,
+        'view_extra': view_extra,
+        'inboxes': inboxes,
+        'inbox_keys': inbox_keys,
+        'shared_keys': shared_keys,
+        'since': since
+    }
+
+
+class MyAccept(EventAccepter):
+
+    def __init__(self,
+                 as_user: Profile = None,
+                 view_profiles: [Profile] = None,
+                 public_inboxes: [Profile] = None):
+
+        self._as_user = as_user
+        self._view_profiles = view_profiles
+        self._inboxes = public_inboxes
+
+        self._view_keys = []
+        self._make_view_keys()
+
+    def _make_view_keys(self):
+        c_c: Contact
+        c_p: Profile
+
+        if self._as_user is not None:
+            self._view_keys.append(self._as_user.public_key)
+            self._view_keys = self._view_keys + [c_c.contact_public_key for c_c in self._as_user.contacts]
+
+        if self._view_profiles is not None:
+            self._view_keys = self._view_keys + [c_p.public_key for c_p in self._view_profiles]
+
+        if self._inboxes is not None:
+            self._view_keys = self._view_keys + [c_p.public_key for c_p in self._inboxes]
+
+    def accept_event(self, evt: Event) -> bool:
+        # for now we'll just deal with these, though there's no reason why we couldn't show details
+        # for meta or contact events and possibly others
+        if evt.kind not in (Event.KIND_ENCRYPT, Event.KIND_TEXT_NOTE):
+            return False
+
+        # no specific view so all events
+        if not self._view_keys:
+            return True
+        else:
+            return evt.pub_key in self._view_keys or \
+                   self._as_user is not None and \
+                   (self._as_user.public_key in evt.pub_key or self._as_user.public_key in evt.p_tags)
+
+
+
+def run_watch(config):
+    my_persist = PersistEventHandler(EVENT_STORE)
+    my_profiles = ProfileEventHandler(PROFILE_STORE)
+
+
+    config = get_from_config(config, my_profiles)
+    as_user = config['as_user']
+    view_profiles = config['all_view']
+    inboxes = config['inboxes']
+    inbox_keys = config['inbox_keys']
+    share_keys = config['shared_keys']
+    since = config['since']
+    my_print = FormattedEventPrinter(profile_handler=my_profiles,
+                                     as_user=as_user,
+                                     inbox_keys=inbox_keys,
+                                     share_keys=share_keys)
+
+    print_run_info(as_user, config['view_extra'], inboxes, my_profiles, since)
+    my_printer = PrintEventHandler(profile_handler=my_profiles,
+                                   event_acceptors=MyAccept(as_user=as_user,
+                                                            view_profiles=view_profiles,
+                                                            public_inboxes=inboxes))
 
     def my_display(sub_id, evt: Event, relay):
-        p: Profile
-        def make_head_str():
-            ret_arr = []
-            p = my_profiles.profiles.get_profile(evt.pub_key,
-                                                 create_type=ProfileList.CREATE_PUBLIC)
-            ret_arr.append('-- %s --' % p.display_name())
+        my_print.print_event(evt)
 
-            to_list = []
-            for c_pk in evt.p_tags:
-                to_list.append(my_profiles.profiles.get_profile(c_pk,
-                                                                create_type=ProfileList.CREATE_PUBLIC).display_name())
-            if to_list:
-                ret_arr.append('-> %s' % to_list)
-
-            ret_arr.append('%s@%s' % (evt.id, evt.created_at))
-
-            return '\n'.join(ret_arr)
-
-        if to_view is None or evt.pub_key in to_view or as_user.public_key in evt.p_tags:
-            if evt.kind in (Event.KIND_ENCRYPT, Event.KIND_TEXT_NOTE):
-                # p = my_profiles.profiles.lookup_pub_key(evt.pub_key)
-                # p_display = util_funcs.str_tails(evt.pub_key)
-                # if p:
-                #     p_display = p.display_name()
-                if evt.kind == Event.KIND_TEXT_NOTE:
-                    print(make_head_str())
-                    print(evt.content)
-
-                # explain this...!
-                elif as_user and evt.kind == Event.KIND_ENCRYPT:
-                    try:
-                        if evt.pub_key in inbox_keys:
-                            evt = PostApp.clust_unwrap_event(evt, as_user, inbox_keys[evt.pub_key])
-
-                        # a message we sent, we our crude group send we expect theres one we can decrypt using
-                        # the 0 ptag, tags 1+ are just the same mesage so we don't want to decrypt anyhow
-                        if evt.pub_key == as_user.public_key:
-                            content = evt.decrypted_content(as_user.private_key, evt.p_tags[0])
-                        # message to us
-                        else:
-                            content = evt.decrypted_content(as_user.private_key, evt.pub_key)
-                        print(make_head_str())
-                        print(content)
-                    except Exception as e:
-                        pass
-
-    # attach are own display func
-    my_print.display_func = my_display
+    my_printer.display_func = my_display
 
     def my_connect(the_client: Client):
         # all metas ever
@@ -167,41 +221,40 @@ def run_watch(config):
         evt_filter = {
             'since': EVENT_STORE.get_newest(the_client.url)+1
         }
-        if to_view:
-            evt_filter['authors'] = to_view
 
-        the_client.subscribe(handlers=[my_persist, my_print],
+        if the_client.url == 'wss://rsslay.fiatjaf.com':
+            evt_filter['authors'] = [p.public_key for p in view_profiles]
+
+        the_client.subscribe(handlers=[my_persist, my_printer],
                              filters=evt_filter)
 
-
-    view_filter = {
+    local_filter = {
         'kinds': [Event.KIND_TEXT_NOTE, Event.KIND_ENCRYPT, Event.KIND_META, Event.KIND_CONTACT_LIST],
-        'since': util_funcs.date_as_ticks(datetime.now()-timedelta(hours=1))
+        'since': util_funcs.date_as_ticks(datetime.now()-timedelta(hours=since))
     }
 
-    # if to_view:
-    #     view_filter['authors'] = to_view
-
-    existing_evts = EVENT_STORE.get_filter(view_filter)
+    existing_evts = EVENT_STORE.get_filter(local_filter)
     existing_evts.reverse()
     for c_evt in existing_evts:
-        my_display(None, c_evt, None)
+        my_printer.do_event(None, c_evt, None)
 
     my_client = ClientPool(RELAYS, on_connect=my_connect).start()
 
 
-def event_view():
+def run_event_view():
     config = {
         'as_user': AS_PROFILE,
         'view_profiles': VIEW_PROFILE,
-        'inbox': INBOX
+        'inbox': INBOX,
+        'since': SINCE
     }
 
     try:
         opts, args = getopt.getopt(sys.argv[1:], 'h', ['help',
                                                        'as_profile=',
                                                        'view_profiles=',
-                                                       'inbox='])
+                                                       'inbox=',
+                                                       'since='])
 
         # attempt interpret action
         for o, a in opts:
@@ -213,6 +266,8 @@ def event_view():
                 config['view_profiles'] = a
             if o == '--inbox':
                 config['inbox'] = a
+            if o == '--since':
+                config['since'] = a
 
         run_watch(config)
 
@@ -222,15 +277,5 @@ def event_view():
 
 
 if __name__ == "__main__":
-    logging.getLogger().setLevel(logging.ERROR)
-    event_view()
-
-    # def my_connect(the_client: Client):
-    #     print('connect')
-    #     the_client.subscribe(handlers=[PrintEventHandler()], filters={
-    #         'kinds': [1],
-    #         'authors': ['0a6a0b8d3c024faa8c5b944dbcd88173fd0978a57700be17e681f6ee572205ec']
-    #     })
-    #
-    #
-    # my_client = Client('wss://rsslay.fiatjaf.com', on_connect=my_connect).start()
+    logging.getLogger().setLevel(logging.DEBUG)
+    run_event_view()
