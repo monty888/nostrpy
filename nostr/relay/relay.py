@@ -13,7 +13,10 @@ from nostr.relay.persist import RelayStoreInterface
 from nostr.relay.accept_handlers import AcceptReqHandler
 from nostr.exception import NostrCommandException
 from sqlite3 import IntegrityError
-import psycopg2.errors as pg_errors
+try:
+    import psycopg2.errors as pg_errors
+except:
+    pass
 from nostr.util import util_funcs
 
 

@@ -665,7 +665,7 @@ class ChatApp:
                 self._profile = Profile(priv_k=adhoc_keys['priv_k'],
                                         profile_name='adhoc_profile')
             # needed to show in switch profile
-            self._profiles.profiles.append(self._profile)
+            self._profiles.profiles.add(self._profile)
 
         if not self._profile or not self._profile.private_key:
             raise UnknownProfile('unable to find profile %s or we don\'t have the private key for it')

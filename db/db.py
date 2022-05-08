@@ -6,7 +6,10 @@
 """
 import sqlite3
 from sqlite3 import Error
-import psycopg2
+try:
+    import psycopg2
+except:
+    pass
 from data.data import DataSet
 import logging
 from abc import abstractmethod, ABC

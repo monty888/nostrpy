@@ -7,7 +7,10 @@ from db.db import Database, SQLiteDatabase, PostgresDatabase
 from nostr.event import Event
 from nostr.util import util_funcs
 from nostr.exception import NostrCommandException
-from psycopg2 import OperationalError
+try:
+    from psycopg2 import OperationalError
+except:
+    pass
 from pathlib import Path
 
 
