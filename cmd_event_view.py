@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 import getopt
 from db.db import SQLiteDatabase
 from nostr.ident.profile import Profile, ProfileEventHandler, ProfileList, Contact
-from nostr.ident.persist import SQLProfileStore, TransientProfileStore
+from nostr.ident.persist import SQLProfileStore, TransientProfileStore, ProfileStoreInterface
 from nostr.client.client import ClientPool, Client
 from nostr.client.persist import SQLEventStore, TransientEventStore
 from nostr.client.event_handlers import PrintEventHandler, PersistEventHandler, EventAccepter
@@ -19,11 +19,9 @@ from app.post import PostApp
 from cmd_line.util import EventPrinter, FormattedEventPrinter
 
 # TODO: also postgres
-WORK_DIR = '/home/%s/.nostrpy/' % Path.home().name
-DB = SQLiteDatabase('%s/nostr-client.db' % WORK_DIR)
-EVENT_STORE = SQLEventStore(DB)
-# EVENT_STORE = TransientEventStore()
-PROFILE_STORE = SQLProfileStore(DB)
+WORK_DIR = '/home/%s/.nostrpy_test/' % Path.home().name
+DB_FILE = '%s/nostr-client.db' % WORK_DIR
+
 # RELAYS = ['wss://rsslay.fiatjaf.com','wss://nostr-pub.wellorder.net']
 # RELAYS = ['wss://rsslay.fiatjaf.com']
 # RELAYS = ['wss://nostr-pub.wellorder.net']
@@ -46,32 +44,8 @@ usage:
     """)
     sys.exit(2)
 
-def print_run_info(as_user:Profile, extra_view_profiles, inboxes, profile_handler: ProfileEventHandler, since):
-    # output running info
-    if as_user:
-        print('events will be displayed as user %s' % as_user.display_name())
-        print('--- follows ---')
-        c_c: Contact
-        for c_c in as_user.load_contacts(PROFILE_STORE):
-            print(profile_handler.profiles.get_profile(c_c.contact_public_key).display_name())
-    else:
-        print('runnning without a user')
-
-    c_p: Profile
-    if extra_view_profiles:
-        print('--- extra profiles ---')
-        for c_p in extra_view_profiles:
-            print(c_p.display_name())
-
-    if inboxes:
-        print('--- checking inboxes ---')
-        for c_p in inboxes:
-            print(c_p.display_name())
-
-    print('showing events from now minus %s hours' % since)
-
-
 def get_from_config(config,
+                    profile_store : ProfileStoreInterface,
                     profiles: ProfileEventHandler):
     as_user = None
     all_view = []
@@ -89,7 +63,7 @@ def get_from_config(config,
             print('unable to find/create as_user profile - %s' % config['as_user'])
             sys.exit(2)
         c_c: Contact
-        for c_c in as_user.load_contacts(PROFILE_STORE):
+        for c_c in as_user.load_contacts(profile_store):
             all_view.append(profiles.profiles.get_profile(c_c.contact_public_key,
                                                           create_type=ProfileList.CREATE_PUBLIC))
 
@@ -183,29 +157,59 @@ class MyAccept(EventAccepter):
                    (self._as_user.public_key in evt.pub_key or self._as_user.public_key in evt.p_tags)
 
 
-
 def run_watch(config):
-    my_persist = PersistEventHandler(EVENT_STORE)
-    my_profiles = ProfileEventHandler(PROFILE_STORE)
+    my_db = SQLiteDatabase(DB_FILE)
+    event_store = SQLEventStore(my_db)
+    my_persist = PersistEventHandler(event_store)
+    profile_store = SQLProfileStore(my_db)
+    profile_handler = ProfileEventHandler(profile_store)
 
-
-    config = get_from_config(config, my_profiles)
+    config = get_from_config(config, profile_store, profile_handler)
     as_user = config['as_user']
     view_profiles = config['all_view']
     inboxes = config['inboxes']
     inbox_keys = config['inbox_keys']
     share_keys = config['shared_keys']
     since = config['since']
-    my_print = FormattedEventPrinter(profile_handler=my_profiles,
-                                     as_user=as_user,
-                                     inbox_keys=inbox_keys,
-                                     share_keys=share_keys)
 
-    print_run_info(as_user, config['view_extra'], inboxes, my_profiles, since)
-    my_printer = PrintEventHandler(profile_handler=my_profiles,
+    def print_run_info():
+        extra_view_profiles = config['view_extra']
+        # output running info
+        if as_user:
+            print('events will be displayed as user %s' % as_user.display_name())
+            print('--- follows ---')
+            c_c: Contact
+            for c_c in as_user.load_contacts(profile_store):
+                print(profile_handler.profiles.get_profile(c_c.contact_public_key).display_name())
+        else:
+            print('runnning without a user')
+
+        c_p: Profile
+        if extra_view_profiles:
+            print('--- extra profiles ---')
+            for c_p in extra_view_profiles:
+                print(c_p.display_name())
+
+        if inboxes:
+            print('--- checking inboxes ---')
+            for c_p in inboxes:
+                print(c_p.display_name())
+
+        print('showing events from now minus %s hours' % since)
+
+    # show run info
+    print_run_info()
+
+    # prints out the events
+    my_printer = PrintEventHandler(profile_handler=profile_handler,
                                    event_acceptors=MyAccept(as_user=as_user,
                                                             view_profiles=view_profiles,
                                                             public_inboxes=inboxes))
+    # we'll attach our own evt printer rather than basic 1 liner of PrintEventHandler
+    my_print = FormattedEventPrinter(profile_handler=profile_handler,
+                                     as_user=as_user,
+                                     inbox_keys=inbox_keys,
+                                     share_keys=share_keys)
 
     def my_display(sub_id, evt: Event, relay):
         my_print.print_event(evt)
@@ -214,12 +218,12 @@ def run_watch(config):
 
     def my_connect(the_client: Client):
         # all metas ever
-        the_client.subscribe(handlers=[my_profiles], filters={
+        the_client.subscribe(handlers=[profile_handler], filters={
             'kind': Event.KIND_META
         })
-        # note in the case of wss://rsslay.fiatjaf.com it looks like author is required to recieve anything
+        # note in the case of wss://rsslay.fiatjaf.com it looks like author is required to receive anything
         evt_filter = {
-            'since': EVENT_STORE.get_newest(the_client.url)+1
+            'since': event_store.get_newest(the_client.url)+1
         }
 
         if the_client.url == 'wss://rsslay.fiatjaf.com':
@@ -233,7 +237,7 @@ def run_watch(config):
         'since': util_funcs.date_as_ticks(datetime.now()-timedelta(hours=since))
     }
 
-    existing_evts = EVENT_STORE.get_filter(local_filter)
+    existing_evts = event_store.get_filter(local_filter)
     existing_evts.reverse()
     for c_evt in existing_evts:
         my_printer.do_event(None, c_evt, None)
@@ -278,4 +282,6 @@ def run_event_view():
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
+    util_funcs.create_work_dir(WORK_DIR)
+    util_funcs.create_sqlite_store(DB_FILE)
     run_event_view()

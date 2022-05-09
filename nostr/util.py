@@ -1,4 +1,9 @@
+import sys
 from datetime import datetime, timedelta
+import logging
+import os
+from pathlib import Path
+
 """
     just a place to hand any util funcs that don't easily fit anywhere else
 """
@@ -6,16 +11,16 @@ from datetime import datetime, timedelta
 
 class util_funcs:
 
-    @classmethod
-    def ticks_as_date(cls, ticks):
+    @staticmethod
+    def ticks_as_date(ticks):
         return datetime.fromtimestamp(ticks)
     # reverse of above
-    @classmethod
-    def date_as_ticks(cls, dt: datetime):
+    @staticmethod
+    def date_as_ticks(dt: datetime):
         return int(dt.timestamp())
 
-    @classmethod
-    def str_tails(cls, the_str, taillen=4):
+    @staticmethod
+    def str_tails(the_str, taillen=4):
         # returns str start...end chars for taillen
         ret = '?...?'
 
@@ -26,8 +31,8 @@ class util_funcs:
                 ret = '%s...%s' % (the_str[:taillen], the_str[len(the_str)-taillen:])
         return ret
 
-    @classmethod
-    def is_nostr_key(cls, key_str):
+    @staticmethod
+    def is_nostr_key(key_str):
         """
         basic check that key_str is a nostr_key
         :param key_str:
@@ -43,20 +48,50 @@ class util_funcs:
                 pass
         return ret
 
-    def sql_lite_destroy(self, db_file, export_profiles=None):
-        """
-            completely removes the sql_lite db that we're currently using for our nostr client
-            if supplied export_profiles is filename to export profiles that we use - This are the ones that
-            we have priv keys for
-        """
-        pass
-    def sql_lite_create(self, db_file, import_profiles=None):
-        """
-            creates empty db for use by our nostr client
-            import profiles is filename of previously exported profiles to impotr on create
-        """
-        pass
+    @staticmethod
+    def create_work_dir(top_dir, sub_dir=None):
+        def fix_path_str(the_str):
+            return the_str.replace(os.path.sep + os.path.sep, os.path.sep)
 
+        f = Path(top_dir)
+        the_top_dir = Path(fix_path_str(os.path.sep.join(f.parts)))
+
+        if not the_top_dir.is_dir():
+            parent_dir = Path(os.path.sep.join(f.parts[:-1]).replace(os.path.sep + os.path.sep, os.path.sep))
+
+            # we'll only create the top dir so if the containing dir does't exist then error
+            if not parent_dir.is_dir():
+                print('no such directory %s to create nostrpy work directory %s in ' % (parent_dir, the_top_dir))
+                sys.exit(os.EX_CANTCREAT)
+
+            # make the directory
+            logging.info('util_funcs::create_work_dir: attempting to create %s' % the_top_dir)
+            try:
+                os.makedirs(the_top_dir)
+            except PermissionError as pe:
+                print('error trying to create work director %s - %s' % (parent_dir, pe))
+                sys.exit(os.EX_CANTCREAT)
+
+        # is there a sub dir, check it exists and create if not
+        if sub_dir is not None:
+            the_sub_dir = Path(fix_path_str(os.path.sep.join(f.parts)+ os.path.sep + sub_dir))
+            if not the_sub_dir.is_dir():
+                try:
+                    os.makedirs(the_sub_dir)
+                except PermissionError as pe:
+                    print('error trying to create work sub director %s - %s' % (the_sub_dir, pe))
+                    sys.exit(os.EX_CANTCREAT)
+
+    @staticmethod
+    def create_sqlite_store(db_file):
+        from nostr.client.persist import SQLiteEventStore
+        from nostr.ident.persist import SQLiteProfileStore
+
+        my_events = SQLiteEventStore(db_file)
+        if not my_events.exists():
+            my_events.create()
+            my_profiles = SQLiteProfileStore(db_file)
+            my_profiles.create()
 
 if __name__ == "__main__":
     print('monkies')
