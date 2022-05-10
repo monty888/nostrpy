@@ -12,7 +12,8 @@ from db.db import SQLiteDatabase
 from nostr.ident.profile import Profile, ProfileEventHandler, ProfileList
 from nostr.ident.persist import SQLProfileStore, TransientProfileStore
 from nostr.client.client import ClientPool, Client
-from nostr.client.persist import SQLEventStore, TransientEventStore
+# from nostr.client.persist import SQLEventStore, TransientEventStore
+from nostr.event.persist import ClientSQLEventStore, ClientMemoryEventStore
 from nostr.client.event_handlers import PersistEventHandler
 from nostr.event.event import Event
 from app.post import PostApp
@@ -22,13 +23,13 @@ from nostr.util import util_funcs
 # TODO: also postgres
 WORK_DIR = '/home/%s/.nostrpy/' % Path.home().name
 DB = SQLiteDatabase('%s/nostr-client.db' % WORK_DIR)
-EVENT_STORE = SQLEventStore(DB)
+EVENT_STORE = ClientSQLEventStore(DB)
 # EVENT_STORE = TransientEventStore()
 PROFILE_STORE = SQLProfileStore(DB)
 # RELAYS = ['wss://rsslay.fiatjaf.com','wss://nostr-pub.wellorder.net']
 # RELAYS = ['wss://rsslay.fiatjaf.com']
-# RELAYS = ['ws://localhost:8081']
-RELAYS = ['ws://localhost:8081','ws://localhost:8082']
+RELAYS = ['ws://localhost:8081']
+# RELAYS = ['ws://localhost:8081','ws://localhost:8082']
 # RELAYS = ['wss://nostr-pub.wellorder.net']
 
 

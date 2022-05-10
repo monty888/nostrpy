@@ -2,6 +2,8 @@
     prompt_toolkit front end to from app.post import PostApp
 
 """
+import logging
+
 from prompt_toolkit import Application
 from prompt_toolkit.layout import Layout, ScrollablePane
 from prompt_toolkit.layout.containers import HSplit, Window
@@ -12,6 +14,7 @@ from nostr.ident.profile import ProfileEventHandler
 from nostr.event.event import Event
 from nostr.util import util_funcs
 from app.post import PostApp
+import os
 
 
 class PostAppGui:
@@ -24,16 +27,19 @@ class PostAppGui:
         self._profile_handler = profile_handler
         self._app = None
         self._msg_split_con = HSplit([])
+        self._msg_scroll_con = ScrollablePane(self._msg_split_con)
         self._make_gui()
         self._post_app.set_on_message(self._on_msg)
+        self._msg_display_height = 0
 
     def _make_gui(self):
         kb = KeyBindings()
         buffer1 = Buffer()
 
         self._make_msg_split()
+        self._scroll_bottom()
         root_con = HSplit([
-            ScrollablePane(self._msg_split_con),
+            self._msg_scroll_con,
             Window(content=BufferControl(buffer1), height=3)
         ])
         my_layout = Layout(root_con)
@@ -42,6 +48,22 @@ class PostAppGui:
         @kb.add('c-q')
         def exit_(event):
             self._app.exit()
+
+        @kb.add('c-up')
+        def do_up(e):
+            pos = self._msg_scroll_con.vertical_scroll-1
+            if pos < 0:
+                pos = 0
+            self._msg_scroll_con.vertical_scroll = pos
+
+        @kb.add('c-down')
+        def do_down(e):
+            pos = self._msg_scroll_con.vertical_scroll
+
+            if (self._msg_display_height + 3 - pos) > os.get_terminal_size().lines:
+                pos += 1
+
+            self._msg_scroll_con.vertical_scroll = pos
 
         @kb.add('c-s')
         def post_(event):
@@ -60,9 +82,18 @@ class PostAppGui:
                                 layout=my_layout,
                                 key_bindings=kb)
 
+    def _scroll_bottom(self):
+
+        pos = self._msg_scroll_con.vertical_scroll
+        d_h = os.get_terminal_size().lines
+        if self._msg_display_height + 3 - pos > d_h:
+            pos = (self._msg_display_height + 3) - d_h
+        self._msg_scroll_con.vertical_scroll = pos
+
     def draw_messages(self):
         self._make_msg_split()
         self._app.invalidate()
+        self._scroll_bottom()
 
     def _on_msg(self, evt):
         self.draw_messages()
@@ -80,15 +111,16 @@ class PostAppGui:
         to_add = []
 
         as_user = self._post_app.as_user
-
+        self._msg_display_height = 0
         for c_m in self._post_app.message_events:
             content = c_m.content
 
-            color = 'red'
+            prompt_col = 'red'
+            content_col = ''
             if c_m.pub_key == as_user.public_key:
-                color = 'green'
+                prompt_col = 'green'
             if not self._post_app.connection_status:
-                color = 'gray'
+                content_col = prompt_col = 'gray'
 
             if c_m.kind == Event.KIND_ENCRYPT:
                 priv_key = as_user.private_key
@@ -117,14 +149,16 @@ class PostAppGui:
 
                 to_add.append(
                     HSplit([
-                        Window(FormattedTextControl(text=[(color, '%s@%s' % (prompt_user_text, c_m.created_at))]),
+                        Window(FormattedTextControl(text=[(prompt_col, '%s@%s' % (prompt_user_text, c_m.created_at))]),
                                height=1),
-                        Window(FormattedTextControl(text=content), height=msg_height)
+                        Window(FormattedTextControl(text=[(content_col,content)]), height=msg_height)
                     ])
 
                 )
+                self._msg_display_height += msg_height + 1
 
         self._msg_split_con.children = to_add
+
 
     def run(self):
         self._app.run()

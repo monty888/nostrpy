@@ -1,0 +1,32 @@
+DEBUG:root:SQLiteStore::__init__ db_file=/home/shaun/.nostrpy//nostr-client.db, delete mode=DeleteMode.DEL_FLAG
+DEBUG:root:SQLiteStore::__init__ db_file=/home/shaun/.nostrpy//nostr-client.db
+DEBUG:root:Database::select_sql - SQL: select * from profiles
+        order by 
+            case when profile_name ISNULL or profile_name='' then 1 else 0 end, profile_name,
+            case when name ISNULL or name='' then 1 else 0 end, name
+         
+ ARGS: []
+DEBUG:root:Database::select_sql - SQL: select * from events where deleted isnull and created_at>=? and kind in(?,?,?,?) order by created_at desc 
+ ARGS: [1652108035, 1, 4, 0, 3]
+DEBUG:root:Client::_on_open ws://localhost:8081
+DEBUG:root:Client::subscribe - ["REQ", "fd53", {"kind": 0}]
+DEBUG:root:Database::select_sql - SQL: select created_at from events e inner join event_relay er on e.id = er.id where er.relay_url = ? order by created_at desc limit 1 
+ ARGS: ['ws://localhost:8081']
+DEBUG:root:Client::subscribe - ["REQ", "a25c", {"since": 1652193902}]
+DEBUG:root:Client::_on_open wss://rsslay.fiatjaf.com
+DEBUG:root:Client::subscribe - ["REQ", "da42", {"kind": 0}]
+DEBUG:root:Database::select_sql - SQL: select created_at from events e inner join event_relay er on e.id = er.id where er.relay_url = ? order by created_at desc limit 1 
+ ARGS: ['wss://rsslay.fiatjaf.com']
+DEBUG:root:Store::get_newest - no created_at found, db empty?
+DEBUG:root:Client::subscribe - ["REQ", "dcbb", {"since": 1, "authors": []}]
+DEBUG:root:Client::_on_open wss://nostr-pub.wellorder.net
+DEBUG:root:Client::subscribe - ["REQ", "ea8f", {"kind": 0}]
+DEBUG:root:Database::select_sql - SQL: select created_at from events e inner join event_relay er on e.id = er.id where er.relay_url = ? order by created_at desc limit 1 
+ ARGS: ['wss://nostr-pub.wellorder.net']
+DEBUG:root:Client::subscribe - ["REQ", "af7b", {"since": 1652193902}]
+DEBUG:root:Expecting value: line 1 column 1 (char 0)
+Exception ignored in: <module 'threading' from '/usr/lib/python3.8/threading.py'>
+Traceback (most recent call last):
+  File "/usr/lib/python3.8/threading.py", line 1388, in _shutdown
+    lock.acquire()
+KeyboardInterrupt: 

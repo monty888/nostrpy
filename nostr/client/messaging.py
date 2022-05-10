@@ -1,3 +1,7 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+	from nostr.event.persist import ClientEventStoreInterface
 """
     abstract some of the functionality we need in order to messages between people other nostr protocal
 
@@ -15,9 +19,8 @@ import base64
 import logging
 from gevent.lock import BoundedSemaphore
 from nostr.ident.profile import Profile
-from nostr.client.persist import ClientEventStoreInterface
 from nostr.client.client import Client
-from nostr.event import Event
+from nostr.event.event import Event
 from nostr.encrypt import SharedEncrypt
 
 

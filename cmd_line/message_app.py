@@ -21,9 +21,10 @@ from prompt_toolkit.mouse_events import MouseEvent, MouseButton, MouseEventType
 from nostr.ident.profile import Profile, ProfileEventHandler, UnknownProfile, ProfileList
 from nostr.ident.persist import SQLProfileStore, TransientProfileStore
 from nostr.client.event_handlers import PersistEventHandler
-from nostr.event import Event
+from nostr.event.event import Event
 from nostr.client.client import Client
-from nostr.client.persist import SQLEventStore, TransientEventStore
+# from nostr.client.persist import SQLEventStore, TransientEventStore
+from nostr.event.persist import ClientSQLEventStore, ClientMemoryEventStore
 from nostr.client.messaging import MessageThreads
 from db.db import Database
 
@@ -332,6 +333,10 @@ class ChatGui:
         @kb.add('c-q')
         def do_quit(e):
             self._app.exit()
+
+        @kb.add('c-s')
+        def do_post(e):
+            my_send()
 
         @kb.add('c-up')
         def do_up(e):
@@ -647,10 +652,10 @@ class ChatApp:
         if self._db:
             # we'll want to listen eventually and add as handler to client sub
             self._profiles = ProfileEventHandler(SQLProfileStore(self._db), None)
-            self._event_store = SQLEventStore(self._db)
+            self._event_store = ClientSQLEventStore(self._db)
         else:
             self._profiles = ProfileEventHandler(TransientProfileStore(), None)
-            self._event_store = TransientEventStore()
+            self._event_store = ClientMemoryEventStore()
 
 
         self._profile = self._profiles.profiles.get_profile(as_profile,None)
