@@ -3,8 +3,9 @@ import logging
 from datetime import datetime
 from abc import ABC, abstractmethod
 from nostr.ident.profile import Profile, ProfileList, Contact, ContactList
-from nostr.client.persist import ClientEventStoreInterface
-from nostr.event import Event
+# from nostr.client.persist import ClientEventStoreInterface
+from nostr.event.persist import ClientEventStoreInterface
+from nostr.event.event import Event
 from db.db import Database, SQLiteDatabase
 from data.data import DataSet
 from nostr.util import util_funcs

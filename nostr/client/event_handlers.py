@@ -16,10 +16,11 @@ import base64
 import logging
 import json
 from collections import OrderedDict
-from nostr.client.persist import ClientEventStoreInterface
+# from nostr.client.persist import ClientEventStoreInterface
+from nostr.event.persist import ClientEventStoreInterface
 from nostr.encrypt import SharedEncrypt
 from nostr.util import util_funcs
-from nostr.event import Event
+from nostr.event.event import Event
 from app.post import PostApp
 
 
@@ -194,7 +195,7 @@ class PersistEventHandler:
     def do_event(self, sub_id, evt:Event, relay):
         # store the actual event
         try:
-            self._store.add_event(evt, relay)
+            self._store.add_event_relay(evt, relay)
         except Exception as e:
             print(e)
             # most likely because we already have, we could though add a table that

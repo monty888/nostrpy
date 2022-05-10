@@ -9,7 +9,7 @@ from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.key_binding import KeyBindings
 from nostr.ident.profile import ProfileEventHandler
-from nostr.event import Event
+from nostr.event.event import Event
 from nostr.util import util_funcs
 from app.post import PostApp
 

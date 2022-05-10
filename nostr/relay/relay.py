@@ -8,8 +8,9 @@ from geventwebsocket.websocket import WebSocket
 from gevent.lock import BoundedSemaphore
 import json
 from json import JSONDecodeError
-from nostr.event import Event
-from nostr.relay.persist import RelayStoreInterface
+from nostr.event.event import Event
+from nostr.event.persist import RelayEventStoreInterface
+# from nostr.relay.persist import RelayStoreInterface
 from nostr.relay.accept_handlers import AcceptReqHandler
 from nostr.exception import NostrCommandException
 from sqlite3 import IntegrityError
@@ -44,7 +45,7 @@ class Relay:
     """
     VALID_CMDS = ['EVENT', 'REQ', 'CLOSE']
 
-    def __init__(self, store: RelayStoreInterface, accept_req_handler=None, max_sub=3):
+    def __init__(self, store: RelayEventStoreInterface, accept_req_handler=None, max_sub=3):
         self._app = Bottle()
         # self._web_sockets = {}
 

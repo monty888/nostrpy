@@ -84,10 +84,10 @@ class util_funcs:
 
     @staticmethod
     def create_sqlite_store(db_file):
-        from nostr.client.persist import SQLiteEventStore
+        from nostr.event.persist import ClientSQLiteEventStore
         from nostr.ident.persist import SQLiteProfileStore
 
-        my_events = SQLiteEventStore(db_file)
+        my_events = ClientSQLiteEventStore(db_file)
         if not my_events.exists():
             my_events.create()
             my_profiles = SQLiteProfileStore(db_file)

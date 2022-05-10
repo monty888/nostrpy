@@ -14,7 +14,7 @@ from nostr.ident.persist import SQLProfileStore, TransientProfileStore
 from nostr.client.client import ClientPool, Client
 from nostr.client.persist import SQLEventStore, TransientEventStore
 from nostr.client.event_handlers import PersistEventHandler
-from nostr.event import Event
+from nostr.event.event import Event
 from app.post import PostApp
 from cmd_line.post_loop_app import PostAppGui
 from nostr.util import util_funcs

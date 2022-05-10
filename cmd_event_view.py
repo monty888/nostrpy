@@ -11,24 +11,24 @@ from db.db import SQLiteDatabase
 from nostr.ident.profile import Profile, ProfileEventHandler, ProfileList, Contact
 from nostr.ident.persist import SQLProfileStore, TransientProfileStore, ProfileStoreInterface
 from nostr.client.client import ClientPool, Client
-from nostr.client.persist import SQLEventStore, TransientEventStore
+from nostr.event.persist import ClientSQLEventStore
 from nostr.client.event_handlers import PrintEventHandler, PersistEventHandler, EventAccepter
 from nostr.util import util_funcs
-from nostr.event import Event
+from nostr.event.event import Event
 from app.post import PostApp
 from cmd_line.util import EventPrinter, FormattedEventPrinter
 
 # TODO: also postgres
-WORK_DIR = '/home/%s/.nostrpy_test/' % Path.home().name
+WORK_DIR = '/home/%s/.nostrpy/' % Path.home().name
 DB_FILE = '%s/nostr-client.db' % WORK_DIR
 
 # RELAYS = ['wss://rsslay.fiatjaf.com','wss://nostr-pub.wellorder.net']
 # RELAYS = ['wss://rsslay.fiatjaf.com']
 # RELAYS = ['wss://nostr-pub.wellorder.net']
-# RELAYS = ['ws://localhost:8081','wss://nostr-pub.wellorder.net','wss://rsslay.fiatjaf.com']
+RELAYS = ['ws://localhost:8081','wss://nostr-pub.wellorder.net','wss://rsslay.fiatjaf.com']
 
 # defaults if not provided at command line or from config file
-RELAYS = ['ws://localhost:8081']
+# RELAYS = ['ws://localhost:8081']
 AS_PROFILE = None
 VIEW_PROFILE = None
 INBOX = None
@@ -119,7 +119,8 @@ class MyAccept(EventAccepter):
     def __init__(self,
                  as_user: Profile = None,
                  view_profiles: [Profile] = None,
-                 public_inboxes: [Profile] = None):
+                 public_inboxes: [Profile] = None,
+                 since=None):
 
         self._as_user = as_user
         self._view_profiles = view_profiles
@@ -127,6 +128,7 @@ class MyAccept(EventAccepter):
 
         self._view_keys = []
         self._make_view_keys()
+        self._since = since
 
     def _make_view_keys(self):
         c_c: Contact
@@ -143,6 +145,9 @@ class MyAccept(EventAccepter):
             self._view_keys = self._view_keys + [c_p.public_key for c_p in self._inboxes]
 
     def accept_event(self, evt: Event) -> bool:
+        if self._since is not None and evt.created_at < self._since:
+            return False
+
         # for now we'll just deal with these, though there's no reason why we couldn't show details
         # for meta or contact events and possibly others
         if evt.kind not in (Event.KIND_ENCRYPT, Event.KIND_TEXT_NOTE):
@@ -159,7 +164,7 @@ class MyAccept(EventAccepter):
 
 def run_watch(config):
     my_db = SQLiteDatabase(DB_FILE)
-    event_store = SQLEventStore(my_db)
+    event_store = ClientSQLEventStore(my_db)
     my_persist = PersistEventHandler(event_store)
     profile_store = SQLProfileStore(my_db)
     profile_handler = ProfileEventHandler(profile_store)
@@ -199,12 +204,15 @@ def run_watch(config):
 
     # show run info
     print_run_info()
+    # change to since to point in time
+    since = datetime.now() - timedelta(hours=since)
 
     # prints out the events
     my_printer = PrintEventHandler(profile_handler=profile_handler,
                                    event_acceptors=MyAccept(as_user=as_user,
                                                             view_profiles=view_profiles,
-                                                            public_inboxes=inboxes))
+                                                            public_inboxes=inboxes,
+                                                            since=since))
     # we'll attach our own evt printer rather than basic 1 liner of PrintEventHandler
     my_print = FormattedEventPrinter(profile_handler=profile_handler,
                                      as_user=as_user,
@@ -221,11 +229,14 @@ def run_watch(config):
         the_client.subscribe(handlers=[profile_handler], filters={
             'kind': Event.KIND_META
         })
-        # note in the case of wss://rsslay.fiatjaf.com it looks like author is required to receive anything
+
+        # get events from newest we have for this relay
+        # TODO: add kind to get_newest
         evt_filter = {
             'since': event_store.get_newest(the_client.url)+1
         }
 
+        # note in the case of wss://rsslay.fiatjaf.com it looks like author is required to receive anything
         if the_client.url == 'wss://rsslay.fiatjaf.com':
             evt_filter['authors'] = [p.public_key for p in view_profiles]
 
@@ -234,7 +245,7 @@ def run_watch(config):
 
     local_filter = {
         'kinds': [Event.KIND_TEXT_NOTE, Event.KIND_ENCRYPT, Event.KIND_META, Event.KIND_CONTACT_LIST],
-        'since': util_funcs.date_as_ticks(datetime.now()-timedelta(hours=since))
+        'since': util_funcs.date_as_ticks(since)
     }
 
     existing_evts = event_store.get_filter(local_filter)
@@ -285,3 +296,54 @@ if __name__ == "__main__":
     util_funcs.create_work_dir(WORK_DIR)
     util_funcs.create_sqlite_store(DB_FILE)
     run_event_view()
+
+    # from nostr.event.persist import ClientSQLEventStore
+    #
+    #
+    #
+    #
+    # event_store = ClientSQLEventStore(SQLiteDatabase(WORK_DIR + '/nostr-client.db'))
+    #
+    # print(event_store.get_newest(for_relay='wss://nostr-pub.wellorder.net',
+    #                              filter={
+    #                                  'kinds': Event.KIND_META
+    #                              }))
+
+
+    #
+    #
+    #
+    # evts = event_store.get_filter([
+    #     {
+    #     }
+    # ])
+    #
+    #
+    # evt = Event(kind=Event.KIND_TEXT_NOTE,
+    #             content='monkey',
+    #             pub_key='40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486')
+    # evt.sign('5c7102135378a5223d74ce95f11331a8282ea54905d61018c7f1bc166994a1d9')
+    # # event_store.add_event(evt)
+    # e = evts[0]
+    # event_store.add_event_relay(e, 'shauns relay')
+
+
+
+
+    # profile_store = SQLProfileStore(SQLiteDatabase(DB_FILE))
+    # evts = event_store.get_filter({
+    #     'ids' : ['d56320fbfa274944f8a95a935eb4d83b4ca0c5ca3421761905b827fbfed9b23d']
+    # })
+    #
+    # as_user:Profile = profile_store.select({
+    #     'profile_name': 'firedragon888'
+    # })[0]
+    #
+    # evt = Event(kind=Event.KIND_ENCRYPT,
+    #             content='1234567890123456',
+    #             pub_key=as_user.public_key)
+    # evt.content = evt.encrypt_content(as_user.private_key, as_user.public_key)
+    # evt.sign(as_user.private_key)
+    #
+    # evt.content = evt.decrypted_content(as_user.private_key, as_user.public_key)
+    # print('>>>>',evt.content)

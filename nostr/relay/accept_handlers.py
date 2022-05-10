@@ -1,7 +1,7 @@
 from datetime import datetime
 from geventwebsocket.websocket import WebSocket
 from nostr.exception import NostrCommandException
-from nostr.event import Event
+from nostr.event.event import Event
 from nostr.util import util_funcs
 
 

@@ -14,7 +14,7 @@ from hashlib import md5
 from json import JSONDecodeError
 from datetime import datetime
 from nostr.util import util_funcs
-from nostr.event import Event
+from nostr.event.event import Event
 from nostr.client.event_handlers import EventTimeHandler, FileEventHandler
 from threading import Thread
 

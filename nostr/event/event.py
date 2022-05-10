@@ -197,12 +197,13 @@ class Event:
                 ret = False
             if not _field_tag_match('ids', c_filter):
                 ret = False
-            if '#e' in c_filter:
-                if not _test_tag_match('e', c_filter):
-                    ret = False
-            if '#p' in c_filter:
-                if not _test_tag_match('p', c_filter):
-                    ret = False
+
+            # generic tags start with #, also included here are p and e tags as they're done in same way
+            for c_name in c_filter:
+                # its an event tag
+                if c_name[0] == '#':
+                    if not _test_tag_match(c_name[1:], c_filter):
+                        ret = False
 
             # multiple filters are joined so a pass on any and we're out of here
             if ret:

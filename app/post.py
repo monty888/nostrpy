@@ -5,7 +5,7 @@ import json
 import hashlib
 from collections import OrderedDict
 from nostr.encrypt import SharedEncrypt
-from nostr.event import Event
+from nostr.event.event import Event
 from nostr.ident.profile import Profile
 
 

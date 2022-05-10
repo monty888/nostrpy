@@ -3,9 +3,9 @@
 """
 
 # FIXME: chenage to use cipher from cryptography so we dont need both Crypto and cryptography
-from Crypto.Cipher import AES                   # REPLACE with equivs...
-from Crypto.Util import Padding                 # REPLACE
-from Crypto.Random import get_random_bytes      # REPLACE
+import os
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
 import secp256k1
@@ -19,15 +19,6 @@ class KeyEnc(Enum):
 
 
 class SharedEncrypt:
-
-    @classmethod
-    def get_clust_share_key(cls, echd_key):
-        pass
-
-    @classmethod
-    def get_clust_shared_keys(cls, ):
-        pass
-
 
     def __init__(self, priv_k_hex):
         """
@@ -81,13 +72,21 @@ class SharedEncrypt:
             self.derive_shared_key(pub_key_hex)
 
         key = secp256k1.PrivateKey().deserialize(self.shared_key(as_type=KeyEnc.HEX))
-        iv = get_random_bytes(16)
-        data = Padding.pad(data, 16)
-        cipher = AES.new(key, AES.MODE_CBC, iv)
+        # iv = get_random_bytes(16)
+        iv = os.urandom(16)
+        # data = Padding.pad(data, 16)
+        padder = padding.PKCS7(128).padder()
+        data = padder.update(data)
+        data += padder.finalize()
+
+        # cipher = AES.new(key, AES.MODE_CBC, iv)
+        ciper = Cipher(algorithms.AES(key), modes.CBC(iv))
+        encryptor = ciper.encryptor()
+
         return {
-            'text' : cipher.encrypt(data),
-            'iv' : iv,
-            'shared_key' : self._shared_key
+            'text': encryptor.update(data) + encryptor.finalize(),
+            'iv': iv,
+            'shared_key': self._shared_key
         }
 
     def decrypt_message(self, encrypted_data,iv, pub_key_hex=None):
@@ -95,7 +94,12 @@ class SharedEncrypt:
             self.derive_shared_key(pub_key_hex)
 
         key = secp256k1.PrivateKey().deserialize(self.shared_key(as_type=KeyEnc.HEX))
-        cipher = AES.new(key, AES.MODE_CBC, iv)
-        ret = cipher.decrypt(encrypted_data)
-        ret = Padding.unpad(ret,16)
+        ciper = Cipher(algorithms.AES(key), modes.CBC(iv))
+        decryptor = ciper.decryptor()
+
+        ret = decryptor.update(encrypted_data)
+        padder = padding.PKCS7(128).unpadder()
+        ret = padder.update(ret)
+        ret += padder.finalize()
+
         return ret

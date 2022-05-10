@@ -18,7 +18,7 @@ import json
 from json import JSONDecodeError
 import secp256k1
 import logging
-from nostr.event import Event
+from nostr.event.event import Event
 from datetime import datetime
 from nostr.util import util_funcs
 

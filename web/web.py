@@ -1,18 +1,20 @@
-import json
+from __future__ import annotations
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    pass
 
+import json
 from bottle import request, Bottle, static_file, abort
 import logging
 from pathlib import Path
-from nostr.ident import ProfileList
 from data.data import DataSet
 from gevent.pywsgi import WSGIServer
 from geventwebsocket import WebSocketError
 from geventwebsocket.handler import WebSocketHandler
-from nostr.client.client import Client
 from nostr.event import Event
-from nostr.client.event_handlers import PersistEventHandler
-from nostr.client.persist import SQLLiteEventStore
-from db.db import SQLiteDatabase
+from nostr.ident.profile import ProfileEventHandler, ProfileList
+from nostr.ident.persist import SQLiteProfileStore
+from nostr.client.persist import ClientEventStoreInterface, SQLiteEventStore
 
 
 class StaticServer:
@@ -87,30 +89,24 @@ class StaticServer:
             return ret
 
     def start(self, host='localhost', port=8080):
+        logging.debug('started web server at %s port=%s' % (host, port))
         server = WSGIServer((host, port), self._app, handler_class=WebSocketHandler)
         server.serve_forever()
 
 
 class NostrWeb(StaticServer):
 
-    def __init__(self, file_root, db_file):
-        self._db = SQLiteDatabase(db_file)
-        self._store = SQLLiteEventStore(db_file)
-        self._persist_event = PersistEventHandler(self._store)
+    def __init__(self,
+                 file_root,
+                 event_store: ClientEventStoreInterface,
+                 profile_store: SQLiteProfileStore,
+                 profile_handler: ProfileEventHandler):
 
-        # this should be passed in and probably will be a ClientPool
-
-        def my_connect(the_client):
-            the_client.subscribe('web', self, {
-                # 'since': self._store.get_oldest()
-            })
-        self._nostr_client = Client('ws://192.168.0.17:8081', on_connect=my_connect).start()
+        self._event_store = event_store
+        self._profile_store = profile_store
+        self._profile_handler = profile_handler
 
         self._web_sockets = {}
-        # initial load of profiles, after that shoudl track events
-        # obvs at some point keeping all profiles in mem might not work so well
-        self._other_profiles = ProfileList.create_profiles_from_db(self._db).as_arr()
-
         super(NostrWeb, self).__init__(file_root)
 
         self._add_routes()
@@ -118,7 +114,7 @@ class NostrWeb(StaticServer):
     def _add_routes(self):
         self._app.route('/profiles',callback=self._profiles_list)
         self._app.route('/contact_list',callback=self._contact_list)
-        self._app.route('/notes', callback=self._notes)
+        self._app.route('/events', method='POST', callback=self._events)
         self._app.route('/websocket', callback=self._handle_websocket)
 
         # obvs improve this and probably move to StaticServer
@@ -131,76 +127,35 @@ class NostrWeb(StaticServer):
 
     def _profiles_list(self):
         ret = {
-            'profiles' : self._other_profiles
+            'profiles': self._profile_handler.profiles.as_arr()
         }
         return ret
 
     def _contact_list(self):
         pub_k = request.query.pub_k
-        # we only need information from contacts, we already have what we need to link to profile
-        sql = 'select pub_k_contact, relay, petname, updated_at from contacts where pub_k_owner=?'
-
-        # get the profile info too
-        if request.query.include_profile.lower()=='true':
-            sql = """
-                select 
-                    c.pub_k_contact, c.relay, c.petname, c.updated_at,
-                    p.attrs, p.name, p.picture
-                    
-                    from contacts c
-                    inner join profiles p on c.pub_k_contact = p.pub_k
-                    where pub_k_owner=?
-            """
-
         if not pub_k:
             raise Exception('pub_k is required')
 
-        contacts = DataSet.from_db(self._db,
-                                   sql=sql,
-                                   args=[pub_k])
+        for_profile = self._profile_handler.profiles.get_profile(pub_k,
+                                                                 create_type=ProfileList.CREATE_PUBLIC)
+        contacts = for_profile.load_contacts(self._profile_store)
+
         return {
-            'pub_k_owner' : pub_k,
-            'contacts' : contacts.as_arr(dict_rows=True)
+            'pub_k_owner': pub_k,
+            'contacts': 'TODO'
         }
 
-    def _notes(self):
-        pub_k = request.query.pub_k
-        sql_arr = [
-            'select',
-            ' id,created_at,content,tags,pubkey',
-            ' from events',
-            ' where kind=?'
-        ]
-        args = [Event.KIND_TEXT_NOTE]
-        if pub_k:
-            sql_arr.append(' and pubkey=?')
-            args.append(pub_k)
-        sql_arr.append(' order by created_at desc limit 1000')
-        sql = ''.join(sql_arr)
+    def _events(self):
+        filter = request.forms['filter']
+        events = self._event_store.get_filter(filter)
+        c_evt: Event
+        ret = []
+        for c_evt in events:
+            ret.append(c_evt.event_data())
 
-        # if not pub_k:
-        #     raise Exception('pub_k is required')
-
-        notes = DataSet.from_db(self._db,
-                                sql=sql,
-                                args=args)
-
-        ret = {
-            'notes': notes.as_arr(dict_rows=True)
+        return {
+            'events': ret
         }
-
-        # if pub_k was handed in then we strip from each row and give at top level
-        if pub_k:
-            ret = {'notes': notes.of_heads(['id', 'created_at', 'content', 'tags']).as_arr(dict_rows=True),
-                   'pub_k_owner': pub_k}
-        else:
-            ret = {
-                'notes': notes.as_arr(dict_rows=True)
-            }
-
-
-        return ret
-
 
     def do_event(self, sub_id, evt:Event, relay):
         # store event to db, no err handling...
@@ -228,13 +183,21 @@ class NostrWeb(StaticServer):
             except WebSocketError:
                 break
 
-    def stop(self):
-        self._nostr_client.end()
-
 def nostr_web():
     nostr_db_file = '%s/.nostrpy/nostr-client.db' % Path.home()
-    my_server = NostrWeb(file_root='%s/PycharmProjects/nostrpy/web/static/' % Path.home(),
-                         db_file=nostr_db_file)
+
+    from nostr.util import util_funcs
+    util_funcs.create_sqlite_store(nostr_db_file)
+
+    event_store = SQLiteEventStore(nostr_db_file)
+    profile_store = SQLiteProfileStore(nostr_db_file)
+    profile_handler = ProfileEventHandler(SQLiteProfileStore(nostr_db_file))
+
+
+    my_server = NostrWeb(file_root='%s/PycharmProjects/nostrpy/web/static/',
+                         event_store=event_store,
+                         profile_store=profile_store,
+                         profile_handler=profile_handler)
 
     # example clean exit... need to look into more though
     import signal

@@ -15,7 +15,9 @@ from toml import TomlDecodeError
 
 from nostr.relay.relay import Relay
 from nostr.relay.accept_handlers import LengthAcceptReqHandler
-from nostr.relay.persist import SQLiteStore, MemoryStore, PostgresStore
+# from nostr.relay.persist import SQLiteStore, MemoryStore, PostgresStore
+
+from nostr.event.persist import RelayMemoryEventStore, RelaySQLiteEventStore, RelayPostgresEventStore
 
 # default values when nothing is specified either from cmd line or config file
 HOST = 'localhost'
@@ -73,7 +75,7 @@ def get_sql_store(filename):
     # if the file doesn't exist it'll be created and we'll create the db struct too
     # if it does we'll assume everything is ok...we could do more
 
-    ret = SQLiteStore(filename)
+    ret = RelaySQLiteEventStore(filename)
     if not ret.exists():
         logging.info('get_sql_store::create new db %s' % filename)
         ret.create()
@@ -84,9 +86,9 @@ def get_sql_store(filename):
 
 
 def get_postgres_store(db_name, user, password):
-    ret = PostgresStore(db_name=db_name,
-                        user=user,
-                        password=password)
+    ret = RelayPostgresEventStore(db_name=db_name,
+                                  user=user,
+                                  password=password)
 
     if not ret.exists():
         ret.create()
@@ -204,6 +206,7 @@ def main():
                                       password=config['pg_password'])
     elif config['store'] == 'transient':
         my_store = MemoryStore()
+        my_store = RelayMemoryEventStore()
     else:
         print('--store most be sqlite, postgres or transient')
         sys.exit(2)

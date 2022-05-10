@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 # if TYPE_CHECKING:
 #     from nostr.ident.profile import
 
-from nostr.event import Event
+from nostr.event.event import Event
 from app.post import PostApp
 from nostr.ident.profile import ProfileList, ProfileEventHandler, Profile
 from prompt_toolkit import print_formatted_text
