@@ -11,10 +11,10 @@ from data.data import DataSet
 from gevent.pywsgi import WSGIServer
 from geventwebsocket import WebSocketError
 from geventwebsocket.handler import WebSocketHandler
-from nostr.event import Event
+from nostr.event.event import Event
 from nostr.ident.profile import ProfileEventHandler, ProfileList
 from nostr.ident.persist import SQLiteProfileStore
-from nostr.client.persist import ClientEventStoreInterface, SQLiteEventStore
+from nostr.event.persist import ClientEventStoreInterface, SQLiteEventStore
 
 
 class StaticServer:
@@ -146,7 +146,8 @@ class NostrWeb(StaticServer):
         }
 
     def _events(self):
-        filter = request.forms['filter']
+        filter = json.loads(request.forms['filter'])
+
         events = self._event_store.get_filter(filter)
         c_evt: Event
         ret = []

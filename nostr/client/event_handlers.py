@@ -31,7 +31,7 @@ class EventAccepter(ABC):
         'True/False if the event will be accepted'
 
 
-class DuplicateAcceptor(EventAccepter):
+class DeduplicateAcceptor(EventAccepter):
 
     def __init__(self, max_dedup=1000):
         # de-duplicating of events for when we're connected to multiple relays
@@ -39,12 +39,12 @@ class DuplicateAcceptor(EventAccepter):
         self._max_dedup = max_dedup
 
     def accept_event(self, evt: Event) -> bool:
-        ret = True
+        ret = False
         if evt.id not in self._duplicates:
             self._duplicates[evt.id] = True
             if len(self._duplicates) >= self._max_dedup:
                 self._duplicates.popitem(False)
-            ret = False
+            ret = True
         return ret
 
 
