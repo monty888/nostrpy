@@ -225,9 +225,9 @@ def run_watch(config):
     my_printer.display_func = my_display
 
     def my_connect(the_client: Client):
-        # all metas ever
+        # all metas and contacts ever
         the_client.subscribe(handlers=[profile_handler], filters={
-            'kind': Event.KIND_META
+            'kind': [Event.KIND_META, Event.KIND_CONTACT_LIST]
         })
 
         # get events from newest we have for this relay
@@ -295,14 +295,14 @@ if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
     util_funcs.create_work_dir(WORK_DIR)
     util_funcs.create_sqlite_store(DB_FILE)
-    # run_event_view()
-    from nostr.event.persist import ClientSQLiteEventStore
-    my_store = ClientSQLiteEventStore(DB_FILE)
-
-    evts = my_store.get_filter({
-        'ids' : ['e7cd845b72ecea0e409a22526c273982b5db3c724259152c80c704781b0515ae']
-    })
-    print(len(evts))
+    run_event_view()
+    # from nostr.event.persist import ClientSQLiteEventStore
+    # my_store = ClientSQLiteEventStore(DB_FILE)
+    #
+    # evts = my_store.get_filter({
+    #     'ids' : ['e7cd845b72ecea0e409a22526c273982b5db3c724259152c80c704781b0515ae']
+    # })
+    # print(len(evts))
 
     # from nostr.event.persist import ClientSQLEventStore
     #

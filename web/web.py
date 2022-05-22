@@ -12,10 +12,10 @@ from gevent.pywsgi import WSGIServer
 from geventwebsocket import WebSocketError
 from geventwebsocket.handler import WebSocketHandler
 from nostr.event.event import Event
-from nostr.ident.profile import ProfileEventHandler, ProfileList
+from nostr.ident.profile import ProfileEventHandler, ProfileList, Profile, Contact
 from nostr.ident.persist import SQLiteProfileStore
 from nostr.event.persist import ClientEventStoreInterface, SQLiteEventStore
-
+from nostr.encrypt import Keys
 
 class StaticServer:
     """
@@ -112,7 +112,8 @@ class NostrWeb(StaticServer):
         self._add_routes()
 
     def _add_routes(self):
-        self._app.route('/profiles',callback=self._profiles_list)
+        self._app.route('/profile', callback=self._profile)
+        self._app.route('/profiles', callback=self._profiles_list)
         self._app.route('/contact_list',callback=self._contact_list)
         self._app.route('/events', method='POST', callback=self._events)
         self._app.route('/websocket', callback=self._handle_websocket)
@@ -125,16 +126,50 @@ class NostrWeb(StaticServer):
             500: my_internal
         }
 
+    def _check_pub_key(self, pub_k):
+        if not pub_k:
+            raise Exception('pub_k is required')
+        if not Keys.is_valid_pubkey(pub_k):
+            raise Exception('value - %s doesn\'t look like a valid nostr pub key' % pub_k)
+
     def _profiles_list(self):
         ret = {
             'profiles': self._profile_handler.profiles.as_arr()
         }
         return ret
 
+    def _profile(self):
+        the_profile: Profile
+        pub_k = request.query.pub_k
+        include_contacts: str = request.query.include_contacts
+        include_follows: str = request.query.include_follows
+
+        # will throw if we don't think valid pub_k
+        self._check_pub_key(pub_k)
+        the_profile = self._profile_handler.profiles.get_profile(pub_k)
+        if the_profile is None:
+            raise Exception('no profile found for pub_k - %s' % pub_k)
+
+        ret = the_profile.as_dict()
+
+        c: Contact
+        # add in contacts if asked for
+        if include_contacts.lower() == 'true':
+            the_profile.load_contacts(self._profile_store)
+            ret['contacts'] = [c.contact_public_key for c in the_profile.contacts]
+
+        # add in follows if asked for
+        if include_follows.lower() == 'true':
+            the_profile.load_followers(self._profile_store)
+            ret['follows'] = [c.owner_public_key for c in the_profile.followed_by]
+
+        return json.dumps(ret)
+
     def _contact_list(self):
         pub_k = request.query.pub_k
-        if not pub_k:
-            raise Exception('pub_k is required')
+
+        # will throw if we don't think valid pub_k
+        self._check_pub_key(pub_k)
 
         for_profile = self._profile_handler.profiles.get_profile(pub_k,
                                                                  create_type=ProfileList.CREATE_PUBLIC)
@@ -222,3 +257,11 @@ def nostr_web():
 if __name__ == '__main__':
     logging.getLogger().setLevel(logging.DEBUG)
     nostr_web()
+
+
+    # from nostr.ident.persist import SQLiteProfileStore
+    #
+    # db_file = '%s/.nostrpy/nostr-client.db' % Path.home()
+    # my_profile_store = SQLiteProfileStore(db_file)
+    # my_event_store = SQLiteEventStore(db_file)
+    # my_profile_store.import_contacts_from_events(my_event_store)

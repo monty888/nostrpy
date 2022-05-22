@@ -32,23 +32,6 @@ class util_funcs:
         return ret
 
     @staticmethod
-    def is_nostr_key(key_str):
-        """
-        basic check that key_str is a nostr_key
-        :param key_str:
-        :return:
-        """
-        ret = False
-        if len(key_str) == 64:
-            # and also hex, will throw otherwise
-            try:
-                bytearray.fromhex(key_str)
-                ret = True
-            except:
-                pass
-        return ret
-
-    @staticmethod
     def create_work_dir(top_dir, sub_dir=None):
         def fix_path_str(the_str):
             return the_str.replace(os.path.sep + os.path.sep, os.path.sep)

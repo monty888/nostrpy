@@ -9,6 +9,7 @@ from nostr.event.event import Event
 from db.db import Database, SQLiteDatabase
 from data.data import DataSet
 from nostr.util import util_funcs
+from nostr.encrypt import Keys
 
 
 class ProfileStoreInterface(ABC):
@@ -57,7 +58,7 @@ class ProfileStoreInterface(ABC):
         """
 
     @abstractmethod
-    def contacts(self):
+    def contacts(self, filter):
         """
         :return: contact list that owner_pk is following
         """
@@ -221,13 +222,16 @@ class ProfileStoreInterface(ABC):
         """
 
         # contact lists from events
-        c_list_updates = event_store.get_filter({
-            'since': since,
+        my_event_filter = {
             'kinds': Event.KIND_CONTACT_LIST
-        })
+        }
+        if since is not None:
+            my_event_filter['since'] = since
+
+        c_list_updates = event_store.get_filter(my_event_filter)
 
         # to check if event is newer than what we already have if any
-        existing = self.contacts()
+        existing = self.contacts({})
 
         """
             in the case of contact list when a user updates its done from fresh so we just check that the list
@@ -245,9 +249,16 @@ class ProfileStoreInterface(ABC):
             if is_newer:
 
                 for c_tag in c_evt.tags:
-                    contacts.append(Contact(c_evt.pub_key,
-                                            c_evt.created_at_ticks,
-                                            c_tag))
+                    if c_tag[0] == 'p' and len(c_tag)>1:
+                        contact_pub_k = c_tag[1]
+                        if Keys.is_valid_pubkey(contact_pub_k):
+                            # TODO: relay and pet_name to be added
+                            n_contact = Contact(owner_pub_k=c_evt.pub_key,
+                                                updated_at=c_evt.created_at_ticks,
+                                                contact_pub_k=contact_pub_k)
+
+                            contacts.append(n_contact)
+
                 if contacts:
                     profile_contacts = ContactList(contacts)
                     self.set_contacts(profile_contacts)
@@ -283,7 +294,7 @@ class TransientProfileStore(ProfileStoreInterface):
 
         return ProfileList(profiles)
 
-    def contacts(self):
+    def contacts(self, filter):
         pass
 
     def set_contacts(self, contacts: ContactList):
@@ -475,8 +486,23 @@ class SQLProfileStore(ProfileStoreInterface):
         filter_query = self._get_contacts_sql_filter(filter,
                                                      placeholder=self._db.placeholder)
 
-        return self._db.select_sql(sql=filter_query['sql'],
+        data = self._db.select_sql(sql=filter_query['sql'],
                                    args=filter_query['args'])
+
+        # convert what we got from db into contactlist
+        ret = []
+
+        for c_contact in data:
+            ret.append(
+                Contact(owner_pub_k=c_contact['pub_k_owner'],
+                        updated_at=c_contact['updated_at'],
+                        contact_pub_k=c_contact['pub_k_contact']
+                        # TODO: relay and petname
+                        )
+            )
+
+        return ret
+
 
     def set_contacts(self, contacts: ContactList):
         c_contact: Contact

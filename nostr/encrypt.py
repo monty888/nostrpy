@@ -18,6 +18,47 @@ class KeyEnc(Enum):
     HEX = 2
 
 
+class Keys:
+
+    @staticmethod
+    def get_new_key_pair(priv_key=None):
+        """
+        :param priv_key: private key in hex str format
+        where priv_key is not supplied a new priv key is generated
+
+        :return:
+        {
+            priv_k : hex_str
+            pub_k : hex_str
+        }
+        """
+        if priv_key is None:
+            pk = secp256k1.PrivateKey()
+        else:
+            pk = secp256k1.PrivateKey(bytes(bytearray.fromhex(priv_key)), raw=True)
+
+        return {
+            'priv_k': pk.serialize(),
+            # note pub_k has 02 prefix that you'll probablly want to remove
+            'pub_k': pk.pubkey.serialize(compressed=True).hex()
+        }
+
+    @staticmethod
+    def is_valid_pubkey(key_str):
+        """
+        check that the string looks like a valid nostr pubkey in hex format
+        """
+        ret = False
+        if len(key_str) == 64:
+            # and also hex, will throw otherwise
+            try:
+                bytearray.fromhex(key_str)
+                ret = True
+            except:
+                pass
+        return ret
+
+
 class SharedEncrypt:
 
     def __init__(self, priv_k_hex):

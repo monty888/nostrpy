@@ -16,11 +16,11 @@ if TYPE_CHECKING:
 
 import json
 from json import JSONDecodeError
-import secp256k1
 import logging
 from nostr.event.event import Event
 from datetime import datetime
 from nostr.util import util_funcs
+from nostr.encrypt import Keys
 
 
 class UnknownProfile(Exception):
@@ -28,18 +28,6 @@ class UnknownProfile(Exception):
 
 
 class Profile:
-
-    @classmethod
-    def get_new_key_pair(cls, priv_key=None):
-        if priv_key is None:
-            pk = secp256k1.PrivateKey()
-        else:
-            pk = secp256k1.PrivateKey(priv_key)
-
-        return {
-            'priv_k' : pk.serialize(),
-            'pub_k' : pk.pubkey.serialize(compressed=True).hex()
-        }
 
     def __init__(self, priv_k=None, pub_k=None, attrs=None, profile_name='', update_at=None):
         """
@@ -56,7 +44,9 @@ class Profile:
         """
 
         self._profile_name = profile_name
+
         self._contacts = None
+        self._followed_by = None
         self._priv_k = priv_k
         self._pub_k = pub_k
         self._attrs = attrs
@@ -91,32 +81,36 @@ class Profile:
 
     def load_contacts(self, profile_store: ProfileStoreInterface) -> ContactList:
         if self._contacts is None:
-            contacts = profile_store.contacts({
+            self._contacts = profile_store.contacts({
                 'owner': self.public_key
             })
-            # because the store does't yet give us a contact list
-            my_contacts = []
-            for c_contact in contacts:
-                my_contacts.append(
-                    Contact(owner_pub_k=self.public_key,
-                            updated_at=c_contact['updated_at'],
-                            # need to fix this
-                            args=[
-                                None,
-                                c_contact['pub_k_contact'],
-                                None,
-                                c_contact['alias']
-                            ]
-                            )
-                )
-            self._contacts = ContactList(my_contacts)
+
         return self._contacts
+
+    def load_followers(self, profile_store: ProfileStoreInterface) -> ContactList:
+        # TODO: actually load_contacts and load_followers could be done in a single call
+        #  and then just split the contact list ourself?
+        #  also add method to set_profile_store then contacts/followed_by could just attempt the loads adhoc?
+        if self._followed_by is None:
+            self._followed_by = profile_store.contacts({
+                'contact': self.public_key
+            })
+
+        return self._followed_by
 
     @property
     def contacts(self) -> ContactList:
         if self._contacts is None:
             raise Exception('Profile::contacts - load contacts hasn\'t been called yet for contact %s' % self.display_name())
         return self._contacts
+
+    @property
+    def followed_by(self) -> ContactList:
+        if self._followed_by is None:
+            raise Exception(
+                'Profile::followed_by - load contacts hasn\'t been called yet for contact %s' % self.display_name())
+        return self._followed_by
+
 
     @property
     def name(self):
@@ -143,8 +137,11 @@ class Profile:
         # profile must have be created only with priv_k
         # work out corresponding pub_k
         if not self._pub_k and self._priv_k:
-            pk = secp256k1.PrivateKey(bytes(bytearray.fromhex(self._priv_k)), raw=True)
-            self._pub_k = pk.pubkey.serialize(compressed=True).hex()[2:]
+            # this probably should be part of key in encrypt then we can get rid of secp256 from this file
+            # pk = secp256k1.PrivateKey(bytes(bytearray.fromhex(self._priv_k)), raw=True)
+
+            key_pair = Keys.get_new_key_pair(self._priv_k)
+            self._pub_k = key_pair['pub_k'][2:]
 
         return self._pub_k
 
@@ -354,7 +351,7 @@ class ProfileList:
 
         # we didn't find a profile but we'll see if we can just use as priv key...
         # also fallback we don't have db
-        if not ret and create_type is not None and util_funcs.is_nostr_key(profile_key):
+        if not ret and create_type is not None and Keys.is_valid_pubkey(profile_key):
             if len(profile_key) == 64:
                 if create_type == ProfileList.CREATE_PRIVATE:
                     ret = Profile(priv_k=profile_key,
@@ -373,7 +370,7 @@ class ProfileList:
 
 class Contact:
 
-    def __init__(self, owner_pub_k, updated_at, args):
+    def __init__(self, owner_pub_k, updated_at, contact_pub_k, relay=None, pet_name=None):
         # see https://github.com/fiatjaf/nostr/blob/master/nips/02.md
 
         # the pub key of the profile whose contact list the contact has been created from
@@ -383,15 +380,9 @@ class Contact:
         # this pub key which comes from the event should probably have some basic checks done on it
         # i.e. len, hex str...
 
-        self._contact_pub_k = args[1]
-
-        self._relay = None
-        if len(args) > 2:
-            self._relay = args[2]
-
-        self._petname = None
-        if len(args) > 3:
-            self._petname = args[3]
+        self._contact_pub_k = contact_pub_k
+        self._relay = relay
+        self._petname = pet_name
 
     @property
     def owner_public_key(self):
