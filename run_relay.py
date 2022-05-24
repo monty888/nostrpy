@@ -16,7 +16,6 @@ from toml import TomlDecodeError
 from nostr.relay.relay import Relay
 from nostr.relay.accept_handlers import LengthAcceptReqHandler
 # from nostr.relay.persist import SQLiteStore, MemoryStore, PostgresStore
-
 from nostr.event.persist import RelayMemoryEventStore, RelaySQLiteEventStore, RelayPostgresEventStore
 
 # default values when nothing is specified either from cmd line or config file
@@ -205,7 +204,6 @@ def main():
                                       user=config['pg_user'],
                                       password=config['pg_password'])
     elif config['store'] == 'transient':
-        my_store = MemoryStore()
         my_store = RelayMemoryEventStore()
     else:
         print('--store most be sqlite, postgres or transient')

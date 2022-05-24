@@ -4,10 +4,10 @@ if TYPE_CHECKING:
     pass
 
 import json
+from json import JSONDecodeError
 from bottle import request, Bottle, static_file, abort
 import logging
 from pathlib import Path
-from data.data import DataSet
 from gevent.pywsgi import WSGIServer
 from geventwebsocket import WebSocketError
 from geventwebsocket.handler import WebSocketHandler
@@ -17,6 +17,7 @@ from nostr.ident.persist import SQLiteProfileStore
 from nostr.event.persist import ClientEventStoreInterface, SQLiteEventStore
 from nostr.encrypt import Keys
 
+
 class StaticServer:
     """
         simple server that just deals with the static data html,js, css...
@@ -24,7 +25,6 @@ class StaticServer:
     def __init__(self, file_root):
         self._app = Bottle()
         self._file_root = file_root+'/'
-
 
         """
             basically or statics are the same just ext and name of sub dir and the route text that changes
@@ -93,6 +93,12 @@ class StaticServer:
         server = WSGIServer((host, port), self._app, handler_class=WebSocketHandler)
         server.serve_forever()
 
+    def stop(self):
+        self._app.close()
+
+class NostrWebException(Exception):
+    pass
+
 
 class NostrWeb(StaticServer):
 
@@ -111,20 +117,37 @@ class NostrWeb(StaticServer):
 
         self._add_routes()
 
-    def _add_routes(self):
-        self._app.route('/profile', callback=self._profile)
-        self._app.route('/profiles', callback=self._profiles_list)
-        self._app.route('/contact_list',callback=self._contact_list)
-        self._app.route('/events', method='POST', callback=self._events)
-        self._app.route('/websocket', callback=self._handle_websocket)
+        # to use when no limit given for queries
+        self._default_query_limit = 100
+        # queries will be limited to this even if caller asks for more, None unlimited
+        self._max_query = None
 
-        # obvs improve this and probably move to StaticServer
+    def _add_routes(self):
+        # methods wrapped so that if they raise NostrException it'll be returned as json {error: text}
+        def _get_err_wrapped(method):
+            def _wrapped():
+                try:
+                    return method()
+                except NostrWebException as ne:
+                    return ne.args[0]
+            return _wrapped
+
+        # this is used if method didn't raise nostrexception, do something better in static server
         def my_internal(e):
-            return str(e).replace(',','<br>')
+            return str(e).replace(',', '<br>')
 
         self._app.error_handler = {
             500: my_internal
         }
+
+        self._app.route('/profile', callback=self._profile)
+        self._app.route('/profiles', callback=self._profiles_list)
+        self._app.route('/contact_list',callback=self._contact_list)
+        self._app.route('/events', method='POST', callback=_get_err_wrapped(self._events_route))
+        self._app.route('/text_events', callback=self._text_events_route)
+        self._app.route('/text_events_for_profile', callback=self._text_events_for_profile)
+        self._app.route('/websocket', callback=self._handle_websocket)
+
 
     def _check_pub_key(self, pub_k):
         if not pub_k:
@@ -180,23 +203,101 @@ class NostrWeb(StaticServer):
             'contacts': 'TODO'
         }
 
-    def _events(self):
-        filter = json.loads(request.forms['filter'])
-
+    def _get_events(self, filter):
         events = self._event_store.get_filter(filter)
         c_evt: Event
         ret = []
         for c_evt in events:
             ret.append(c_evt.event_data())
+        return ret
+
+    def _events_route(self):
+        """
+        returns events that match given nostr filter [{},...]
+        :return:
+        """
+
+        try:
+            filter = json.loads(request.forms['filter'])
+        except KeyError as ke:
+            raise NostrWebException({
+                'error': 'filter is undefined?!'
+            })
+        except JSONDecodeError as je:
+            raise NostrWebException({
+                'error': 'unable to decode filter %s' % request.forms['filter']
+            })
+
+        if not hasattr(filter, '__iter__') or isinstance(filter, dict):
+            filter = [filter]
+
+        limit = self._get_query_limit()
+        if limit is not None:
+            if 'limit' not in filter[0] or filter[0]['limit']>limit:
+                filter[0]['limit'] = limit
+
 
         return {
-            'events': ret
+            'events': self._get_events(filter)
+        }
+
+    def _get_query_limit(self):
+        limit = self._default_query_limit
+        try:
+            limit = int(request.query.limit)
+        except:
+            pass
+
+        if self._max_query and limit and limit > self._max_query:
+            limit = self._max_query
+        return limit
+
+    def _text_events_route(self):
+        """
+        all the text notes for a given pub_key
+        :return:
+        """
+        pub_k = request.query.pub_k
+
+        # will throw if we don't think valid pub_k
+        self._check_pub_key(pub_k)
+
+        return {
+            'events': self._get_events({
+                'authors': [pub_k],
+                'kinds': [Event.KIND_TEXT_NOTE],
+                'limit': self._get_query_limit()
+            })
+        }
+
+    def _text_events_for_profile(self):
+        """
+        get texts notes for pub_k or those we have as contacts
+        :return:
+        """
+        pub_k = request.query.pub_k
+
+        # will throw if we don't think valid pub_k
+        self._check_pub_key(pub_k)
+
+        limit = self._get_query_limit()
+
+        for_profile = self._profile_handler.profiles.get_profile(pub_k,
+                                                                 create_type=ProfileList.CREATE_PUBLIC)
+        for_profile.load_contacts(self._profile_store)
+        c: Contact
+
+        print([c.contact_public_key for c in for_profile.contacts])
+
+        return {
+            'events': self._get_events({
+                'authors': [pub_k] + [c.contact_public_key for c in for_profile.contacts],
+                'kinds': [Event.KIND_TEXT_NOTE],
+                'limit': limit
+            })
         }
 
     def do_event(self, sub_id, evt:Event, relay):
-        # store event to db, no err handling...
-        self._persist_event.do_event(sub_id, evt, relay)
-
         for c_sock in self._web_sockets:
             ws = self._web_sockets[c_sock]
             try:
@@ -229,29 +330,33 @@ def nostr_web():
     profile_store = SQLiteProfileStore(nostr_db_file)
     profile_handler = ProfileEventHandler(SQLiteProfileStore(nostr_db_file))
 
-
-    my_server = NostrWeb(file_root='%s/PycharmProjects/nostrpy/web/static/',
+    my_server = NostrWeb(file_root='%s/PycharmProjects/nostrpy/web/static/' % Path.home(),
                          event_store=event_store,
                          profile_store=profile_store,
                          profile_handler=profile_handler)
+
+    from nostr.client.client import ClientPool
+    from datetime import datetime
+    def my_connect(the_client):
+        the_client.subscribe(handlers=my_server, filters={
+            'since': util_funcs.date_as_ticks(datetime.now())
+        })
+
+    my_client = ClientPool(['ws://localhost:8081','wss://nostr-pub.wellorder.net'], on_connect=my_connect)
+    my_client.start()
 
     # example clean exit... need to look into more though
     import signal
     import sys
     def sigint_handler(signal, frame):
+        my_client.end()
         my_server.stop()
         sys.exit(0)
 
     signal.signal(signal.SIGINT, sigint_handler)
 
-
     my_server.start()
 
-
-
-
-    # my_socket = NostrWebsocket()
-    # my_socket.start()
 
 
 if __name__ == '__main__':

@@ -8,27 +8,28 @@
     _pub_k = _params.get('pub_k'),
     // gui objs
         // main container where we'll draw out the events
-        _text_con = $('#feed-pane'),
+        _text_con = $('#text-pane'),
     // data
         _notes_arr,
         _profiles_arr,
         _profiles_lookup,
-        _profile_draw_required = true,
-    // inline media where we can, where false just the link is inserted
-        _enable_media = true;
+        _profile_draw_required = true;
 
     function draw_notes(){
         let tmpl = [
             '{{#notes}}',
                 '<span style="height:60px;width:120px; word-break: break-all; display:table-cell; background-color:#111111" >',
-                    '{{#picture}}',
-                        '<img src="{{picture}}" width="64" height="64" style="object-fit: cover;border-radius: 50%;" />',
-                    '{{/picture}}',
+                    '<span style="display:table-cell">',
+                        '{{#picture}}',
+                            '<img src="{{picture}}" width="64" height="64" style="object-fit: cover;border-radius: 25%;" />',
+                        '{{/picture}}',
+                    '</span>',
+                    '<span style="height:60px; display:table-cell;vertical-align:top" >',
+                        '{{name}}',
+                    '</span>',
                 '</span>',
-                '<span style="height:60px;width:100%; display:table-cell;word-break: break-all;vertical-align:top; background-color:#221124" >',
-                    '<div>',
-                        '<span style="font-weight:bold">{{name}}</span>@shortcode',
-                    '</div>',
+
+                '<span style="height:60px; display:table-cell;word-break: break-all;vertical-align:top; background-color:#551111" >',
                     '{{{content}}}',
                 '</span><br>',
             '{{/notes}}'
@@ -38,11 +39,7 @@
 
         if(_profiles_lookup!==undefined){
             _profile_draw_required = false;
-        }
-        // we don't have the notes yet, profiles must have come back first
-        if(_notes_arr===undefined){
-            return;
-        }
+        };
 
         _notes_arr.forEach(function(c_note){
             let name = c_note['pubkey'],
@@ -93,45 +90,23 @@
             puts in breaklines, todo a for links
         */
         function media_lookup(ref_str){
-            let media_types = {
-                'jpg': 'image',
-                'png': 'image',
-                'mp4': 'video'
-                },
-                parts = ref_str.split('.'),
-                ext = parts[parts.length-1],
-                ret = 'external_link';
-
-            if(ext in media_types && _enable_media){
-                ret = media_types[ext];
-            }
-
-            return ret;
+            let split = ref_str.split('.');
+            return split(split.length-1);
         }
-
-
+        alert('fucking firefox!')
         function note_html(the_note){
             let http_regex = /(https?\:\/\/[\w\.\/\-\%\?\=]*)/g,
                 http_matches,
-                link_tmpl = '<a href="{{url}}">{{url}}</a>',
-                img_tmpl = '<img src="{{url}}" width=640 height=auto style="display:block;" />',
-                video_tmpl = '<video width=640 height=auto style="display:block" controls>' +
-                '<source src="{{url}}" >' +
-                'Your browser does not support the video tag.' +
-                '</video>',
-                tmpl_lookup = {
-                    'image' : img_tmpl,
-                    'external_link' : link_tmpl,
-                    'video' : video_tmpl
-                };
+                link_tmpl = '<a href="{{url}}">{{url}} />',
+                img_tmpl = '<img source="{{url}} />"';
 
             the_note['html'] = the_note['content'].replace(/\n/g,'<br>');
             http_matches = the_note['content'].match(http_regex);
             if(http_matches!==null){
                 http_matches.forEach(function(c_match){
-                    let media_type = media_lookup(c_match);
-//                    alert(media_type);
-                    the_note['html'] = the_note['html'].replace(c_match,Mustache.render(tmpl_lookup[media_type],{
+                    alert(c_match, media_lookup(c_match));
+
+                    the_note['html'] = the_note['html'].replace(c_match,Mustache.render(link_tmpl,{
                         'url' : c_match
                     }));
                 });
@@ -140,7 +115,7 @@
 //            the_note['html'] = the_note['html'].replace(http_regex, '<a href="something"">we replace shit here</a>')
         }
 
-        APP.remote.load_notes_for_profile({
+        APP.remote.load_notes({
             'pub_k': _pub_k,
             'success': function(data){
                 _notes_arr = data['events'];

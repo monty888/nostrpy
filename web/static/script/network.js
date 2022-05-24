@@ -3,19 +3,52 @@ var APP = {};
 
 APP.remote = function(){
     // move all urls here so we can change in future if we want
-    let _note_url = '/notes';
+    let _note_url = '/text_events',
+        _note_for_profile_url = '/text_events_for_profile',
+        _events_by_filter_url = '/events';
 
-    function load_notes(callback, pub_k){
-        // set up the query
-        let url = '/notes';
-        if(pub_k!==undefined){
-            url = url + '?pub_k=' + pub_k
+    function make_params(params){
+        let ret = '',
+            sep = '?',
+            key;
+
+        if(params!==undefined){
+            for(key in params){
+                ret = sep+key+'='+params[key];
+                sep = '&'
+            }
         }
+        return ret;
+    }
 
+    function do_query(args){
+        let url = args['url'],
+            params = make_params(args['params']),
+            method = args['method'] || 'GET',
+            data = args['data'],
+            success = args['success'] || function(data){
+                console.log('load notes success');
+                console.log(data)
+            },
+            error = args['error'] || function(ajax, textstatus, errorThrown){
+                console.log('error loading remote' + url);
+                console.log(ajax.responseText);
+                console.log(errorThrown);
+            },
+            call_args = {
+                method : method,
+                url: url+params,
+                error: error,
+                success: success
+            };
+
+        if(data!==undefined){
+            call_args['data'] = data;
+        }
+        console.log(call_args);
         // make the call
-        $.ajax({
-            url: url
-        }).done(callback);
+        $.ajax(call_args)
+
     }
 
     return {
@@ -32,8 +65,27 @@ APP.remote = function(){
         'load_profile_notes' : function(pub_k, callback){
             load_notes(callback, pub_k)
         },
-        'load_notes' : function(callback){
-            load_notes(callback);
+        'load_notes': function(args){
+            args['url'] = _note_url;
+            args['params'] = {
+                'pub_k' : args['pub_k']
+            },
+            do_query(args);
+        },
+        'load_notes_for_profile': function(args){
+            args['url'] = _note_for_profile_url;
+            args['params'] = {
+                'pub_k' : args['pub_k']
+            },
+            do_query(args);
+        },
+        'load_events' : function(args){
+            args['url'] = _events_by_filter_url;
+            args['method'] = 'POST';
+            args['data'] = 'filter=' + JSON.stringify({
+                'kinds' : [1]
+            });
+            do_query(args);
         }
 
     }

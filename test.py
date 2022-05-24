@@ -1,12 +1,13 @@
 import json
 import logging
+import time
 from datetime import datetime, timedelta
 import cmd
 import hashlib
 import base64
 from db.db import SQLiteDatabase as Database
 from nostr.client.client import Client
-from nostr.event import Event
+from nostr.event.event import Event
 from nostr.client.event_handlers import PrintEventHandler, PersistEventHandler
 # from nostr.client.persist import SQLLiteEventStore
 from nostr.util import util_funcs
@@ -287,7 +288,25 @@ if __name__ == "__main__":
     # test_client_publish(relay_url)
     # test_client_publish_with_persist(relay_url, nostr_db_file)
     # command_line(relay_url, nostr_db_file)
-    test_encrypt()
+    # test_encrypt()
+
+    from nostr.ident.profile import Profile,ProfileEventHandler
+    from nostr.ident.persist import SQLiteProfileStore
+
+    peh = ProfileEventHandler(SQLiteProfileStore(nostr_db_file))
+    my_profile = peh.profiles.lookup_profilename('firedragon888')
+
+    with Client('ws://localhost:8081') as my_client:
+        i = 0
+        while True:
+            if my_client.connected:
+                n_evt = Event(kind=Event.KIND_TEXT_NOTE,
+                              content='test event: %s' % i,
+                              pub_key=my_profile.public_key)
+                n_evt.sign(my_profile.private_key)
+                i += 1
+                my_client.publish(n_evt)
+            # time.sleep(0.5)
 
     # NOTE: each event is json but the file structure isn't correct json there are \n between each event
     # events_backup(relay_url, backup_dir+'events.json')
