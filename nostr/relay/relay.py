@@ -177,9 +177,10 @@ class Relay:
             if ws.closed:
                 to_rem.append(ws)
 
-        with self._lock:
-            for c_rem in to_rem:
-                del self._ws[c_rem]
+        if to_rem:
+            with self._lock:
+                for c_rem in to_rem:
+                    del self._ws[c_rem]
 
     def _check_subs(self, evt):
         """

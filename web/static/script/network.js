@@ -65,7 +65,7 @@ APP.remote = function(){
         'load_profile_notes' : function(pub_k, callback){
             load_notes(callback, pub_k)
         },
-        'load_notes': function(args){
+        'load_notes_from_profile': function(args){
             args['url'] = _note_url;
             args['params'] = {
                 'pub_k' : args['pub_k']

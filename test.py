@@ -306,7 +306,7 @@ if __name__ == "__main__":
                 n_evt.sign(my_profile.private_key)
                 i += 1
                 my_client.publish(n_evt)
-            # time.sleep(0.5)
+            time.sleep(0.01)
 
     # NOTE: each event is json but the file structure isn't correct json there are \n between each event
     # events_backup(relay_url, backup_dir+'events.json')

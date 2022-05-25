@@ -197,7 +197,7 @@ class PersistEventHandler:
         try:
             self._store.add_event_relay(evt, relay)
         except Exception as e:
-            print(e)
+            logging.debug('PersistEventHandler::do_event error persisting event %s - %s' % (evt.id, e))
             # most likely because we already have, we could though add a table that
             # linking evets with every relay we saw them from
 

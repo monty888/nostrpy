@@ -6,6 +6,7 @@ import logging
 import sys
 import time
 import websocket
+from gevent import Greenlet
 from collections import OrderedDict
 from websocket._exceptions import WebSocketConnectionClosedException
 import json
@@ -205,13 +206,20 @@ class Client:
             logging.debug('Network::_on_message unexpected type %s' % type)
 
     def _do_events(self, sub_id, message):
+        the_evt: Event
+
         if sub_id in self._handlers:
-            for c_handler in self._handlers[sub_id]:
-                try:
-                    c_handler.do_event(sub_id, Event.create_from_JSON(message[2]), self._url)
-                except Exception as e:
-                    # TODO: add name property to handlers
-                    logging.debug('Client::_do_events in handler %s - %s' % (c_handler, e))
+            try:
+                the_evt = Event.create_from_JSON(message[2])
+                for c_handler in self._handlers[sub_id]:
+                    try:
+                        c_handler.do_event(sub_id, the_evt, self._url)
+                    except Exception as e:
+                        logging.debug('Client::_do_events in handler %s - ' % ( c_handler, e))
+
+            except Exception as e:
+                # TODO: add name property to handlers
+                logging.debug('Client::_do_events %s' % (e))
         else:
             logging.debug(
                 'Client::_on_message event for subscription with no handler registered subscription : %s\n event: %s' % (
