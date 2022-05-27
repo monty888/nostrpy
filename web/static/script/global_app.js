@@ -49,18 +49,5 @@
         });
         // to see events as they happen
         start_client();
-
-    }).on('click', function(e){
-        let id = APP.nostr.gui.get_clicked_id(e),
-            parts,
-            p_idents = new Set(['pp','pt']);
-
-        if(id!==null){
-            parts = id.split('-');
-            if(parts.length>1 && p_idents.has(parts[1])){
-                location.href = '/html/profile?pub_k='+parts[0];
-            }
-
-        }
     });
 }();

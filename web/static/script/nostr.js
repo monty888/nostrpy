@@ -141,6 +141,10 @@ APP.nostr.gui.event_view = function(){
         // not that currently only applied on add, the list you create with is assumed to already be filtered
         // like nostr filter but minimal impl just for what we need
         _sub_filter,
+        // gui to click func map
+        _click_map = {},
+        // cache of tag replacement regexs
+        _preregex = {},
         // template for individual event in the view, styleing should move to css and classes
         _row_tmpl = [
             '{{#notes}}',
@@ -148,22 +152,24 @@ APP.nostr.gui.event_view = function(){
                 '<span style="height:60px;width:120px; word-break: break-all; display:table-cell; background-color:#111111;padding-right:10px;" >',
                     // TODO: do something if unable to load pic
                     '{{#picture}}',
-                        '<img id="{{pub_k}}-pp" src="{{picture}}" width="64" height="64" style="object-fit: cover;border-radius: 50%;cursor:pointer;" />',
+                        '<img id="{{id}}-pp" src="{{picture}}" width="64" height="64" style="object-fit: cover;border-radius: 50%;cursor:pointer;" />',
                     '{{/picture}}',
                     // if no picture, again do something here
                     '{{^picture}}',
-                        '<div style="height:60px;width:64px">no pic</div>',
+                        '<div id="{{id}}-pp" style="height:60px;width:64px">no pic</div>',
                     '{{/picture}}',
                 '</span>',
                 '<span style="height:60px;width:100%; display:table-cell;word-break: break-all;vertical-align:top; background-color:#221124" >',
-                    '<div id="{{pub_k}}-pt" style="cursor:pointer; border-bottom: 1px solid #443325;">',
-                        '{{#name}}',
-                            '<span style="font-weight:bold">{{name}}</span>@<span style="color:cyan">{{short_key}}</span>',
-                        '{{/name}}',
-                        '{{^name}}',
-                            '<span style="span style="color:cyan;font-weight:bold">{{short_key}}</span>',
-                        '{{/name}}',
-                        '<span style="float:right">{{at_time}}</span>',
+                    '<div border-bottom: 1px solid #443325;">',
+                        '<span id="{{id}}-pt" style="cursor:pointer" >',
+                            '{{#name}}',
+                                '<span style="font-weight:bold">{{name}}</span>@<span style="color:cyan">{{short_key}}</span>',
+                            '{{/name}}',
+                            '{{^name}}',
+                                '<span style="color:cyan;font-weight:bold">{{short_key}}</span>',
+                            '{{/name}}',
+                        '</span>',
+                        '<span id="{{id}}-time" style="float:right">{{at_time}}</span>',
                     '</div>',
                     '{{{content}}}',
                 '</span>',
@@ -171,10 +177,29 @@ APP.nostr.gui.event_view = function(){
             '{{/notes}}'
         ].join('');
 
+    function _profile_clicked(pub_k){
+        location.href = '/html/profile?pub_k='+pub_k;
+    }
+
+    function _add_click_funcs(for_content){
+        let profile_click = {
+            'func' : _profile_clicked,
+            'data' : for_content.pub_k
+        }
+        // left profile img
+        _click_map[for_content.id+'-pp'] = profile_click;
+        // profile text
+        _click_map[for_content.id+'-pt'] = profile_click;
+
+    }
+
     function _create_contents(){
-        _render_arr = []
+        _render_arr = [];
+        _click_map = {};
         _notes_arr.forEach(function(c_note){
-            _render_arr.push(_note_content(c_note));
+            let add_content = _note_content(c_note);
+            _render_arr.push(add_content);
+            _add_click_funcs(add_content);
         });
     };
 
@@ -184,7 +209,9 @@ APP.nostr.gui.event_view = function(){
             attrs,
             pub_k = the_note['pubkey'],
             to_add = {
-                'content' : get_note_html(the_note),
+                'evt': the_note,
+                'id' : APP.nostr.gui.uid(),
+                'content' : do_tag_replacement(get_note_html(the_note), the_note.tags),
                 'short_key' : APP.nostr.util.short_key(pub_k),
                 'pub_k' : pub_k,
                 'picture' : APP.nostr.gui.robo_images.get_url({
@@ -277,6 +304,37 @@ APP.nostr.gui.event_view = function(){
         return ret;
     };
 
+    /*
+        does replacement of #[n] for pub tags in text
+        pretty rough at the moment, the click to is done as a tag rather than our own clicker which may
+        cause problems in future...(because with replaceall style we can give each instance if more than one a unique id,
+        though browser don't actually seem to care...)
+    */
+    function do_tag_replacement(text, tags){
+        tags.forEach(function(ct, i){
+            if((ct[0]=='p')&&(ct.length>0)){
+                let regex = _preregex[i],
+                    replace_text = APP.nostr.util.short_key(ct[1]),
+                    profile;
+
+                if(_profiles.is_loaded()){
+                    profile = _profiles.lookup(ct[1]);
+                    if(profile!==undefined && profile.attrs.name!==undefined){
+                        replace_text = profile.attrs.name;
+                    }
+
+                }
+
+                if(regex===undefined){
+                    regex = new RegExp('#\\['+i+'\\]','g');
+                    _preregex[i] = regex;
+                }
+                text = text.replace(regex,'<a href="/html/profile?pub_k='+ct[1]+'" style="color:cyan;cursor:pointer;text-decoration: none;;">' + replace_text +'</a>');
+            }
+        });
+        return text;
+    };
+
     function create(args){
         _con = args.con;
         _enable_media = args.enable_media!==undefined ? args.enable_media : false;
@@ -302,6 +360,18 @@ APP.nostr.gui.event_view = function(){
             }
         }
 
+        function _time_update(){
+            _render_arr.forEach(function(c){
+                let id = c.id,
+                    ntime = dayjs.unix(c['evt'].created_at).fromNow();
+
+                // update in render obj, at the moment it never gets reused anyhow
+                c['at_time'] = ntime;
+                // actually update onscreen
+                $('#'+id+'-time').html(ntime);
+            });
+        }
+
         /*
             minimal filter implementation, only testing note of correct kind and authorship
             for a single filter {}
@@ -319,12 +389,15 @@ APP.nostr.gui.event_view = function(){
 
         function add_note(evt){
             if(_test_filter(evt)){
+                let add_content = _note_content(evt);
                 // just insert the new event
                 _notes_arr.unshift(evt);
-                _render_arr.unshift(_note_content(evt));
+                _render_arr.unshift(add_content);
                 _con.prepend(Mustache.render(_row_tmpl,{
                     'notes' : [_render_arr[0]]
                 }));
+
+                _add_click_funcs(add_content);
             }
         }
 
@@ -334,6 +407,17 @@ APP.nostr.gui.event_view = function(){
             }));
         };
 
+
+        // listen for clicks
+        $(_con).on('click', function(e){
+            let id = APP.nostr.gui.get_clicked_id(e);
+            if(_click_map[id]!==undefined){
+                _click_map[id].func(_click_map[id].data);
+            }
+        });
+
+        // update the since every 30s
+        setInterval(_time_update, 1000*30);
 
         // methods for event_view obj
         return {
