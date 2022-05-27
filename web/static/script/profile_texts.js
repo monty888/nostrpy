@@ -4,20 +4,33 @@
     show all texts type events as they come in
 */
 !function(){
-    // websocket to recieve event updates
+        // websocket to recieve event updates
     let _client,
-    // gui objs
-        // main container where we'll draw out the events
-        _text_con = $('#feed-pane'),
         // url params
         _params = new URLSearchParams(window.location.search),
         _pub_k = _params.get('pub_k'),
-    // data
+        // inline media where we can, where false just the link is inserted
+        _enable_media = true,
+        // gui objs
+        // main container where we'll draw out the events
+        _text_con = $('#feed-pane'),
+        // the feed obj
         _my_event_view = APP.nostr.gui.event_view.create({
-            'con' : _text_con
+            'con': _text_con,
+            'enable_media': _enable_media,
+            'filter' : {
+                'kinds': new Set([1]),
+                'authors': new Set([_pub_k])
+            }
         }),
-    // inline media where we can, where false just the link is inserted
-        _enable_media = true;
+        // about this profile con
+        _profile_con = $('#about-pane'),
+        // the head obj
+        _my_head = APP.nostr.gui.profile_about.create({
+            'con': _profile_con,
+            'pub_k': _pub_k,
+            'enable_media': _enable_media
+        });
 
     function start_client(){
         APP.nostr_client.create('ws://localhost:8080/websocket', function(client){
@@ -45,18 +58,19 @@
         });
     }
 
-    function load_profiles(){
-        APP.remote.load_profiles(function(data){
-            _my_event_view.set_profiles(data['profiles']);
-        });
-    }
-
     // start when everything is ready
     $(document).ready(function() {
         // start client for future notes....
         load_notes();
-        // obvs this way of doing profile lookups isn't going to scale...
-        load_profiles();
+        // init the profiles data
+        APP.nostr.data.profiles.init({
+            'on_load' : function(){
+                _my_head.profiles_loaded({
+                    'pub_k' : _pub_k
+                });
+                _my_event_view.profiles_loaded();
+            }
+        });
         // to see events as they happen
         start_client();
     });

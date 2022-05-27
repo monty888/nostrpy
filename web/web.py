@@ -165,7 +165,7 @@ class NostrWeb(StaticServer):
         the_profile: Profile
         pub_k = request.query.pub_k
         include_contacts: str = request.query.include_contacts
-        include_follows: str = request.query.include_follows
+        include_followers: str = request.query.include_followers
 
         # will throw if we don't think valid pub_k
         self._check_pub_key(pub_k)
@@ -182,11 +182,11 @@ class NostrWeb(StaticServer):
             ret['contacts'] = [c.contact_public_key for c in the_profile.contacts]
 
         # add in follows if asked for
-        if include_follows.lower() == 'true':
+        if include_followers.lower() == 'true':
             the_profile.load_followers(self._profile_store)
-            ret['follows'] = [c.owner_public_key for c in the_profile.followed_by]
+            ret['followed_by'] = [c.owner_public_key for c in the_profile.followed_by]
 
-        return json.dumps(ret)
+        return ret
 
     def _contact_list(self):
         pub_k = request.query.pub_k
@@ -286,8 +286,6 @@ class NostrWeb(StaticServer):
                                                                  create_type=ProfileList.CREATE_PUBLIC)
         for_profile.load_contacts(self._profile_store)
         c: Contact
-
-        print([c.contact_public_key for c in for_profile.contacts])
 
         return {
             'events': self._get_events({

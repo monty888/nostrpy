@@ -5,7 +5,11 @@ APP.remote = function(){
     // move all urls here so we can change in future if we want
     let _note_url = '/text_events',
         _note_for_profile_url = '/text_events_for_profile',
-        _events_by_filter_url = '/events';
+        _events_by_filter_url = '/events',
+        // this will probably need to change in future
+        _all_profiles = '/profiles',
+        // details on a single profile
+        _profile_url = '/profile';
 
     function make_params(params){
         let ret = '',
@@ -14,10 +18,11 @@ APP.remote = function(){
 
         if(params!==undefined){
             for(key in params){
-                ret = sep+key+'='+params[key];
+                ret += sep+key+'='+params[key];
                 sep = '&'
             }
         }
+
         return ret;
     }
 
@@ -45,26 +50,33 @@ APP.remote = function(){
         if(data!==undefined){
             call_args['data'] = data;
         }
-        console.log(call_args);
         // make the call
         $.ajax(call_args)
 
     }
 
     return {
-        'load_profiles' : function(callback){
-            $.ajax({
-                url: '/profiles'
-            }).done(callback);
+        'load_profiles' : function(args){
+            args['url'] = _all_profiles;
+            do_query(args);
         },
-        'load_profile_contacts' : function(pub_k,callback){
-            $.ajax({
-                url: '/contact_list?pub_k=' + pub_k
-            }).done(callback);
+        'load_profile' : function(args){
+            args['url'] = _profile_url;
+            args['params'] = {
+                'pub_k' : args['pub_k'],
+                'include_followers': args.include_followers!==undefined ? args.include_followers : false,
+                'include_contacts': args.include_contacts!==undefined ? args.include_contacts : false
+            };
+            do_query(args);
         },
-        'load_profile_notes' : function(pub_k, callback){
-            load_notes(callback, pub_k)
-        },
+//        'load_profile_contacts' : function(pub_k,callback){
+//            $.ajax({
+//                url: '/contact_list?pub_k=' + pub_k
+//            }).done(callback);
+//        },
+//        'load_profile_notes' : function(pub_k, callback){
+//            load_notes(callback, pub_k)
+//        },
         'load_notes_from_profile': function(args){
             args['url'] = _note_url;
             args['params'] = {
@@ -76,7 +88,8 @@ APP.remote = function(){
             args['url'] = _note_for_profile_url;
             args['params'] = {
                 'pub_k' : args['pub_k']
-            },
+            };
+
             do_query(args);
         },
         'load_events' : function(args){

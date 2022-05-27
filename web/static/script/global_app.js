@@ -4,17 +4,16 @@
     show all texts type events as they come in
 */
 !function(){
-    // websocket to recieve event updates
+        // websocket to recieve event updates
     let _client,
-    // gui objs
+        // inline media where we can, where false just the link is inserted
+        _enable_media = true,
         // main container where we'll draw out the events
         _text_con = $('#feed-pane'),
-    // data
         _my_event_view = APP.nostr.gui.event_view.create({
-            'con' : _text_con
-        }),
-    // inline media where we can, where false just the link is inserted
-        _enable_media = true;
+            'con' : _text_con,
+            'enable_media': _enable_media
+        });
 
     function start_client(){
         APP.nostr_client.create('ws://localhost:8080/websocket', function(client){
@@ -38,40 +37,30 @@
         });
     }
 
-    function load_profiles(){
-        APP.remote.load_profiles(function(data){
-            _my_event_view.set_profiles(data['profiles']);
-        });
-    }
-
     // start when everything is ready
     $(document).ready(function() {
         // start client for future notes....
         load_notes();
-        // obvs this way of doing profile lookups isn't going to scale...
-        load_profiles();
+        // init the profiles data
+        APP.nostr.data.profiles.init({
+            'on_load' : function(){
+                _my_event_view.profiles_loaded();
+            }
+        });
         // to see events as they happen
         start_client();
 
-
-
     }).on('click', function(e){
-        // temp actually we want to lookup to find an id and return the whole thing
-        function get_clicked_id(el){
-            let ret = null,
-                parts
-            if(el.id!==undefined){
-                parts = el.id.split('-');
-                ret = parts[0];
-            }
-            return ret;
-        }
-
-        let el = e.target,
-            id = get_clicked_id(el);
+        let id = APP.nostr.gui.get_clicked_id(e),
+            parts,
+            p_idents = new Set(['pp','pt']);
 
         if(id!==null){
-            location.href = '/html/profile?pub_k='+id;
+            parts = id.split('-');
+            if(parts.length>1 && p_idents.has(parts[1])){
+                location.href = '/html/profile?pub_k='+parts[0];
+            }
+
         }
     });
 }();
