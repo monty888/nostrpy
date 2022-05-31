@@ -6,6 +6,7 @@ APP.remote = function(){
     let _note_url = '/text_events',
         _note_for_profile_url = '/text_events_for_profile',
         _events_by_filter_url = '/events',
+        _events_by_seach_str = '/events_text_search',
         // this will probably need to change in future
         _all_profiles = '/profiles',
         // details on a single profile
@@ -182,7 +183,15 @@ APP.remote = function(){
                 'kinds' : [1]
             });
             do_query(args);
+        },
+        'text_events_search' : function(args){
+            args['url'] = _events_by_seach_str;
+            args['params'] = {
+                'search_str' : args['search_str']
+            };
+            do_query(args);
         }
+
 
     }
 }();

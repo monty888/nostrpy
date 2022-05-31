@@ -144,6 +144,7 @@ class NostrWeb(StaticServer):
         self._app.route('/profiles', callback=self._profiles_list)
         self._app.route('/contact_list',callback=self._contact_list)
         self._app.route('/events', method='POST', callback=_get_err_wrapped(self._events_route))
+        self._app.route('/events_text_search', callback=_get_err_wrapped(self._events_text_search_route))
         self._app.route('/text_events', callback=self._text_events_route)
         self._app.route('/text_events_for_profile', callback=self._text_events_for_profile)
         self._app.route('/websocket', callback=self._handle_websocket)
@@ -299,6 +300,18 @@ class NostrWeb(StaticServer):
             'events': self._get_events(filter)
         }
 
+    def _events_text_search_route(self):
+        search_str = request.query.search_str
+        limit = self._get_query_limit()
+        evts = []
+        if search_str != '':
+            evts = [c_evt.event_data() for c_evt in self._event_store.get_text(search_str, limit)]
+
+        return {
+            'events': evts
+        }
+
+
     def _get_query_limit(self):
         limit = self._default_query_limit
         try:
@@ -380,9 +393,7 @@ def nostr_web():
     nostr_db_file = '%s/.nostrpy/nostr-client.db' % Path.home()
 
     from nostr.util import util_funcs
-    util_funcs.create_sqlite_store(nostr_db_file)
-
-    event_store = SQLiteEventStore(nostr_db_file)
+    event_store = util_funcs.create_sqlite_store(nostr_db_file, True)
     profile_store = SQLiteProfileStore(nostr_db_file)
     profile_handler = ProfileEventHandler(SQLiteProfileStore(nostr_db_file))
 
@@ -410,10 +421,7 @@ def nostr_web():
         sys.exit(0)
 
     signal.signal(signal.SIGINT, sigint_handler)
-
     my_server.start()
-
-
 
 if __name__ == '__main__':
     logging.getLogger().setLevel(logging.DEBUG)

@@ -206,8 +206,8 @@ class ClientMemoryEventStore(MemoryEventStore, ClientEventStoreInterface):
 
 class SQLEventStore(EventStoreInterface):
 
-    @classmethod
-    def make_filter_sql(cls, filters, placeholder='?'):
+    @staticmethod
+    def _make_filter_sql(filters, placeholder='?'):
         """
         creates the sql to select events from a db given nostr filter
         :param filter:
@@ -309,11 +309,30 @@ class SQLEventStore(EventStoreInterface):
             'args': args
         }
 
+    @staticmethod
+    def _events_data_to_event_arr(data) -> [Event]:
+        """
+        :param data: from db query should have event fields head at min
+        :return: [Events]
+        """
+        ret = []
+        for c_r in data:
+            ret.append(Event(
+                id=c_r['event_id'],
+                pub_key=c_r['pubkey'],
+                kind=c_r['kind'],
+                content=c_r['content'],
+                tags=c_r['tags'],
+                created_at=util_funcs.ticks_as_date(c_r['created_at']),
+                sig=c_r['sig']
+            ))
+        return ret
+
     def __init__(self, db: Database, delete_mode=DeleteMode.DEL_FLAG):
         self._delete_mode = delete_mode
         self._db = db
 
-    def add_event(self, evt: Event):
+    def _prepare_add_event_batch(self, evt: Event):
         batch = []
         # META and CONTACT_LIST event type supercede any previous events of same type, so if this event is newer
         # then we'll delete all pre-existing
@@ -361,17 +380,20 @@ class SQLEventStore(EventStoreInterface):
                 batch.append({
                     # 'sql': 'insert into event_tags SELECT last_insert_rowid(),?,?',
                     'sql': """
-                                        insert into event_tags values (
-                                        (select id from events where event_id=%s),
-                                        %s,
-                                        %s)
-                                    """.replace('%s', self._db.placeholder),
+                                                insert into event_tags values (
+                                                (select id from events where event_id=%s),
+                                                %s,
+                                                %s)
+                                            """.replace('%s', self._db.placeholder),
                     'args': [evt.id, tag_type, tag_value]
                 })
 
-        self._db.execute_batch(batch)
+        return batch
 
-    def get_filter(self, filter):
+    def add_event(self, evt: Event):
+        self._db.execute_batch(self._prepare_add_event_batch(evt))
+
+    def get_filter(self, filter) -> [Event]:
         """
         from database returns events that match filter/s
         doesn't do #e and #p filters yet (maybe never)
@@ -379,37 +401,30 @@ class SQLEventStore(EventStoreInterface):
         :param filter: {} or [{},...] or filters
         :return:
         """
-        filter_query = SQLEventStore.make_filter_sql(filter,
-                                                     placeholder=self._db.placeholder)
+        filter_query = SQLEventStore._make_filter_sql(filter,
+                                                      placeholder=self._db.placeholder)
 
         # print(filter_query['sql'], filter_query['args'])
 
         data = self._db.select_sql(sql=filter_query['sql'],
                                    args=filter_query['args'])
-        ret = []
-        for c_r in data:
-            # we could actually do extra filter here
-            ret.append(Event(
-                id=c_r['event_id'],
-                pub_key=c_r['pubkey'],
-                kind=c_r['kind'],
-                content=c_r['content'],
-                tags=c_r['tags'],
-                created_at=util_funcs.ticks_as_date(c_r['created_at']),
-                sig=c_r['sig']
-            ))
-        return ret
 
-    def do_delete(self, evt: Event):
+        return self._events_data_to_event_arr(data)
+
+    def _prepare_delete_batch(self, evt: Event):
+        batch = []
         if self._delete_mode == DeleteMode.DEL_NO_ACTION:
-            return
+            return batch
         to_delete = evt.e_tags
 
         # only flag as deleted
         if self._delete_mode == DeleteMode.DEL_FLAG:
-            ret = self._db.execute_sql(sql='update events set deleted=true where event_id in (%s) and kind<>?' %
-                                           ','.join(['?'] * len(to_delete)),
-                                       args=to_delete + [Event.KIND_DELETE])
+            batch.append({
+                'sql': 'update events set deleted=true where event_id in (%s) and kind<>?' %
+                       ','.join(['?'] * len(to_delete)),
+                'args': to_delete + [Event.KIND_DELETE]
+
+            })
         # actually delete
         elif self._delete_mode == DeleteMode.DEL_DELETE:
             batch = [
@@ -424,8 +439,14 @@ class SQLEventStore(EventStoreInterface):
                     'args': to_delete + [Event.KIND_DELETE]
                 }
             ]
-            ret = self._db.execute_batch(batch)
 
+        return batch
+
+    def do_delete(self, evt: Event):
+        ret = None
+        batch = self._prepare_delete_batch(evt)
+        if batch:
+            ret = self._db.execute_batch(batch)
         return ret
 
 
@@ -434,8 +455,7 @@ class SQLiteEventStore(SQLEventStore):
         SQLite implementation of RelayStoreInterface
 
     """
-
-    _create_batch = [
+    CREATE_SQL_BATCH = [
         {
             'sql':
                 """
@@ -462,14 +482,14 @@ class SQLiteEventStore(SQLEventStore):
         }
     ]
 
-    def __init__(self, db_file, delete_mode=DeleteMode.DEL_FLAG):
+    def __init__(self, db_file, delete_mode=DeleteMode.DEL_FLAG, full_text=False):
         super().__init__(SQLiteDatabase(db_file),
                          delete_mode=delete_mode)
         logging.debug('SQLiteStore::__init__ db_file=%s, delete mode=%s' % (db_file,
                                                                             self._delete_mode))
 
     def create(self):
-        self._db.execute_batch(self._create_batch)
+        return self._db.execute_batch(SQLiteEventStore.CREATE_SQL_BATCH)
 
     def exists(self):
         return Path(self._db.file).is_file()
@@ -610,7 +630,7 @@ class ClientSQLEventStore(SQLEventStore, ClientEventStoreInterface):
             if not hasattr(kinds, '__iter__') or isinstance(kinds, str):
                 kinds = [kinds]
             sql_arr.append(' and e.kind in (%s)' % ','.join([self._db.placeholder]*len(kinds)))
-            args =args + kinds
+            args = args + kinds
 
         sql_arr.append(' order by created_at desc limit 1')
         my_sql = ''.join(sql_arr)
@@ -632,26 +652,72 @@ class ClientSQLEventStore(SQLEventStore, ClientEventStoreInterface):
         except IntegrityError as ie:
             self._db.execute_sql('insert into event_relay values ((select id from events where event_id=?), ?)', args=[evt.id, relay_url])
 
+
 class ClientSQLiteEventStore(SQLiteEventStore, ClientSQLEventStore,  ClientEventStoreInterface):
 
-    def __init__(self, db_file):
+    """
+        experimental for full text search only doing in sqllite at the monent and only for the client
+        as its not required for the relay to support anything other than nostr filtered based queries
+        it won't be standard anyway so postgres (and in mem) will need to be done in own style
+        where we don't fulltext is false we'll just provide something via like query
+    """
+    FTS_CONTENT_TABLE_CREATE_SQL = {
+        'sql': """
+            CREATE VIRTUAL TABLE event_content
+            USING FTS5(id,content);
+        """
+    }
+
+    # client stores info about which relays we saw events from
+    RELAY_TABLE_SQL = {
+        'sql': """
+            create table event_relay(
+                id int,  
+                relay_url text,
+                UNIQUE(id, relay_url) ON CONFLICT IGNORE
+                )
+        """
+    }
+
+    def __init__(self, db_file, full_text=True):
         self._db_file = db_file
+        self._full_text = full_text
+
+        logging.debug('Experimental client sqllite fulltext search: %s' % self._full_text)
         super().__init__(db_file)
-        self._create_batch.append(
-            {
-                'sql': """
-                                create table event_relay(
-                                    id int,  
-                                    relay_url text,
-                                    UNIQUE(id, relay_url) ON CONFLICT IGNORE
-                                    )
-                            """
-            }
-        )
-        logging.debug('SQLiteStore::__init__ db_file=%s' % db_file)
 
-    def exists(self):
-        return Path(self._db.file).is_file()
+    def create(self):
+        create_batch = ClientSQLiteEventStore.CREATE_SQL_BATCH + [ClientSQLiteEventStore.RELAY_TABLE_SQL]
+        if self._full_text:
+            create_batch.append(ClientSQLiteEventStore.FTS_CONTENT_TABLE_CREATE_SQL)
 
-    def destroy(self):
-        os.remove(self._db_file)
+        self._db.execute_batch(create_batch)
+
+    """
+        search of event content, eventually to be part of the client store interface...
+    """
+    def get_text(self, the_text, limit=None):
+
+
+        # ideally full text search is enabled and the table event_content has been created
+        # and content for kind1/text notes is being added here
+        if self._full_text:
+            my_sql = """
+                        select e.* from events e 
+                            inner join event_content ec on e.id=ec.id
+                            where ec.content match ?
+                            order by created_at desc
+                    """
+
+            # we'll just take this as is which mean user can do ands/or etc. we're binding so should be ok
+            # though expect we still might want to do some sanity check here....
+            args = [the_text]
+            if limit:
+                my_sql += ' limit ?'
+                args.append(limit)
+
+            data = self._db.select_sql(sql=my_sql,
+                                       args=args)
+            return SQLEventStore._events_data_to_event_arr(data)
+        else:
+            raise Exception('fuck to implement fullback like styleee')

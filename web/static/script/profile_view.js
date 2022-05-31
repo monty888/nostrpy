@@ -49,10 +49,14 @@
         APP.remote.load_notes_from_profile({
             'pub_k' : _pub_k,
             'success': function(data){
-                if(data['error']!==undefined){
-                    alert(data['error']);
-                }else{
-                    _my_event_view.set_notes(data['events']);
+                try{
+                    if(data['error']!==undefined){
+                        alert(data['error']);
+                    }else{
+                        _my_event_view.set_notes(data['events']);
+                    }
+                }catch(e){
+                    console.log(e)
                 }
             }
         });

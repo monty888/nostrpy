@@ -1,0 +1,28 @@
+body {
+    height:100vh;
+    font-family : courier;
+}
+
+.profile-pic-large, .profile-pic-small{
+    object-fit: cover;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.profile-pic-large{
+    width: 128px;
+    height: 128px;
+}
+
+.profile-pic-small{
+    width: 64px;
+    height: 64px;
+}
+
+.profile-about-label{
+    display:table-cell;
+    width:120px;
+    font-weight:bold;
+}
+
+

@@ -2,7 +2,18 @@
 APP.nostr = {
     'data' : {},
     'gui' : function(){
-        let _id=0;
+        let _id=0,
+            // templates for rendering different media
+            // external_link
+            _link_tmpl = '<a href="{{url}}">{{url}}</a>',
+            // image types e.g. jpg, png
+            _img_tmpl = '<img src="{{url}}" width=640 height=auto style="display:block;" />',
+            // video
+            _video_tmpl = '<video width=640 height=auto style="display:block" controls>' +
+            '<source src="{{url}}" >' +
+            'Your browser does not support the video tag.' +
+            '</video>';
+
         return {
             // a unique id in this page
             'uid' : function(){
@@ -23,9 +34,64 @@ APP.nostr = {
                     ret = el.id;
                 }
                 return ret;
+            },
+            /*
+                for given ext returns media type which tells us how to render the content
+                anything not understood is returned as external_link and will be rendered as <a> tag
+            */
+            'media_lookup': function media_lookup(ref_str){
+                let media_types = {
+                    'jpg': 'image',
+                    'gif': 'image',
+                    'png': 'image',
+                    'mp4': 'video'
+                    },
+                    parts = ref_str.split('.'),
+                    ext = parts[parts.length-1],
+                    ret = 'external_link';
+
+                if(ext in media_types){
+                    ret = media_types[ext];
+                }
+                return ret;
+            },
+            'http_media_tags_into_text' : function(text, enable_media, tmpl_lookup){
+                // first make the text safe
+                let ret = APP.nostr.util.html_escape(text),
+                    // look for link like strs
+                    http_matches = APP.nostr.util.http_matches(ret);
+
+                    /* by default everything, if enable_media is false everything will be rendered
+                     as external_link, perhaps enable even this level to be turn off
+                     or just dont call and just make text safe ... maybe enable media should
+                     be changed from true/false
+                        0 - no media whatsoever and text rendered unclickable (user has to physically copy paste)
+                        1 - no media but hrefs are still rendered
+                        2 - external media rendered where wee can, links otherwise
+                        (0 could also just give yes/no alert?)
+                     */
+                    tmpl_lookup = tmpl_lookup || {
+                        'image' : _img_tmpl,
+                        'external_link' : _link_tmpl,
+                        'video' : _video_tmpl
+                    };
+                    enable_media = enable_media || true
+
+                    // and do replacements in the text
+                    // do inline media and or link replacement
+                    if(http_matches!==null){
+                        http_matches.forEach(function(c_match){
+                            // how to render, unless enable media is false in which case just the link is out put
+                            // another level of safety would be that these links are rendered inactive and need the user
+                            // to perform some action to actaully enable them
+                            let media_type = enable_media===true ? APP.nostr.gui.media_lookup(c_match) : 'external_link';
+                            ret = ret.replace(c_match,Mustache.render(tmpl_lookup[media_type],{
+                                'url' : c_match
+                            }));
+                        });
+                    }
+                    return ret;
             }
-
-
         };
     }(),
     'util' : {
@@ -38,7 +104,12 @@ APP.nostr = {
                 replaceAll('>', '&gt;').
                 replaceAll('"', '&quot;').
                 replaceAll("'", '&#39;');
+        },
+        'http_matches' : function(txt){
+            const http_regex = /(https?\:\/\/[\w\.\/\-\%\?\=\~\+\@]*)/g
+            return txt.match(http_regex);
         }
+
     }
 };
 
@@ -147,7 +218,10 @@ APP.nostr.data.profiles = function(){
 }();
 
 APP.nostr.gui.event_view = function(){
-    let _con,
+        // short ref
+    let _gui = APP.nostr.gui,
+        // where we'll render
+        _con,
         // notes as given to us (as they come from the load)
         _notes_arr,
         // data render to be used to render
@@ -174,7 +248,7 @@ APP.nostr.gui.event_view = function(){
                 '<span style="height:60px;width:120px; word-break: break-all; display:table-cell; background-color:#111111;padding-right:10px;" >',
                     // TODO: do something if unable to load pic
                     '{{#picture}}',
-                        '<img id="{{id}}-pp" src="{{picture}}" width="64" height="64" style="object-fit: cover;border-radius: 50%;cursor:pointer;" />',
+                        '<img id="{{id}}-pp" src="{{picture}}" class="profile-pic-small" />',
                     '{{/picture}}',
                     // if no picture, again do something here
 //                    '{{^picture}}',
@@ -233,7 +307,7 @@ APP.nostr.gui.event_view = function(){
             to_add = {
                 'evt': the_note,
                 'id' : APP.nostr.gui.uid(),
-                'content' : do_tag_replacement(get_note_html(the_note), the_note.tags),
+                'content' : the_note['content'],
                 'short_key' : APP.nostr.util.short_key(pub_k),
                 'pub_k' : pub_k,
                 'picture' : APP.nostr.gui.robo_images.get_url({
@@ -241,6 +315,15 @@ APP.nostr.gui.event_view = function(){
                 }),
                 'at_time': dayjs.unix(the_note.created_at).fromNow()
             };
+
+        // insert media tags to content
+        to_add.content = _gui.http_media_tags_into_text(to_add.content, _enable_media);
+        // do p tag replacement
+        to_add.content = do_tag_replacement(to_add.content, the_note.tags)
+        // add in line breaks
+        // add line breaks
+        to_add.content = to_add.content.replace(/\n/g,'<br>');
+
 
         if(_profiles.is_loaded()){
             p = _profiles.lookup(name);
@@ -260,38 +343,12 @@ APP.nostr.gui.event_view = function(){
         return to_add;
     }
 
-
-    /*
-        where we found link text what type of media is it so we can inline it...
-        if _enable_media this will always return external_link, i.e. don't render just insert
-        a tag.
-        Note profile pics are external media and we still render those..
-        possible there should be an option not to render those too
-    */
-    function media_lookup(ref_str){
-        let media_types = {
-            'jpg': 'image',
-            'gif': 'image',
-            'png': 'image',
-            'mp4': 'video'
-            },
-            parts = ref_str.split('.'),
-            ext = parts[parts.length-1],
-            ret = 'external_link';
-
-        if(ext in media_types && _enable_media){
-            ret = media_types[ext];
-        }
-        return ret;
-    }
-
     /*
         returns the_note.content str as we'd like to render it
         i.e. make http::// into <a hrefs>, if inline media and allowed insert <img> etc
     */
     function get_note_html(the_note){
-        let http_regex = /(https?\:\/\/[\w\.\/\-\%\?\=]*)/g,
-            http_matches,
+        let http_matches,
             link_tmpl = '<a href="{{url}}">{{url}}</a>',
             img_tmpl = '<img src="{{url}}" width=640 height=auto style="display:block;" />',
             video_tmpl = '<video width=640 height=auto style="display:block" controls>' +
@@ -313,11 +370,14 @@ APP.nostr.gui.event_view = function(){
         // add line breaks
         ret = ret.replace(/\n/g,'<br>');
         // look for link like strs
-        http_matches = ret.match(http_regex);
+        http_matches = APP.nostr.util.http_matches(ret);
         // do inline media and or link replacement
         if(http_matches!==null){
             http_matches.forEach(function(c_match){
-                let media_type = media_lookup(c_match);
+                // how to render, unless enable media is false in which case just the link is out put
+                // another level of safety would be that these links are rendered inactive and need the user
+                // to perform some action to actaully enable them
+                let media_type = _enable_media===true ? _gui.media_lookup(c_match) : 'external_link';
                 ret = ret.replace(c_match,Mustache.render(tmpl_lookup[media_type],{
                     'url' : c_match
                 }));
@@ -484,12 +544,12 @@ APP.nostr.gui.profile_about = function(){
                     '<span style="color:cyan">{{pub_k}}</span><br>',
                     '{{#name}}',
                         '<div>',
-                            '<span style="display:inline-block; width:100px; font-weight:bold;">name: </span><span>{{name}}</span>',
+                            '<span class="profile-about-label">name: </span><span style="display:table-cell">{{name}}</span>',
                         '</div>',
                     '{{/name}}',
                     '{{#about}}',
                         '<div>',
-                            '<span style="display:table-cell; width:100px; font-weight:bold;">about: </span><span style="display:table-cell">{{{about}}}</span>',
+                            '<span class="profile-about-label">about: </span><span style="display:table-cell">{{{about}}}</span>',
                         '</div>',
                     '{{/about}}',
                     '<div id="contacts-con" ></div>',
@@ -499,7 +559,7 @@ APP.nostr.gui.profile_about = function(){
         ].join(''),
         // used to render a limited list of follower/contacts imgs and counts
         _fol_con_sub = [
-            '<span style="display:table-cell; width:100px; font-weight:bold;">{{label}}: </span>',
+            '<span class="profile-about-label">{{label}}: </span>',
             '<span style="display:table-cell; width:50px;">{{count}}</span>',
             '{{#images}}',
             '<span style="display:table-cell;">',
@@ -536,8 +596,8 @@ APP.nostr.gui.profile_about = function(){
                 render_obj['name'] = attrs.name;
                 render_obj['about'] = attrs.about;
                 if(render_obj.about!==undefined){
-
-                    render_obj.about = APP.nostr.util.html_escape(render_obj.about).replace(/\n/g,'<br>');
+                    render_obj.about = APP.nostr.gui.http_media_tags_into_text(render_obj.about, false);
+                    render_obj.about = render_obj.about.replace().replace(/\n/g,'<br>');
                 }
             }
             // give a picture based on pub_k event if no pic or media turned off
@@ -565,12 +625,12 @@ APP.nostr.gui.profile_about = function(){
                         'count': pub_ks.length,
                         'images' : []
                     },
-                    to_show_max = pub_ks.length-1,
+                    to_show_max = pub_ks.length,
                     c_p,
                     img_src,
                     id;
 
-                    if(to_show_max>_max_show){
+                    if(to_show_max>_max_show-1){
                         args['trail'] = true;
                         to_show_max = _max_show;
                     };
@@ -590,7 +650,7 @@ APP.nostr.gui.profile_about = function(){
 
 
                     // add the images
-                    for(let i=0;i<=to_show_max;i++){
+                    for(let i=0;i<to_show_max;i++){
                         id = APP.nostr.gui.uid();
                         c_p = _profiles.lookup(pub_ks[i]);
                         // a profile doesn't necessarily exist

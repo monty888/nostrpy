@@ -4,8 +4,10 @@
     show all texts type events as they come in
 */
 !function(){
+        // lib shortcut
+    let _gui = APP.nostr.gui,
         // websocket to recieve event updates
-    let _client,
+        _client,
         // url params
         _params = new URLSearchParams(window.location.search),
         _pub_k = _params.get('pub_k'),
@@ -21,11 +23,11 @@
         // template for profile output
         _row_tmpl = [
             '{{#profiles}}',
-                '<div style="padding-top:2px;">',
+                '<div id="{{pub_k}}-pubk" style="padding-top:2px;cursor:pointer">',
                     '<span style="display:table-cell;height:128px;width:128px; background-color:#111111;padding-right:10px;" >',
                         // TODO: do something if unable to load pic
                         '{{#picture}}',
-                            '<img id="{{pub_k}}-pp" src="{{picture}}" width="128" height="128" style="object-fit: cover;border-radius: 50%;cursor:pointer;" />',
+                            '<img src="{{picture}}"  class="profile-pic-large"/>',
                         '{{/picture}}',
                     '</span>',
                     '<span style="height:128px;width:100%; display:table-cell;word-break: break-all;vertical-align:top; background-color:#221124" >',
@@ -88,7 +90,9 @@
                             render_profile['name'] = attrs.name;
                             render_profile['about'] = attrs.about;
                             if(render_profile.about!==undefined){
-                                render_profile.about = APP.nostr.util.html_escape(render_profile.about).replace(/\n/g,'<br>');
+                                render_profile.about = APP.nostr.util.html_escape(render_profile.about);
+                                render_profile.about = _gui.http_media_tags_into_text(render_profile.about, false);
+                                render_profile.about.replace(/\n/g,'<br>');
                             }
                         }
                         if((render_profile.picture===undefined) ||
@@ -102,10 +106,20 @@
                         render_obj['profiles'].push(render_profile);
                     });
 
-                    console.log(render_obj);
                     _contacts_con.html(Mustache.render(_row_tmpl, render_obj));
                 });
 
+            }
+        });
+
+        // clicking row takes you to that profile
+        // todo: links
+        _contacts_con.on('click', function(e){
+            let id = APP.nostr.gui.get_clicked_id(e),
+            pub_k;
+            if((id!==undefined) && (id.indexOf('-pubk')>0)){
+                pub_k = id.replace('-pubk','');
+                location.href = '/html/profile?pub_k='+pub_k;
             }
         });
 

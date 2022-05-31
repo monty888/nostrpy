@@ -6,25 +6,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Profile...</title>
+    <title>Text match view</title>
 
      <!-- Bootstrap core CSS -->
     <link href="/css/bootstrap.css" rel="stylesheet">
     <link href="/css/nostr.css" rel="stylesheet">
 </head>
-<body style="height:100vh;">
+<body>
 
  <div class="container" style="height:100%">
   <div class="row" style="height:100%">
 
     <div class="col-sm-12" style="background-color:black;color:white;">
-        <div id="about-pane">
-            profile about stuff here
+        <div class="form-group">
+            <label for="search-in">Event content contains</label>
+            <input type="text" class="form-control" id="search-in">
         </div>
         <div id="feed-pane">
-            texts here
         </div>
-
     </div>
   </div>
 </div>
@@ -41,7 +40,7 @@
     <script src="/script/mustache.js"></script>
     <script src="/script/network.js"></script>
     <script src="/script/nostr.js"></script>
-    <script src="/script/profile_view.js"></script>
+    <script src="/script/search_app.js"></script>
 
 </body>
 

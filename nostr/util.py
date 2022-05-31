@@ -66,15 +66,16 @@ class util_funcs:
                     sys.exit(os.EX_CANTCREAT)
 
     @staticmethod
-    def create_sqlite_store(db_file):
+    def create_sqlite_store(db_file, full_text=False):
         from nostr.event.persist import ClientSQLiteEventStore
         from nostr.ident.persist import SQLiteProfileStore
 
-        my_events = ClientSQLiteEventStore(db_file)
+        my_events = ClientSQLiteEventStore(db_file, full_text=full_text)
         if not my_events.exists():
             my_events.create()
             my_profiles = SQLiteProfileStore(db_file)
             my_profiles.create()
+        return my_events
 
 if __name__ == "__main__":
     print('monkies')
