@@ -46,7 +46,10 @@ APP.nostr = {
 dayjs.extend(window.dayjs_plugin_relativeTime);
 
 /*
-    profiles data is global, only call the init in one place
+    profiles data is global,
+    the load will only be attempted once no matter how many times init is called
+    so probably better to only do in one place and use on_load for other places
+    in future clear the init flag on load fail so init can be rerun...
     obvs int the long run keeping lookup of all profiles in mem isn't going to scale...
 */
 APP.nostr.data.profiles = function(){
@@ -55,9 +58,11 @@ APP.nostr.data.profiles = function(){
     // key'd pubk for access
     _profiles_lookup,
     // called when completed
-    _on_load,
+    _on_load = [],
     // set true when initial load is done
-    _is_loaded = false;
+    _is_loaded = false,
+    // has loaded started
+    _load_started = false;
 
     function _get_load_contact_info(p){
         return function(callback){
@@ -73,54 +78,71 @@ APP.nostr.data.profiles = function(){
                 'include_followers': true,
                 'include_contacts': true,
                 'success' : function(data){
-                    console.log(data);
-
                     // update org profile with contacts and folloers
                     my_p.contacts = data['contacts'];
                     my_p.followers = data['followed_by'];
-                    callback();
+                    try{
+                        callback();
+                    }catch(e){
+                        console.log(e);
+                    }
                 }
             });
-
-
-
-
         }
+    }
+
+    function _loaded(data){
+        _profiles_arr = data['profiles'];
+        _profiles_lookup = {};
+        _profiles_arr.forEach(function(p){
+            p.load_contact_info = _get_load_contact_info(p);
+            _profiles_lookup[p['pub_k']] = p;
+        });
+        _is_loaded = true;
+        _on_load.forEach(function(c_on_load){
+            try{
+                c_on_load();
+            }catch(e){
+                console.log(e);
+            }
+        });
     }
 
     function init(args){
         args = args || {};
-        _on_load = args.on_load !== undefined ? args.on_load : function(){
-            console.log('profiles loaded');
-        };
+        args.success = _loaded;
 
-        APP.remote.load_profiles({
-            'success' : function(data){
-                _profiles_arr = data['profiles'];
-                _profiles_lookup = {};
-                _profiles_arr.forEach(function(p){
-                    p.load_contact_info = _get_load_contact_info(p);
-                    _profiles_lookup[p['pub_k']] = p;
-                });
-                _is_loaded = true;
-                // hook back on load then the init can call anyone that needs to know that we now have the profiles
-                // as global probably change this so that anything that wants to know that profiles have loaded adds
-                // then loop through and call back each
-                if(typeof(_on_load)==='function'){
-                    _on_load();
+        if(_load_started===true){
+            if(typeof(args.on_load)==='function'){
+                if(_is_loaded){
+                    args.on_load();
+                }else{
+                    _on_load.push(args.on_load);
                 }
             }
-        });
+            return;
+        }
+
+        _load_started = true;
+        if(typeof(args.on_load)==='function'){
+            _on_load.push(args.on_load);
+        };
+
+        APP.remote.load_profiles(args);
     };
 
     return {
         'init' : init,
-        'is_loaded' : function(){
+        'is_loaded': function(){
             return _is_loaded;
         },
-        'lookup' : function(pub_k){
+        'lookup': function(pub_k){
             return _profiles_lookup[pub_k];
+        },
+        'count' : function(){
+            return _profiles_arr.length;
         }
+
     };
 }();
 
@@ -155,9 +177,9 @@ APP.nostr.gui.event_view = function(){
                         '<img id="{{id}}-pp" src="{{picture}}" width="64" height="64" style="object-fit: cover;border-radius: 50%;cursor:pointer;" />',
                     '{{/picture}}',
                     // if no picture, again do something here
-                    '{{^picture}}',
-                        '<div id="{{id}}-pp" style="height:60px;width:64px">no pic</div>',
-                    '{{/picture}}',
+//                    '{{^picture}}',
+//                        '<div id="{{id}}-pp" style="height:60px;width:64px">no pic</div>',
+//                    '{{/picture}}',
                 '</span>',
                 '<span style="height:60px;width:100%; display:table-cell;word-break: break-all;vertical-align:top; background-color:#221124" >',
                     '<div border-bottom: 1px solid #443325;">',
@@ -470,8 +492,8 @@ APP.nostr.gui.profile_about = function(){
                             '<span style="display:table-cell; width:100px; font-weight:bold;">about: </span><span style="display:table-cell">{{{about}}}</span>',
                         '</div>',
                     '{{/about}}',
-                    '<div id="follow-con"></div>',
-                    '<div id="contact-con"></div>',
+                    '<div id="contacts-con" ></div>',
+                    '<div id="followers-con" ></div>',
                 '</span>',
                 '</div>'
         ].join(''),
@@ -481,7 +503,7 @@ APP.nostr.gui.profile_about = function(){
             '<span style="display:table-cell; width:50px;">{{count}}</span>',
             '{{#images}}',
             '<span style="display:table-cell;">',
-                '<img id="{{id}}" src="{{src}}" width="24" height="24" style="object-fit: cover;border-radius: 50%;cursor:pointer;" />',
+                '<img id="{{id}}" src="{{src}}" width="24" height="24" style="object-fit: cover;border-radius: 50%;" />',
             '</span>',
             '{{/images}}',
             '{{#trail}}',
@@ -506,7 +528,7 @@ APP.nostr.gui.profile_about = function(){
             attrs,
             _contacts;
             _profile = _profiles.lookup(_pub_k);
-            // we couldn't find a profile, create a {} for template... put in a picture here to
+            // fill from the profile if we found it
             if(_profile!==undefined){
 
                 attrs = _profile['attrs'];
@@ -518,7 +540,10 @@ APP.nostr.gui.profile_about = function(){
                     render_obj.about = APP.nostr.util.html_escape(render_obj.about).replace(/\n/g,'<br>');
                 }
             }
-            if((render_obj.picture===undefined) || (_enable_media===false)){
+            // give a picture based on pub_k event if no pic or media turned off
+            if((render_obj.picture===undefined) ||
+                (render_obj.picture===null) ||
+                    (_enable_media===false)){
                 render_obj.picture = APP.nostr.gui.robo_images.get_url({
                     'text' : _pub_k
                 });
@@ -526,8 +551,9 @@ APP.nostr.gui.profile_about = function(){
 
             _con.html(Mustache.render(_tmpl, render_obj));
             // grab the follow and contact areas
-            _follow_con = $('#follow-con');
-            _contact_con = $('#contact-con');
+            _contact_con = $('#contacts-con');
+            _follow_con = $('#followers-con');
+
             // wait for folloer/contact info to be loaded
             _contacts = _profile.load_contact_info(function(){
                 // max profiles to show
@@ -548,6 +574,20 @@ APP.nostr.gui.profile_about = function(){
                         args['trail'] = true;
                         to_show_max = _max_show;
                     };
+
+                    if(to_show_max>0){
+                        con.css('cursor','pointer');
+                        _click_map[con[0].id] = {
+                            'func' : function(){
+                                let view_type = 'contacts';
+                                if(con[0].id==='followers-con'){
+                                    view_type = 'followers';
+                                }
+                                location.href = '/html/contacts?pub_k='+_pub_k+'&view_type='+view_type;
+                            }
+                        };
+                    }
+
 
                     // add the images
                     for(let i=0;i<=to_show_max;i++){
@@ -578,8 +618,8 @@ APP.nostr.gui.profile_about = function(){
 
                 }
 
-                render_contact_section('followed by', _contact_con, _profile.followers);
-                render_contact_section('follows', _follow_con, _profile.contacts);
+                render_contact_section('follows', _contact_con, _profile.contacts);
+                render_contact_section('followed by', _follow_con, _profile.followers);
 
                 // listen for clicks
                 $(_con).on('click', function(e){

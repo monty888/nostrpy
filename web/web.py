@@ -155,10 +155,68 @@ class NostrWeb(StaticServer):
         if not Keys.is_valid_pubkey(pub_k):
             raise Exception('value - %s doesn\'t look like a valid nostr pub key' % pub_k)
 
+    def _get_all_contacts_profile(self, pub_k):
+        ret = set([])
+        # shortcut, nothing asked for
+        if pub_k == '':
+            return ret
+
+        # add ourself
+        ret.add(pub_k)
+
+        the_profile: Profile
+        c_contact: Contact
+
+        self._check_pub_key(pub_k)
+        the_profile = self._profile_handler.profiles.get_profile(pub_k)
+        if the_profile is None:
+            raise Exception('no profile found for pub_k - %s' % pub_k)
+
+        # add contacts
+        for c_contact in the_profile.load_contacts(self._profile_store):
+            ret.add(c_contact.contact_public_key)
+
+        # add followers
+        for c_contact in the_profile.load_followers(self._profile_store):
+            ret.add(c_contact.owner_public_key)
+
+        return ret
+
+
     def _profiles_list(self):
+        # , list of pub_ks we want profiles for
+        pub_k = request.query.pub_k
+        all_keys = set([])
+        if pub_k:
+            all_keys = set(pub_k.split(','))
+
+        # alternative to listing pub_k can supply for_profile and all that profiles contacts/followers will be loaded
+        # currently just sigular but i guess could be comma seperated list of profiles
+        for_profile = self._get_all_contacts_profile(request.query.for_profile)
+
+        # we combine so a profile plus some other p_keys can be requested
+        all_keys = all_keys.union(for_profile)
+
+        the_profile: Profile
         ret = {
-            'profiles': self._profile_handler.profiles.as_arr()
+            'profiles': []
         }
+        # pub_k, or pub_ks, seperated by ,
+        # possibly this will /profile and /profiles methods merged
+        # note we don't check the pub_ks, if they're incorrect then nothing will be returned for that pk anyhow
+        if all_keys:
+            for c_pub_k in all_keys:
+                the_profile = self._profile_handler.profiles.get_profile(c_pub_k)
+                # we could easily add in here contact and profile whci would replace the
+                # profiles method, though obviously loading per profile wouldn't be great with a very long list of
+                # pks
+                if the_profile:
+                    ret['profiles'].append(the_profile.as_dict())
+
+        # eventually this full list will probably have to go
+        else:
+            ret['profiles'] = self._profile_handler.profiles.as_arr()
+
         return ret
 
     def _profile(self):

@@ -69,6 +69,13 @@
                     'pub_k' : _pub_k
                 });
                 _my_event_view.profiles_loaded();
+                let name = APP.nostr.util.short_key(_pub_k),
+                    cp = APP.nostr.data.profiles.lookup(_pub_k);
+                if(cp.attrs.name!==undefined){
+                    name = cp.attrs.name;
+                }
+
+                document.title = name;
             }
         });
         // to see events as they happen

@@ -9,7 +9,11 @@ APP.remote = function(){
         // this will probably need to change in future
         _all_profiles = '/profiles',
         // details on a single profile
-        _profile_url = '/profile';
+        _profile_url = '/profile',
+        // to stop making duplicate calls we key here only one call per key will be made
+        // either supply a key field else the call_args string is used
+        // which will be url+params, no caching is done fo post methods
+        _loading_cache = {}
 
     function make_params(params){
         let ret = '',
@@ -45,11 +49,75 @@ APP.remote = function(){
                 url: url+params,
                 error: error,
                 success: success
-            };
+            },
+            key = args.key!==undefined ? args.key : call_args.url,
+            the_cache;
 
         if(data!==undefined){
             call_args['data'] = data;
         }
+
+        if(call_args.method.toLowerCase()==='get'){
+            the_cache = _loading_cache[key];
+            // just add to the queue and return
+            if(the_cache!==undefined){
+                // load started but not returned, queue
+                if(the_cache.is_loaded===false){
+                    the_cache.success.push(success);
+                    the_cache.error.push(error);
+                // load has already been done, call either error or success method straight away
+                }else{
+                    try{
+                        if(the_cache.data!==undefined){
+                            success(the_cache.data);
+                        }else{
+                            error(the_cache.ajax, the_cache.textstatus, the_cache.errorThrown);
+                        }
+                    }catch(e){
+                        console.log(e);
+                    }
+
+                }
+                return;
+            }
+
+            // init a cache and put our success and error in place
+            the_cache = _loading_cache[key] = {
+                'success' : [],
+                'error' : [],
+                'is_loaded' : false
+            };
+            the_cache.success.push(success);
+            the_cache.error.push(error);
+
+            // intercept success/error with are own methods so that multiple calls can be reduced to single ajax req
+            // out success and error that call back everyone in the queue
+            call_args.success = function(data){
+                the_cache.success.forEach(function(cSuccess){
+                    try{
+                        cSuccess(data);
+                    }catch(e){};
+                });
+                // so late calls will just get run straight away rather than called
+                the_cache.is_loaded = true;
+                the_cache.data = data;
+            };
+            call_args.error = function(ajax, textstatus, errorThrown){
+                the_cache.error.forEach(function(cError){
+                    try{
+                        cError(ajax, textstatus, errorThrown);
+                    }catch(e){};
+                });
+                // as success but for immidiate error
+                the_cache.is_loaded = true;
+                the_cache.ajax = ajax;
+                the_cache.textstatus = textstatus;
+                the_cache.errorThrown = errorThrown;
+            }
+
+        };
+
+
         // make the call
         $.ajax(call_args)
 
@@ -57,7 +125,22 @@ APP.remote = function(){
 
     return {
         'load_profiles' : function(args){
+
             args['url'] = _all_profiles;
+            // in future you'll probably want to supply one of this because the no params load everyone
+            // is likely to become a problem at some point, in any case we'll probably use storage client side
+            // (indexed db) and then only attempt to load what we don't have and havent tried for a set period of
+            // time (as they may not exist anyhow) or let the nostr events get things upto date
+            // pub_k can be used to supplement for_profile
+            args['params'] = {};
+            // single or , seperated list of pub_ks
+            if(args.pub_k!==undefined){
+                args['params']['pub_k'] = args['pub_k']
+            }
+            // all followers contacts for this profile
+            if(args.for_profile!==undefined){
+                args['params']['for_profile'] = args['for_profile']
+            }
             do_query(args);
         },
         'load_profile' : function(args){
