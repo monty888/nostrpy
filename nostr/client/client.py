@@ -143,7 +143,6 @@ class Client:
         the_req.append(filters)
 
         the_req = json.dumps(the_req)
-
         logging.debug('Client::subscribe - %s', the_req)
         # TODO: at the moment there'd be no point subscribing if you don't pass handler
         #  because there's no way of adding later
@@ -191,6 +190,9 @@ class Client:
         self._ws.send(to_pub)
         self._reset_status()
 
+    def set_end_stored_events(self, eose_func=None):
+        self._eose_func = eose_func
+
     def _on_message(self, ws, message):
         self._reset_status()
 
@@ -201,7 +203,16 @@ class Client:
         if type == 'EVENT':
             self._do_events(sub_id, message)
         elif type == 'NOTICE':
-            logging.debug('NOTICE!! %s' % message[1])
+            # creator should probably be able to suppliy a notice handler
+            logging.debug('NOTICE!! %s' % sub_id)
+        elif type == 'EOSE':
+            # if relay support nip15 you get this event after the relay has sent the last stored event
+            # at the moment a single function but might be better to add as option to subscribe
+            if self._eose_func:
+                self._eose_func(sub_id)
+            else:
+                logging.debug('NIP-15 end of stored events for %s' % sub_id)
+
         else:
             logging.debug('Network::_on_message unexpected type %s' % type)
 
@@ -215,7 +226,7 @@ class Client:
                     try:
                         c_handler.do_event(sub_id, the_evt, self._url)
                     except Exception as e:
-                        logging.debug('Client::_do_events in handler %s - ' % ( c_handler, e))
+                        logging.debug('Client::_do_events in handler %s - %s' % (c_handler, e))
 
             except Exception as e:
                 # TODO: add name property to handlers

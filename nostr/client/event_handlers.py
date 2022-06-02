@@ -50,7 +50,7 @@ class DeduplicateAcceptor(EventAccepter):
 
 class EventHandler(ABC):
 
-    def __init__(self, event_acceptors=[EventAccepter]):
+    def __init__(self, event_acceptors: [EventAccepter]=[]):
         if not hasattr(event_acceptors, '__iter__'):
             event_acceptors = [event_acceptors]
         self._event_acceptors = event_acceptors

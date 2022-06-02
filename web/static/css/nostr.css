@@ -1,6 +1,8 @@
 body {
     height:100vh;
     font-family : courier;
+    background-color: black;
+    color: white;
 }
 
 .profile-pic-large, .profile-pic-small{

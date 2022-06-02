@@ -105,8 +105,27 @@ APP.nostr = {
                 replaceAll('"', '&quot;').
                 replaceAll("'", '&#39;');
         },
+        // copied from https://stackoverflow.com/questions/17678694/replace-html-entities-e-g-8217-with-character-equivalents-when-parsing-an
+        // for text that is going to be rendered into page as html
+        // {{{}}} in Mustache templates
+        'html_unescape' : function (str) {//modified from underscore.string and string.js
+//            var escapeChars = { lt: '<', gt: '>', quot: '"', apos: "'", amp: '&' };
+            // reduced to just &n; style replacements, will need to come back and think about this properly
+            var escapeChars = {amp: '&' };
+            return str.replace(/\&([^;]+);/g, function(entity, entityCode) {
+                var match;if ( entityCode in escapeChars) {
+                    return escapeChars[entityCode];
+                } else if ( match = entityCode.match(/^#x([\da-fA-F]+)$/)) {
+                    return String.fromCharCode(parseInt(match[1], 16));
+                } else if ( match = entityCode.match(/^#(\d+)$/)) {
+                    return String.fromCharCode(~~match[1]);
+                } else {
+                    return entity;
+                }
+            });
+        },
         'http_matches' : function(txt){
-            const http_regex = /(https?\:\/\/[\w\.\/\-\%\?\=\~\+\@]*)/g
+            const http_regex = /(https?\:\/\/[\w\.\/\-\%\?\=\~\+\@\&\;\#]*)/g
             return txt.match(http_regex);
         }
 
@@ -115,6 +134,115 @@ APP.nostr = {
 
 // for relative times of notes from now
 dayjs.extend(window.dayjs_plugin_relativeTime);
+
+APP.nostr.gui.tabs = function(){
+    /*
+        creates a tabbed area, probably only used to set up the, and events for moving between tabs
+        but otherwise caller can deal with rendering the content
+    */
+    let _head_tmpl = [
+        '<ul class="nav nav-tabs">',
+            '{{#tabs}}',
+                '<li class="{{active}}"><a data-toggle="tab" href="#{{tab-ref}}">{{tab-title}}</a></li>',
+            '{{/tabs}}',
+            // extra area for e.g. search field,
+            '<span style="display:table-cell;width:250px;padding-top:4px;">',
+                // to remove
+                '<input placeholder="search" type="text" class="form-control" id="search-in">',
+            '</span>',
+        '</ul>'
+        ].join(''),
+        _body_tmpl = [
+            '<div class="tab-content">',
+            '{{#tabs}}',
+                '<div id="{{tab-ref}}" class="tab-pane {{transition}} {{active}}">',
+                    '<div id="{{tab-ref}}-con">{{content}}</div>',
+                '</div>',
+            '{{/tabs}}',
+            '</div>'
+        ].join('');
+
+    function create(args){
+            // where we'll be drawn
+        let _con = args.con,
+            // data preped for template render
+            _render_obj,
+            // do a draw as soon as created
+            _init_draw = args.do_draw|| false,
+            // content if no content given for tab
+            _default_content = args.default_content || '',
+            _tabs = args.tabs||[];
+
+        function create_render_obj(){
+            _render_obj = {
+                'tabs' : []
+            };
+            _tabs.forEach(function(c_tab){
+                let to_add = {};
+                to_add['tab-title'] = c_tab.title!==undefined ? c_tab.title : '?no title?';
+                to_add['tab-ref'] = c_tab.id!==undefined ? c_tab.id : APP.nostr.gui.uid();
+                to_add['content'] = c_tab.content!==undefined ? c_tab.content : _default_content;
+                if(c_tab.active===true){
+                    to_add['active'] = 'active';
+                    to_add['transition'] = 'fade in';
+                }else{
+                    to_add['transition'] = 'fade';
+                }
+                _render_obj.tabs.push(to_add);
+
+            });
+
+        }
+
+        function draw(){
+            let render_html = [
+                Mustache.render(_head_tmpl, _render_obj),
+                Mustache.render(_body_tmpl, _render_obj)
+                ].join('')
+            // now render
+            _con.html(render_html);
+
+            // get the content objects and put in render_obj so we don't have to go through the
+            // dom again
+            _render_obj.tabs.forEach(function(c_tab){
+                c_tab['tab_content_con'] = $('#'+c_tab['tab-ref']+'-con');
+            });
+
+        }
+
+        function get_tab(ident){
+            let ret = {},
+                tab_render_obj;
+            if(typeof(ident)=='number'){
+                tab_render_obj = _render_obj.tabs[ident];
+            }
+
+            // TODO: by title
+
+            // now copy relavent bits
+            ret['content-con'] = tab_render_obj['tab_content_con'];
+
+            return ret;
+        }
+
+        function init(){
+            create_render_obj();
+        }
+        // do the init
+        init();
+
+        return {
+            'draw': draw,
+            'get_tab' : get_tab
+        };
+    };
+
+    return {
+        'create' : create
+    }
+}();
+
+
 
 /*
     profiles data is global,
@@ -320,9 +448,10 @@ APP.nostr.gui.event_view = function(){
         to_add.content = _gui.http_media_tags_into_text(to_add.content, _enable_media);
         // do p tag replacement
         to_add.content = do_tag_replacement(to_add.content, the_note.tags)
-        // add in line breaks
         // add line breaks
         to_add.content = to_add.content.replace(/\n/g,'<br>');
+        // fix special characters as we're rendering in html el
+        to_add.content = APP.nostr.util.html_unescape(to_add.content);
 
 
         if(_profiles.is_loaded()){
@@ -702,6 +831,141 @@ APP.nostr.gui.profile_about = function(){
     return {
         'create' : create
     };
+}();
+
+APP.nostr.gui.profile_list = function (){
+        // lib shortcut
+    let _gui = APP.nostr.gui,
+        // short cut ot profiles helper
+        _profiles = APP.nostr.data.profiles,
+        // template for profile output
+        _row_tmpl = [
+            '{{#profiles}}',
+                '<div id="{{pub_k}}-pubk" style="padding-top:2px;cursor:pointer">',
+                    '<span style="display:table-cell;height:64px;width:128px; background-color:#111111;padding-right:10px;" >',
+                        // TODO: do something if unable to load pic
+                        '{{#picture}}',
+                            '<img src="{{picture}}"  class="profile-pic-small"/>',
+                        '{{/picture}}',
+                    '</span>',
+                    '<span style="height:64px;width:100%; display:table-cell;word-break: break-all;vertical-align:top; background-color:#221124" >',
+                        '<span style="color:cyan">{{pub_k}}</span><br>',
+                        '{{#name}}',
+                            '<div>',
+                                '<span style="display:inline-block; width:100px; font-weight:bold;">name: </span><span>{{name}}</span>',
+                            '</div>',
+                        '{{/name}}',
+                        '{{#about}}',
+                            '<div>',
+                                '<span style="display:table-cell; width:100px; font-weight:bold;">about: </span><span style="display:table-cell">{{{about}}}</span>',
+                            '</div>',
+                        '{{/about}}',
+                    '</span>',
+                '</div>',
+            '{{/profiles}}'
+        ].join('');
+
+    function create(args){
+            // container for list
+        let _con = args.con,
+            // pubk for the profile we want to look at
+            _pub_k = args.pub_k,
+            // inline media where we can, where false just the link is inserted
+            _enable_media = args.enable_media || false,
+            // profile we're viewing
+            _the_profile = _profiles.lookup(_pub_k),
+            // rendering the_profile.followers or contacts ?
+            _view_type = args.view_type==='followers' ? 'followers' : 'contacts',
+            // data preped for render to con by _create_render_obj
+            _render_obj,
+            _do_draw=false;
+
+        // init the data
+        _the_profile.load_contact_info(function(){
+            try{
+                // prep the intial render obj
+                _create_render_obj();
+                // draw was called before we were ready, draw now
+                if(_do_draw){
+                    draw();
+                }
+            }catch(e){
+                console.log(e);
+            }
+        });
+
+        // methods
+        function draw(){
+            if(_render_obj!==undefined){
+                _con.html(Mustache.render(_row_tmpl, _render_obj));
+            }else{
+                _do_draw = true;
+            }
+        };
+
+        /*
+            fills data that'll be used with template to render
+        */
+        function _create_render_obj(){
+            _render_obj = {
+                'profiles': []
+            };
+            let to_add = _view_type==='followers' ? _the_profile.followers : _the_profile.contacts;
+
+            to_add.forEach(function(c_key){
+                _render_obj.profiles.push(_create_render_profile(c_key));
+            });
+
+        }
+
+        // create profile render obj to be put in _renderObj['profiles']
+        function _create_render_profile(pub_k){
+            let the_profile = _profiles.lookup(pub_k),
+                render_profile = {
+                    'pub_k' : pub_k
+                },
+                attrs;
+
+            if(the_profile!==undefined){
+                attrs = the_profile['attrs'];
+                render_profile['picture'] =attrs.picture;
+                render_profile['name'] = attrs.name;
+                render_profile['about'] = attrs.about;
+                if(render_profile.about!==undefined){
+//                    render_profile.about = APP.nostr.util.html_escape(render_profile.about);
+                    render_profile.about = _gui.http_media_tags_into_text(render_profile.about, false);
+                    render_profile.about = render_profile.about.replace(/\n/g,'<br>');
+                }
+            }
+            if((render_profile.picture===undefined) ||
+                (render_profile.picture===null) ||
+                    (_enable_media===false)){
+                render_profile.picture = APP.nostr.gui.robo_images.get_url({
+                    'text': pub_k
+                });
+            }
+            return render_profile;
+        }
+
+
+        // add click events
+        _con.on('click', function(e){
+            let id = APP.nostr.gui.get_clicked_id(e),
+            pub_k;
+            if((id!==undefined) && (id.indexOf('-pubk')>0)){
+                pub_k = id.replace('-pubk','');
+                location.href = '/html/profile?pub_k='+pub_k;
+            }
+        });
+
+        return {
+            'draw': draw
+        }
+    }
+
+    return {
+        'create': create
+    }
 }();
 
 /*

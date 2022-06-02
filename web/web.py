@@ -371,8 +371,8 @@ class NostrWeb(StaticServer):
             ws = self._web_sockets[c_sock]
             try:
                 ws.send(json.dumps(evt.event_data()))
-            except Exception as e:
-                print(e, ws)
+            except WebSocketError as we:
+                print(we, ws)
                 print('kill this guy?')
 
     def _handle_websocket(self):

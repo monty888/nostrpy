@@ -28,7 +28,6 @@ class Relay:
                         https://github.com/fiatjaf/nostr/blob/master/nips/01.md
         NIP-02      -   contact list
                         https://github.com/fiatjaf/nostr/blob/master/nips/02.md
-                        TODO: del old and check newer on add
         NIP-09      -   event deletions
                         delete_mode=DeleteMode.DEL_FLAG probbably best option as this will mark the event as deleted
                         but also it won't be possible to repost.
@@ -38,14 +37,20 @@ class Relay:
         NIP-12          generic querie tags, todo but should be easy.... test with shared
                         https://github.com/fiatjaf/nostr/blob/master/nips/12.md
 
+        NIP-15      -   send 'EOSE' msg after sending the final event for a subscription
+                        https://github.com/nostr-protocol/nips/blob/master/15.md
+
         for NIPS n,n... whats actually being implemented will be decided by the store/properties it was created with
         e.g. delete example....
         For NIP-12 the relay will check with the store for those NIPs
 
+        TODO: write some test code for each NIP...
+
     """
     VALID_CMDS = ['EVENT', 'REQ', 'CLOSE']
 
-    def __init__(self, store: RelayEventStoreInterface, accept_req_handler=None, max_sub=3):
+    def __init__(self, store: RelayEventStoreInterface, accept_req_handler=None,
+                 max_sub=3, enable_nip15=False):
         self._app = Bottle()
         # self._web_sockets = {}
 
@@ -57,6 +62,10 @@ class Relay:
 
         # max subs allowed per websocket
         self._max_sub = max_sub
+
+        # enable support for nip15, probably this will be removed and just be default on in future
+        # as apart from extra msg it shouldn't cause any issues
+        self._enable_nip15 = enable_nip15
 
         # by default when we recieve requests as long as the event has a valid sig we accept
         # (Prob we should also have a future timestamp requirement, it'd probably have to be 12hr+ as
@@ -73,14 +82,38 @@ class Relay:
         if not hasattr(self._accept_req, '__iter__'):
             self._accept_req = [self._accept_req]
 
-        logging.info('Relay::__init__ maxsub=%s' % self._max_sub)
+        logging.info('Relay::__init__ maxsub=%s nip15enabled=%s' % (self._max_sub,
+                                                                  self._enable_nip15))
+        # gevent.pywsgi.WSGIServer on calling start
+        self._server = None
 
     def start(self, host='localhost', port=8080, endpoint='/'):
+        """
+        runs within own gevent.pywsgi.WSGIServer
+        probably to expose _app so that it can be run in any WSGI server by caller
+
+        :param host:
+        :param port:
+        :param endpoint:
+        http://host:port/endpoint
+        :return:
+        """
         logging.info('Relay::start %s:%s%s' % (host, port, endpoint))
         self._app.route(endpoint, callback=self._handle_websocket)
 
-        server = WSGIServer((host, port), self._app, handler_class=WebSocketHandler)
-        server.serve_forever()
+        self._server = WSGIServer((host, port), self._app, handler_class=WebSocketHandler)
+        self._server.serve_forever()
+
+    @property
+    def started(self):
+        ret = False
+        if self._server is not None:
+            ret = self._server.started
+        return ret
+
+    def end(self):
+        # note to call this you'd have to have called start in a thread or similar
+        self._server.stop()
 
     def _handle_websocket(self):
         logging.debug('Websocket opened')
@@ -146,7 +179,6 @@ class Relay:
             c_accept.accept_post(ws, evt)
 
         try:
-
             self._store.add_event(evt)
             logging.info('Relay::_do_event persisted event - %s - %s (%s)' % (evt.short_id,
                                                                               util_funcs.str_tails(evt.content, 6),
@@ -157,9 +189,7 @@ class Relay:
                 logging.debug('Relay::_do_event doing delete events - %s ' % evt.e_tags)
                 self._store.do_delete(evt)
 
-
             self._check_subs(evt)
-
 
         except (IntegrityError, pg_errors.UniqueViolation) as ie:
             msg = str(ie).lower()
@@ -209,7 +239,6 @@ class Relay:
         for ws in self._ws:
             for c_sub_id in self._ws[ws]['subs']:
                 the_sub = self._ws[ws]['subs'][c_sub_id]
-
                 # event passes sub filter
                 if evt.test(the_sub['filter']):
                     Greenlet(get_send(ws, c_sub_id, evt, self._ws[ws]['send_lock'])).start()
@@ -239,6 +268,7 @@ class Relay:
             'id': sub_id,
             'filter': filter
         }
+
         logging.info('Relay::_do_sub subscription added %s (%s)' % (sub_id, filter))
 
         # post back the pre existing
@@ -248,6 +278,10 @@ class Relay:
             def my_func():
                 for c_evt in evts:
                     self._send_event(ws, sub_id, c_evt, lock)
+
+                # NIP15 support
+                if self._enable_nip15:
+                    self._send_eose(ws, sub_id, lock)
 
             return my_func
 
@@ -272,16 +306,31 @@ class Relay:
         # not actual exception but this will send notice back that sub_id has been closed, might be useful to client?
         raise NostrCommandException('CLOSE command for sub_id %s - success' % sub_id)
 
-    def _send_event(self, ws: WebSocket, sub_id, evt, lock: BoundedSemaphore):
+    def _do_send(self, ws: WebSocket, data, lock: BoundedSemaphore):
         try:
-            to_send = [
-                'EVENT',
-                sub_id,
-                evt.event_data()
-            ]
-
             with lock:
-                ws.send(json.dumps(to_send))
-
+                ws.send(json.dumps(data))
         except Exception as e:
-            logging.info('Relay::_send_event error: %s' % e)
+            logging.info('Relay::_do_send error: %s' % e)
+
+    def _send_event(self, ws: WebSocket, sub_id, evt, lock: BoundedSemaphore):
+        self._do_send(ws=ws,
+                      data=[
+                          'EVENT',
+                          sub_id,
+                          evt.event_data()
+                      ],
+                      lock=lock)
+
+
+    def _send_eose(self, ws: WebSocket, sub_id, lock: BoundedSemaphore):
+        """
+        NIP15 send end of stored events notice
+        https://github.com/nostr-protocol/nips/blob/master/15.md
+        """
+        self._do_send(ws=ws,
+                      data=[
+                          'EOSE', sub_id
+                      ],
+                      lock=lock)
+
