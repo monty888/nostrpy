@@ -88,6 +88,43 @@ class StaticServer:
                 raise Exception('arrrgh font type not accepted')
             return ret
 
+        # TODO make a static route that make it easier to add path, name , type or similiar
+        @self._app.route('/images/<name>')
+        def font(name):
+            accept = set(['png', 'jpg'])
+            splits = name.split('.')
+            font_dir = self._file_root + 'images/'
+            if len(splits) > 1 and splits[1] in accept:
+                logging.debug('StaticServer::%s %s %s' % (splits[1],
+                                                          font_dir,
+                                                          name))
+
+                ret = static_file(filename=name, root=font_dir)
+
+            else:
+                # TODO this should readlly be doing a ?501? Auth exception
+                raise Exception('arrrgh image type not accepted')
+            return ret
+
+        @self._app.route('/bootstrap_icons/<name>')
+        def font(name):
+            accept = set(['svg'])
+            splits = name.split('.')
+            # font_dir = self._file_root + 'bootstrap-icons-1.5.0/'
+            file_dir = self._file_root + 'bootstrap-icons-1.8.3/'
+            if len(splits) > 1 and splits[1] in accept:
+                logging.debug('StaticServer::%s %s %s' % (splits[1],
+                                                          file_dir,
+                                                          name))
+
+                ret = static_file(filename=name, root=file_dir)
+
+            else:
+                # TODO this should readlly be doing a ?501? Auth exception
+                raise Exception('arrrgh icon type not accepted')
+            return ret
+
+
     def start(self, host='localhost', port=8080):
         logging.debug('started web server at %s port=%s' % (host, port))
         server = WSGIServer((host, port), self._app, handler_class=WebSocketHandler)

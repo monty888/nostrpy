@@ -20,6 +20,9 @@
         _my_tab = APP.nostr.gui.tabs.create({
             'con' : _contacts_con,
             'default_content' : 'loading...',
+            'on_tab_change': function(i){
+                set_list_filter();
+            },
             'tabs' : [
                 {
                     'title': 'follows',
@@ -30,17 +33,38 @@
                     'active': _view_type==='followers'
                 }
             ]
+        }),
+        // the search input
+        _search_in,
+        // delay action using timer
+        _search_timer,
+        // gui profile list objs
+        _contacts_list,
+        _followers_list,
+        // about this profile con
+        _profile_con = $('#about-con'),
+        // the head obj
+        _my_head = APP.nostr.gui.profile_about.create({
+            'con': _profile_con,
+            'pub_k': _pub_k,
+            'enable_media': _enable_media,
+            'show_follows': false
         });
 
 
     // start the client
-    function start_client(){
-        APP.nostr_client.create('ws://localhost:8080/websocket', function(client){
-            _client = client;
-        },
-        function(data){
-//            _my_event_view.add(data);
-        });
+//    function start_client(){
+//        APP.nostr_client.create('ws://localhost:8080/websocket', function(client){
+//            _client = client;
+//        },
+//        function(data){
+////            _my_event_view.add(data);
+//        });
+//    }
+
+    function set_list_filter(){
+        let list = _my_tab.get_selected_index()===0 ? _contacts_list : _followers_list;
+            list.set_filter(_search_in.val());
     }
 
     // start when everything is ready
@@ -54,34 +78,70 @@
 
         // init the profiles data
         _profiles.init({
-            'for_profile' : _pub_k,
             'on_load' : function(){
+                _my_head.profiles_loaded();
                 _my_tab.draw();
                 let contact_tab = _my_tab.get_tab(0),
                     follow_tab= _my_tab.get_tab(1),
-                    contacts_list = APP.nostr.gui.profile_list.create({
-                        'con': contact_tab['content-con'],
-                        'pub_k': _pub_k,
-                        'view_type': 'contacts',
-                        'enable_media': _enable_media
-                    }),
-                    followers_list = APP.nostr.gui.profile_list.create({
-                        'con': follow_tab['content-con'],
-                        'pub_k': _pub_k,
-                        'view_type': 'followers',
-                        'enable_media': _enable_media
-                    });
+                    tool_html = [
+//                        '<div style="display:table-row">',
+//                            '<input style="display:table-cell;width:10em;"  placeholder="search" type="text" class="form-control" id="search-in">',
+//                            '<button id="full_search_but" style="display:table-cell;" type="button" class="btn btn-primary" ><img src="/bootstrap_icons/person-plus.svg" /></button>',
+//                        '</div>'
+                        '<div style="display:table-row">',
+                            '<input style="display:table-cell;width:10em;"  placeholder="search" type="text" class="form-control" id="search-in">',
+                            '<button id="full_search_but" style="display:table-cell;" type="button" class="btn btn-primary" >' +
+                            '<svg class="bi" >',
+                                '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#person-plus-fill"/>',
+                            '</svg>',
+                            '</button>',
+                        '</div>'
+
+                    ].join('');
+
+                // create list objs
+                _contacts_list = APP.nostr.gui.profile_list.create({
+                    'con': contact_tab['content-con'],
+                    'pub_k': _pub_k,
+                    'view_type': 'contacts',
+                    'enable_media': _enable_media,
+                });
+                _followers_list = APP.nostr.gui.profile_list.create({
+                    'con': follow_tab['content-con'],
+                    'pub_k': _pub_k,
+                    'view_type': 'followers',
+                    'enable_media': _enable_media
+                });
 
 
                 // finally draw
-                contacts_list.draw();
-                followers_list.draw();
+                _contacts_list.draw();
+                _followers_list.draw();
+                // add a search filed
+
+
+                _my_tab.get_tool_con().html(tool_html);
+
+                _search_in = $('#search-in');
+                _search_in.focus();
+
+                _search_in.on('keyup', function(e){
+                    clearTimeout(_search_timer);
+                    _search_timer = setTimeout(function(){
+                        set_list_filter();
+                    },200);
+                });
+
+                // takes us to a page where we can search for all profiles not just currently looking at profile
+                $('#full_search_but').on('click', function(){
+                    location.href = '/html/profile_search.html';
+                });
 
 
             }
         });
 
         // to see events as they happen
-        start_client();
+//        start_client();
     });
 }();

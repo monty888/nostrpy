@@ -69,9 +69,7 @@
         // init the profiles data
         APP.nostr.data.profiles.init({
             'on_load' : function(){
-                _my_head.profiles_loaded({
-                    'pub_k' : _pub_k
-                });
+                _my_head.profiles_loaded();
                 _my_event_view.profiles_loaded();
                 let name = APP.nostr.util.short_key(_pub_k),
                     cp = APP.nostr.data.profiles.lookup(_pub_k);

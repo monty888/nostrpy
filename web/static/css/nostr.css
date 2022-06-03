@@ -3,9 +3,10 @@ body {
     font-family : courier;
     background-color: black;
     color: white;
+    min-width: 800px;
 }
 
-.profile-pic-large, .profile-pic-small{
+.profile-pic-large, .profile-pic-small, .profile-pic-verysmall{
     object-fit: cover;
     border-radius: 50%;
     cursor: pointer;
@@ -21,10 +22,23 @@ body {
     height: 64px;
 }
 
+.profile-pic-verysmall{
+    width: 24px;
+    height: 24px;
+}
+
 .profile-about-label{
     display:table-cell;
     width:120px;
     font-weight:bold;
+}
+
+/* bootstrap icons */
+.bi{
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+    cursor: pointer;
 }
 
 
