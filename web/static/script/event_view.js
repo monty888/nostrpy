@@ -55,7 +55,6 @@
                 '#e' : [_root_id]
             });
         }
-        console.log(filter);
 
         APP.remote.load_events({
             'filter' : filter,

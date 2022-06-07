@@ -64,7 +64,9 @@
 
     function set_list_filter(){
         let list = _my_tab.get_selected_index()===0 ? _contacts_list : _followers_list;
-            list.set_filter(_search_in.val());
+            if(list!==undefined){
+                list.set_filter(_search_in.val());
+            }
     }
 
     // start when everything is ready

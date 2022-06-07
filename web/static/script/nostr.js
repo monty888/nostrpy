@@ -198,6 +198,84 @@ APP.nostr = {
     }
 };
 
+/*
+    given a string of text (events content) and tags
+    will return the string with #[n]... replaced with tag links
+    for #p and #e events
+    maybe just hand event in?
+*/
+APP.nostr.gui.tag_replacement = function (text, tags){
+    // cache of tag replacement regexs
+    let _preregex = {},
+        // profile helper for p lookups
+        _profiles,
+        //
+        _replacements = {
+            'e' : {
+                'prefix' : '&',
+                'url' : function(id){
+                    return '/html/event?id='+id;
+                }
+            },
+            'p' : {
+                'prefix' : '@',
+                'url' : function(id){
+                    return '/html/profile?pub_k='+id
+                },
+                'text' : function(id, def){
+                    let profile,
+                        // if unable to sub
+                        ret = def;
+                    if(_profiles.is_loaded()){
+                        profile = _profiles.lookup(id);
+                        if(profile!==undefined && profile.attrs.name!==undefined){
+                            ret = profile.attrs.name;
+                        }
+                    }
+                    return ret;
+                }
+            }
+        };
+
+    // can't be assigned until doc loaded
+    $(document).ready(function(){
+        _profiles = APP.nostr.data.profiles;
+    });
+
+    // the actual function
+    return function(text, tags){
+        let tag_type,
+            tag_val,
+            replace_text,
+            regex,
+            replacer;
+
+        tags.forEach(function(ct, i){
+            tag_type = ct[0];
+            tag_val = ct[1];
+
+            if((_replacements[tag_type]!==undefined) && (tag_val!==undefined)){
+                // replacement text is a short version of key
+                // unless there is a lookup function provided
+                replace_text = APP.nostr.util.short_key(ct[1]);
+                regex = _preregex[i];
+                if(regex===undefined){
+                    regex = new RegExp('#\\['+i+'\\]','g');
+                    _preregex[i] = regex;
+                }
+                replacer = _replacements[tag_type];
+                if(replacer.text!==undefined){
+                    replace_text = replacer.text(tag_val);
+                }
+
+                // finally do the replacement
+                text = text.replace(regex,'<a href="'+replacer.url(tag_val)+'" style="color:cyan;cursor:pointer;text-decoration: none;">' + replacer.prefix + replace_text +'</a>');
+            }
+        });
+    return text;
+    }
+}();
+
 // for relative times of notes from now
 dayjs.extend(window.dayjs_plugin_relativeTime);
 // so we can shorten the time formats
@@ -322,7 +400,7 @@ APP.nostr.gui.tabs = function(){
                 }
 
                 if(typeof(_on_tab_change)==='function'){
-                    _on_tab_change(_cur_index);
+                    _on_tab_change(_cur_index, _render_obj.tabs[_cur_index]['tab_content_con']);
                 }
 
             });
@@ -331,7 +409,11 @@ APP.nostr.gui.tabs = function(){
             $('.nav-tabs a').on('shown.bs.tab', function(e){
             });
 
-
+            // not sure we should count this as a change??
+            // anyway on first draw fire _on_tab_change for selected tab
+            if(typeof(_on_tab_change)==='function'){
+                _on_tab_change(_cur_index, _render_obj.tabs[_cur_index]['tab_content_con']);
+            }
 
         }
 
@@ -735,19 +817,8 @@ APP.nostr.gui.event_detail = function(){
 APP.nostr.gui.event_view = function(){
         // short ref
     let _gui = APP.nostr.gui,
-        // where we'll render
-        _con,
         // global profiles obj
         _profiles = APP.nostr.data.profiles,
-        // attempt to render external media in note text.. could be more fine grained to type
-        // note also this doesn't cover profile img
-        _enable_media,
-        // filter for notes that will be added to notes_arr
-        // not that currently only applied on add, the list you create with is assumed to already be filtered
-        // like nostr filter but minimal impl just for what we need
-        _sub_filter,
-        // cache of tag replacement regexs
-        _preregex = {},
         // template for individual event in the view, styleing should move to css and classes
         _row_tmpl = [
             '<div id="{{uid}}-{{event_id}}" style="padding-top:2px;border 1px solid #222222">',
@@ -803,9 +874,7 @@ APP.nostr.gui.event_view = function(){
                 '</div>',
             '</span>',
             '</div>'
-        ].join(''),
-        _expand_state = {},
-        _my_list;
+        ].join('');
 
     function _profile_clicked(pub_k){
         location.href = '/html/profile?pub_k='+pub_k;
@@ -835,36 +904,6 @@ APP.nostr.gui.event_view = function(){
         location.href = '/html/event?id='+evt.id+root;
     }
 
-    /*
-        does replacement of #[n] for pub tags in text
-        pretty rough at the moment, the click to is done as a tag rather than our own clicker which may
-        cause problems in future...(because with replaceall style we can give each instance if more than one a unique id,
-        though browser don't actually seem to care...)
-    */
-    function do_tag_replacement(text, tags){
-        tags.forEach(function(ct, i){
-            if((ct[0]=='p')&&(ct.length>0)){
-                let regex = _preregex[i],
-                    replace_text = APP.nostr.util.short_key(ct[1]),
-                    profile;
-
-                if(_profiles.is_loaded()){
-                    profile = _profiles.lookup(ct[1]);
-                    if(profile!==undefined && profile.attrs.name!==undefined){
-                        replace_text = '@'+profile.attrs.name;
-                    }
-
-                }
-                if(regex===undefined){
-                    regex = new RegExp('#\\['+i+'\\]','g');
-                    _preregex[i] = regex;
-                }
-                text = text.replace(regex,'<a href="/html/profile?pub_k='+ct[1]+'" style="color:cyan;cursor:pointer;text-decoration: none;">' + replace_text +'</a>');
-            }
-        });
-        return text;
-    };
-
     function create(args){
         // notes as given to us (as they come from the load)
         let _notes_arr,
@@ -873,13 +912,23 @@ APP.nostr.gui.event_view = function(){
             // events data by id
             _event_map,
             // unique id for the event view
-            _uid= _gui.uid();
-
-        _con = args.con;
-        _enable_media = args.enable_media!==undefined ? args.enable_media : false;
-        _sub_filter = args.filter!==undefined ? args.filter : {
-            'kinds' : new Set([1])
-        };
+            _uid= _gui.uid(),
+            // where we'll render
+            _con = args.con,
+            // attempt to render external media in note text.. could be more fine grained to type
+            // note also this doesn't cover profile img
+            _enable_media = args.enable_media!==undefined ? args.enable_media : false,
+            // filter for notes that will be added to notes_arr
+            // not that currently only applied on add, the list you create with is assumed to already be filtered
+            // like nostr filter but minimal impl just for what we need
+            // TODO: Fix this make filter obj?
+            _sub_filter = args.filter!==undefined ? args.filter : {
+                'kinds' : new Set([1])
+            },
+            // track which event details are expanded
+            _expand_state = {},
+            // underlying APP.nostr.gui.list
+            _my_list;
 
         function uevent_id(event_id){
             return _uid+'-'+event_id;
@@ -913,7 +962,7 @@ APP.nostr.gui.event_view = function(){
             // insert media tags to content
             to_add.content = _gui.http_media_tags_into_text(to_add.content, _enable_media);
             // do p tag replacement
-            to_add.content = do_tag_replacement(to_add.content, the_note.tags)
+            to_add.content = _gui.tag_replacement(to_add.content, the_note.tags)
             // add line breaks
             to_add.content = to_add.content.replace(/\n/g,'<br>');
             // fix special characters as we're rendering in html el

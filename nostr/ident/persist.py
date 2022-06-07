@@ -88,7 +88,7 @@ class ProfileStoreInterface(ABC):
         :return:
         """
 
-        keys = Profile.get_new_key_pair(priv_key=priv_key)
+        keys = Keys.get_new_key_pair(priv_key=priv_key)
         p = Profile(priv_k=keys['priv_k'],
                     pub_k=keys['pub_k'][2:],
                     profile_name=name,
