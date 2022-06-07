@@ -6,8 +6,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Contacts</title>
-
+    <title>Event view</title>
      <!-- Bootstrap core CSS -->
     <link href="/css/bootstrap.css" rel="stylesheet">
     <link href="/css/nostr.css" rel="stylesheet">
@@ -17,11 +16,9 @@
  <div class="container" style="height:100%">
   <div class="row" style="height:100%">
 
-    <div id=class="col-sm-12" style="background-color:black;color:white;">
-        <!-- small about of the user we're looking at render here -->
-        <div id="about-con"></div>
-        <!-- contact/followers/ search here -->
-        <div id="contact-tabs"></div>
+    <div class="col-sm-12" >
+        <div id="feed-pane">
+        </div>
     </div>
   </div>
 </div>
@@ -32,13 +29,14 @@
     <!-- not currently using -->
     <!--<script src="/script/popper.min.js"></script>-->
     <script src="/script/bootstrap.js"></script>
+    <script src="/script/jquery.dataTables.min.js"></script>
     <script src="/script/dayjs.min.js"></script>
     <script src="/script/relativeTime.js"></script>
     <script src="/script/updateLocale.js"></script>
     <script src="/script/mustache.js"></script>
     <script src="/script/network.js"></script>
     <script src="/script/nostr.js"></script>
-    <script src="/script/contact_view.js"></script>
+    <script src="/script/event_view.js"></script>
 
 </body>
 

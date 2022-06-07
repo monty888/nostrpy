@@ -177,11 +177,10 @@ APP.remote = function(){
             do_query(args);
         },
         'load_events' : function(args){
+            let filter = args.filter===undefined ? {'kinds':[1]} : args.filter;
             args['url'] = _events_by_filter_url;
             args['method'] = 'POST';
-            args['data'] = 'filter=' + JSON.stringify({
-                'kinds' : [1]
-            });
+            args['data'] = 'filter=' + JSON.stringify(filter);
             do_query(args);
         },
         'text_events_search' : function(args){
@@ -198,11 +197,22 @@ APP.remote = function(){
 
 APP.nostr_client = function(){
 
-    function create(to_url, callback, data_handler){
-        let _url = to_url,
-            _socket = new WebSocket(_url),
+    function create(args){
+        let _url,
+            _socket,
             _isopen = false,
-            _data_handler = data_handler;
+            _on_data = args.on_data || function(data){
+                console.log(data);
+            },
+            _on_open = args.on_open || function(){},
+            _protocol = location.protocol==='https' ? 'wss://' : 'ws://';
+
+       // default where no url supplied, mostly this will be wants required
+        if(_url===undefined){
+            _url = _protocol + location.host + '/websocket'
+        }
+        // now we can open
+        _socket = new WebSocket(_url);
 
         _socket.onclose = function(e){
             console.log('socket onclose - ');
@@ -213,9 +223,7 @@ APP.nostr_client = function(){
             console.log('socket onmessage - ');
             console.log(e);
             let json = JSON.parse(e['data']);
-            if(_data_handler!==undefined){
-                _data_handler(json);
-            }
+            _on_data(json);
         };
 
         _socket.onerror = function(e) {
@@ -225,7 +233,7 @@ APP.nostr_client = function(){
         _socket.onopen = function(e){
             console.log('socket onopen - ');
             console.log(e);
-            callback({
+            _on_open({
                 'post' : function(){
                     _socket.send('wtf');
                 }

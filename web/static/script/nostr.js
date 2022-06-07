@@ -7,12 +7,17 @@ APP.nostr = {
             // external_link
             _link_tmpl = '<a href="{{url}}">{{url}}</a>',
             // image types e.g. jpg, png
-            _img_tmpl = '<img src="{{url}}" width=640 height=auto style="display:block;" />',
+            _img_tmpl = '<img src="{{url}}" width=100% height=auto style="display:block;border-radius:10px;" />',
             // video
-            _video_tmpl = '<video width=640 height=auto style="display:block" controls>' +
+            _video_tmpl = '<video width=100% height=auto style="display:block" controls>' +
             '<source src="{{url}}" >' +
             'Your browser does not support the video tag.' +
             '</video>';
+
+        // init area for notifications
+        $(document).ready(function(){
+            $(document.body).prepend('<div id="notifications" style="position:absolute;opacity:0.9;z-index:100;width:100%"></div>');
+        });
 
         return {
             'enable_media' : true,
@@ -23,14 +28,14 @@ APP.nostr = {
             },
             // from clicked el traverses upwards to first el with id if any
             // null if we reach the body el before finding an id
-            'get_clicked_id' : function(e){
+            'get_clicked_id' : function(e, accept_map){
                 let ret = null,
                     el = e.target;
 
-                while((el.id===undefined || el.id==='') && el!==document.body){
-                    console.log(el)
+                while((el.id===undefined || el.id==='' || (accept_map && accept_map[el.id]===undefined)) && el!==document.body){
                     el = el.parentNode;
                 }
+
                 if(el!=document.body){
                     ret = el.id;
                 }
@@ -58,7 +63,7 @@ APP.nostr = {
             },
             'http_media_tags_into_text' : function(text, enable_media, tmpl_lookup){
                 // first make the text safe
-                let ret = APP.nostr.util.html_escape(text),
+                let ret = text,
                     // look for link like strs
                     http_matches = APP.nostr.util.http_matches(ret);
 
@@ -92,19 +97,60 @@ APP.nostr = {
                         });
                     }
                     return ret;
+            },
+            'notification' : function(args){
+                /*
+                    displays a messge at top of the screen that will clear after a few seconds
+                */
+                let _text = args.text;
+                    // boostrap alert types
+                    _type = args.type || 'success',
+                    _tmpl = ['<div id="{{id}}" class="alert alert-{{type}}" role="alert" style="margin-bottom:2px;overflow-wrap:anywhere;" >',
+                        '{{text}}',
+                    '</div>'].join('');
+
+                function do_notification(){
+                    let _id = APP.nostr.gui.uid();
+                    $('#notifications').prepend(Mustache.render(_tmpl, {
+                        'text' : _text,
+                        'type' : _type,
+                        'id' : _id
+                    }));
+
+                    setTimeout(function(){
+
+                        let el = $('#'+_id);
+                        el.fadeOut(function(){
+                            el.remove();
+                        });
+                    },1000);
+                }
+
+                do_notification();
             }
+
         };
     }(),
     'util' : {
         'short_key': function (pub_k){
             return pub_k.substring(0, 3) + '...' + pub_k.substring(pub_k.length-4)
         },
-        'html_escape': function (in_str){
-            return in_str.replaceAll('&', '&amp;').
-                replaceAll('<', '&lt;').
-                replaceAll('>', '&gt;').
-                replaceAll('"', '&quot;').
-                replaceAll("'", '&#39;');
+        'html_escape': function (in_str, ignore){
+            let _replacements = [
+                ['&','&amp'],
+                ['<','&lt;'],
+                ['>','&gt;'],
+                ['"','&quot;'],
+                ["'",'&#39;']
+            ];
+            _replacements.forEach(function(c_rep,i){
+                let val = c_rep[0],
+                    rep = c_rep[1];
+                if(ignore===undefined || ignore[val]===undefined){
+                    in_str = in_str.replace(val, rep);
+                }
+            });
+            return in_str;
         },
         // copied from https://stackoverflow.com/questions/17678694/replace-html-entities-e-g-8217-with-character-equivalents-when-parsing-an
         // for text that is going to be rendered into page as html
@@ -128,13 +174,54 @@ APP.nostr = {
         'http_matches' : function(txt){
             const http_regex = /(https?\:\/\/[\w\.\/\-\%\?\=\~\+\@\&\;\#]*)/g
             return txt.match(http_regex);
+        },
+        'copy_clipboard' : function copy_clipboard(value, success_text, fail_text){
+            if(navigator.clipboard===undefined){
+                // do some shit here to try and get access,
+                // think that it won't be possible unless https
+                navigator.permissions.query({name:'clipboard-write'}).then(function(r){
+                    console.log(r)
+                });
+
+            }else{
+                navigator.clipboard.writeText(value);
+                if(success_text!==undefined){
+                    APP.nostr.gui.notification({
+                        'text' : success_text
+                    });
+                }
+
+            }
         }
+
 
     }
 };
 
 // for relative times of notes from now
 dayjs.extend(window.dayjs_plugin_relativeTime);
+// so we can shorten the time formats
+dayjs.extend(window.dayjs_plugin_updateLocale);
+
+dayjs.updateLocale('en', {
+  relativeTime: {
+    // relative time format strings, keep %s %d as the same
+    future: 'in %s', // e.g. in 2 hours, %s been replaced with 2hours
+    past: '%s',
+    s: 'now',
+    m: '1m',
+    mm: '%dm',
+    h: '1h',
+    hh: '%dh', // e.g. 2 hours, %d been replaced with 2
+    d: '1d',
+    dd: '%dd',
+    M: '1mth',
+    MM: '%dmth',
+    y: '1y',
+    yy: '%dy'
+  }
+});
+
 
 APP.nostr.gui.tabs = function(){
     /*
@@ -147,7 +234,7 @@ APP.nostr.gui.tabs = function(){
                 '<li class="{{active}}"><a data-toggle="tab" href="#{{tab-ref}}">{{tab-title}}</a></li>',
             '{{/tabs}}',
             // extra area for e.g. search field,
-            '<span id="{{id}}-tool-con" style="float:right;display:table-cell;padding-top:4px;">',
+            '<span id="{{id}}-tool-con" class="tab-tool-area" >',
             '</span>',
         '</ul>'
         ].join(''),
@@ -423,7 +510,9 @@ APP.nostr.gui.list = function(){
             _render_chunk = args.chunk || true,
             _chunk_size = args.chunk_size || CHUNK_SIZE,
             _chunk_delay = args.chunk_delay || CHUNK_DELAY,
-            _draw_timer;
+            _draw_timer,
+            _uid = APP.nostr.gui.uid(),
+            _click = args.click;
 
         // draw the entire list
         // TODO: chunk draw, max draw amount
@@ -480,14 +569,22 @@ APP.nostr.gui.list = function(){
         }
 
         function get_row_html(r_obj, i){
-            let ret;
+            let ret,
+                r_id = _uid+'-'+i;
+
             if(_row_tmpl!==undefined){
                 ret = Mustache.render(_row_tmpl, r_obj);
             }
-            // TODO: row render supplied.?..
 
             return ret;
         }
+
+        // add click to con
+        if(_click!==undefined){
+            $(_con).on('click', function(e){
+                _click(APP.nostr.gui.get_clicked_id(e));
+            });
+        };
 
 
         return {
@@ -503,15 +600,143 @@ APP.nostr.gui.list = function(){
     }
 }();
 
+APP.nostr.gui.event_detail = function(){
+    let _nv_template = [
+            '{{#fields}}',
+                '<div style="font-weight:bold;">{{name}}</div>',
+                '<div id="{{uid}}-{{name}}" style="color:gray;{{clickable}}" >{{{value}}}</div>',
+            '{{/fields}}',
+        ].join(''),
+        _clicks = new Set(['event_id','sig','pubkey']);
+
+    function create(args){
+        let _con = args.con,
+            _event = args.event,
+            _render_obj,
+            _uid = APP.nostr.gui.uid(),
+            _my_tabs = APP.nostr.gui.tabs.create({
+                'con' : _con,
+                'tabs' : [
+                    {
+                        'title' : 'fields',
+                    },
+                    {
+                        'title' : 'raw'
+                    }
+                ]
+            });
+        // methods
+        function create_render_obj(){
+            let block_split = function(oval){
+                let blocks = oval.match(/.{1,32}/g);
+
+                return blocks.join('<br>');
+            },
+            to_add = [
+                {
+                    'title' : 'event_id',
+                    'field' : 'id',
+                    'func' : block_split
+                },
+                {
+                    'title' : 'created_at',
+                    'func' : function(val){
+                        return dayjs.unix(val).format();
+                    }
+                },
+                {
+                    'title' : 'kind'
+                },
+                {
+                    'title' : 'content',
+                    'func': APP.nostr.util.html_escape
+                },
+                {
+                    'title' : 'pubkey',
+                    'func' : block_split
+                },
+                {
+                    'title' : 'sig',
+                    'func' : block_split
+                },
+                {
+                    'title' : 'tags'
+                }
+            ];
+
+            _render_obj = {
+                'fields': []
+            }
+
+            to_add.forEach(function(c_f,i){
+                let val = _event[c_f.field!==undefined ? c_f.field : c_f.title];
+                if(c_f.func){
+                    val = c_f.func(val);
+                }
+                _render_obj.fields.push({
+                    'name' : c_f.title,
+                    'value' : val,
+                    'uid' : _uid,
+                    'clickable' : navigator.clipboard!==undefined && _clicks.has(c_f.title) ? 'cursor:pointer;' : ''
+                });
+            });
+
+        }
+
+//        function draw(){
+//            if(_render_obj===undefined){
+//                create_render_obj();
+//            }
+//            _con.html(Mustache.render(_nv_template, _render_obj))
+//
+//            // add click events
+//            $(_con).on('click', function(e){
+//                let id = APP.nostr.gui.get_clicked_id(e).replace(_uid+'-','');
+//
+//                if(_clicks.has(id)){
+//                    id = id==='event_id' ? 'id' : id;
+//
+//                    APP.nostr.util.copy_clipboard(_event[id], _event[id]+' - copied to clipboard');
+//                }
+//
+//            });
+//
+//        }
+        function render_fields(){
+            _my_tabs.get_tab(0)['content-con'].html(Mustache.render(_nv_template, _render_obj));
+        }
+
+        function render_raw(){
+            _my_tabs.get_tab(1)['content-con'].html('<div style="color:gray">' + APP.nostr.util.html_escape(JSON.stringify(_event))+ '</div>');
+        }
+
+
+        function draw(){
+            if(_render_obj===undefined){
+                create_render_obj();
+            }
+            _my_tabs.draw();
+            render_fields();
+            render_raw();
+
+        }
+
+        // return funcs
+        return {
+            'draw': draw
+        }
+    }
+
+    return {
+        'create' : create
+    };
+}();
+
 APP.nostr.gui.event_view = function(){
         // short ref
     let _gui = APP.nostr.gui,
         // where we'll render
         _con,
-        // notes as given to us (as they come from the load)
-        _notes_arr,
-        // data render to be used to render
-        _render_arr,
         // global profiles obj
         _profiles = APP.nostr.data.profiles,
         // attempt to render external media in note text.. could be more fine grained to type
@@ -521,242 +746,94 @@ APP.nostr.gui.event_view = function(){
         // not that currently only applied on add, the list you create with is assumed to already be filtered
         // like nostr filter but minimal impl just for what we need
         _sub_filter,
-        // gui to click func map
-        _click_map = {},
         // cache of tag replacement regexs
         _preregex = {},
         // template for individual event in the view, styleing should move to css and classes
         _row_tmpl = [
-            '<div style="padding-top:2px;border 1px solid #222222">',
+            '<div id="{{uid}}-{{event_id}}" style="padding-top:2px;border 1px solid #222222">',
             '<span style="height:60px;width:120px; word-break: break-all; display:table-cell; background-color:#111111;padding-right:10px;" >',
                 // TODO: do something if unable to load pic
                 '{{#picture}}',
-                    '<img id="{{id}}-pp" src="{{picture}}" class="profile-pic-small" />',
+                    '<img id="{{uid}}-{{event_id}}-pp" src="{{picture}}" class="profile-pic-small" />',
                 '{{/picture}}',
                 // if no picture, again do something here
 //                    '{{^picture}}',
 //                        '<div id="{{id}}-pp" style="height:60px;width:64px">no pic</div>',
 //                    '{{/picture}}',
             '</span>',
-            '<span style="height:60px;width:100%; display:table-cell;word-break: break-all;vertical-align:top; background-color:#221124" >',
+            '{{#is_parent}}',
+                '<div style="height:60px;min-width:10px;border-left: 2px dashed white; border-bottom: 2px dashed white;display:table-cell;background-color:#441124;" >',
+                '</div>',
+            '{{/is_parent}}',
+            '{{#missing_parent}}',
+                '<div style="height:60px;min-width:10px;border-right: 2px dashed white; border-top: 2px dashed white;display:table-cell;background-color:#221124;" >',
+                '</div>',
+            '{{/missing_parent}}',
+            '{{^missing_parent}}',
+                '{{#is_child}}',
+                    '<div style="height:60px;min-width:10px;border-right:2px dashed white;background-color:#221124;display:table-cell;" >',
+                    '</div>',
+                '{{/is_child}}',
+            '{{/missing_parent}}',
+            '<span class="post-content" >',
                 '<div border-bottom: 1px solid #443325;">',
-                    '<span id="{{id}}-pt" style="cursor:pointer" >',
+                    '<span id="{{uid}}-{{event_id}}-pt" >',
                         '{{#name}}',
                             '<span style="font-weight:bold">{{name}}</span>@<span style="color:cyan">{{short_key}}</span>',
                         '{{/name}}',
                         '{{^name}}',
                             '<span style="color:cyan;font-weight:bold">{{short_key}}</span>',
                         '{{/name}}',
-                        '<span style="color:gray">:{{event_id}}</span>',
                     '</span>',
-                    '<span id="{{id}}-time" style="float:right">{{at_time}}</span>',
+                    '<span id="{{uid}}-{{event_id}}-time" style="float:right">{{at_time}}</span>',
                 '</div>',
                 '{{{content}}}',
                 '<div style="width:100%">',
+//                    '<span style="color:gray;">{{short_event_id}}</span>',
                     '<span>&nbsp;</span>',
                     '<span style="float:right" >',
-                        '<svg id="{{event_id}}-expand" class="bi" >',
+                        '<svg class="bi" >',
+                            '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#reply-fill"/>',
+                        '</svg>',
+                        '<svg id="{{uid}}-{{event_id}}-expand" class="bi" >',
                             '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#three-dots-vertical"/>',
                         '</svg>',
                     '</span>',
-                    '<div style="border:1px dashed gray;display:none" id="{{event_id}}-expand-con" style="display:none">more detail stuff about this mofo!!!</div>',
+                    '<div style="border:1px dashed gray;display:none" id="{{uid}}-{{event_id}}-expandcon" style="display:none">event detail...</div>',
                 '</div>',
             '</span>',
             '</div>'
         ].join(''),
+        _expand_state = {},
         _my_list;
 
     function _profile_clicked(pub_k){
         location.href = '/html/profile?pub_k='+pub_k;
     }
 
-    function _event_expanded(e_data){
-        let id = e_data.id+'-expand-con',
-            el = $('#'+id),
-            raw_tmpl = [
-                '{{#fields}}',
-                    '<div style="display:table-row;" >',
-                        '<span style="display:table-cell;font-weight:bold;width:120px">{{name}}</span>',
-                        '<span style="display:table-cell;" >{{value}}</span>',
-                    '</div>',
-                '{{/fields}}',
-            ].join(''),
-            render_obj = {
-                'fields': []
-            },
-            to_add = [
-                {
-                    'title' : 'event_id',
-                    'field' : 'id'
-                },
-                {
-                    'title' : 'created_at'
-                },
-                {
-                    'title' : 'kind'
-                },
-                {
-                    'title' : 'content'
-                },
-                {
-                    'title' : 'pubkey'
-                },
-                {
-                    'title' : 'sig'
-                },
-                {
-                    'title' : 'tags'
+    function get_event_parent(evt){
+        let parent = null;
+        for(j=0;j<evt.tags.length;j++){
+            tag = evt.tags[j];
+            if(tag[0]==='e'){
+                if(tag[1]!==undefined){
+                    // we have a parent
+                    parent = tag[1];
                 }
-            ];
-
-        to_add.forEach(function(c_f,i){
-            render_obj.fields.push({
-                'name' : c_f.title,
-                'value' : e_data[c_f.field!==undefined ? c_f.field : c_f.title]
-            });
-        });
-
-        render_obj.fields.push({
-            'name' : 'raw',
-            'value' : JSON.stringify(e_data)
-        })
-
-        el.html(Mustache.render(raw_tmpl, render_obj));
-        el.fadeIn();
-    }
-
-    function _add_click_funcs(for_content, e_data){
-        let profile_click = {
-            'func' : _profile_clicked,
-            'data' : for_content.pub_k
-        }
-        // left profile img
-        _click_map[for_content.id+'-pp'] = profile_click;
-        // profile text
-        _click_map[for_content.id+'-pt'] = profile_click;
-        // expansion area
-        _click_map[for_content.event_id+'-expand'] = {
-            'func': _event_expanded,
-            'data': e_data
-        };
-
-    }
-
-    function _create_contents(){
-        // porilfes must have loaded before notes
-        if(_notes_arr===undefined){
-            return;
-        };
-        _render_arr = [];
-        // TODO: make the list handle clics, it should be able to give row and row_obj
-        _click_map = {};
-        _notes_arr.forEach(function(c_note){
-            let add_content = _note_content(c_note);
-            _render_arr.push(add_content);
-            _add_click_funcs(add_content, c_note);
-        });
-        console.log(_render_arr);
-        if(_my_list===undefined){
-            _my_list = APP.nostr.gui.list.create({
-                'con' : _con,
-                'data' : _render_arr,
-                'row_tmpl': _row_tmpl,
-            });
-        }else{
-            _my_list.set_data(_render_arr);
-        }
-
-        _my_list.draw();
-    };
-
-    function _note_content(the_note){
-        let name = the_note['pubkey'],
-            p,
-            attrs,
-            pub_k = the_note['pubkey'],
-            to_add = {
-                'evt': the_note,
-                'id' : APP.nostr.gui.uid(),
-                'event_id' : the_note.id,
-                'content' : the_note['content'],
-                'short_key' : APP.nostr.util.short_key(pub_k),
-                'pub_k' : pub_k,
-                'picture' : APP.nostr.gui.robo_images.get_url({
-                    'text' : pub_k
-                }),
-                'at_time': dayjs.unix(the_note.created_at).fromNow()
-            };
-
-        // insert media tags to content
-        to_add.content = _gui.http_media_tags_into_text(to_add.content, _enable_media);
-        // do p tag replacement
-        to_add.content = do_tag_replacement(to_add.content, the_note.tags)
-        // add line breaks
-        to_add.content = to_add.content.replace(/\n/g,'<br>');
-        // fix special characters as we're rendering in html el
-        to_add.content = APP.nostr.util.html_unescape(to_add.content);
-
-
-        if(_profiles.is_loaded()){
-            p = _profiles.lookup(name);
-            if(p!==undefined){
-                attrs = p['attrs'];
-                if(attrs!==undefined){
-                    if(attrs['name']!==undefined){
-                        to_add['name'] = attrs['name'];
-                    }
-                    if(_enable_media && attrs['picture']!==undefined){
-                        to_add['picture'] = attrs['picture'];
-                    }
-
-                }
+                return parent;
             }
-        };
-        return to_add;
-    }
-
-    /*
-        returns the_note.content str as we'd like to render it
-        i.e. make http::// into <a hrefs>, if inline media and allowed insert <img> etc
-    */
-    function get_note_html(the_note){
-        let http_matches,
-            link_tmpl = '<a href="{{url}}">{{url}}</a>',
-            img_tmpl = '<img src="{{url}}" width=640 height=auto style="display:block;" />',
-            video_tmpl = '<video width=640 height=auto style="display:block" controls>' +
-            '<source src="{{url}}" >' +
-            'Your browser does not support the video tag.' +
-            '</video>',
-            tmpl_lookup = {
-                'image' : img_tmpl,
-                'external_link' : link_tmpl,
-                'video' : video_tmpl
-            },
-
-            ret = the_note['content'];
-
-
-        // make str safe for browser render as we're going to insert html tags
-        ret = APP.nostr.util.html_escape(ret);
-
-        // add line breaks
-        ret = ret.replace(/\n/g,'<br>');
-        // look for link like strs
-        http_matches = APP.nostr.util.http_matches(ret);
-        // do inline media and or link replacement
-        if(http_matches!==null){
-            http_matches.forEach(function(c_match){
-                // how to render, unless enable media is false in which case just the link is out put
-                // another level of safety would be that these links are rendered inactive and need the user
-                // to perform some action to actaully enable them
-                let media_type = _enable_media===true ? _gui.media_lookup(c_match) : 'external_link';
-                ret = ret.replace(c_match,Mustache.render(tmpl_lookup[media_type],{
-                    'url' : c_match
-                }));
-            });
         }
-        return ret;
+        // no parent
+        return null;
     };
+
+    function _event_clicked(evt){
+        let root = '';
+        if(evt['missing_parent']!==undefined && evt.missing_parent===true){
+            root = '&root='+get_event_parent(evt);
+        }
+        location.href = '/html/event?id='+evt.id+root;
+    }
 
     /*
         does replacement of #[n] for pub tags in text
@@ -782,29 +859,282 @@ APP.nostr.gui.event_view = function(){
                     regex = new RegExp('#\\['+i+'\\]','g');
                     _preregex[i] = regex;
                 }
-                text = text.replace(regex,'<a href="/html/profile?pub_k='+ct[1]+'" style="color:cyan;cursor:pointer;text-decoration: none;;">' + replace_text +'</a>');
+                text = text.replace(regex,'<a href="/html/profile?pub_k='+ct[1]+'" style="color:cyan;cursor:pointer;text-decoration: none;">' + replace_text +'</a>');
             }
         });
         return text;
     };
 
     function create(args){
+        // notes as given to us (as they come from the load)
+        let _notes_arr,
+            // data render to be used to render
+            _render_arr,
+            // events data by id
+            _event_map,
+            // unique id for the event view
+            _uid= _gui.uid();
+
         _con = args.con;
         _enable_media = args.enable_media!==undefined ? args.enable_media : false;
         _sub_filter = args.filter!==undefined ? args.filter : {
             'kinds' : new Set([1])
         };
 
+        function uevent_id(event_id){
+            return _uid+'-'+event_id;
+        }
+
+        function _note_content(the_note){
+            let name = the_note['pubkey'],
+            p,
+            attrs,
+            pub_k = the_note['pubkey'],
+            to_add = {
+                'is_parent' : the_note.is_parent,
+                'missing_parent' : the_note.missing_parent,
+                'is_child' : the_note.is_child,
+                'uid' : _uid,
+                'evt': the_note,
+                'event_id' : the_note.id,
+                'short_event_id' : APP.nostr.util.short_key(the_note.id),
+                'content' : the_note['content'],
+                'short_key' : APP.nostr.util.short_key(pub_k),
+                'pub_k' : pub_k,
+                'picture' : APP.nostr.gui.robo_images.get_url({
+                    'text' : pub_k
+                }),
+                'at_time': dayjs.unix(the_note.created_at).fromNow()
+            };
+
+
+            // make safe
+            to_add.content = APP.nostr.util.html_escape(to_add.content);
+            // insert media tags to content
+            to_add.content = _gui.http_media_tags_into_text(to_add.content, _enable_media);
+            // do p tag replacement
+            to_add.content = do_tag_replacement(to_add.content, the_note.tags)
+            // add line breaks
+            to_add.content = to_add.content.replace(/\n/g,'<br>');
+            // fix special characters as we're rendering in html el
+            to_add.content = APP.nostr.util.html_unescape(to_add.content);
+
+            if(_profiles.is_loaded()){
+            p = _profiles.lookup(name);
+            if(p!==undefined){
+                attrs = p['attrs'];
+                if(attrs!==undefined){
+                    if(attrs['name']!==undefined){
+                        to_add['name'] = attrs['name'];
+                    }
+                    if(_enable_media && attrs['picture']!==undefined){
+                        to_add['picture'] = attrs['picture'];
+                    }
+
+                }
+            }
+            };
+            return to_add;
+        }
+
+        function _expand_event(e_data){
+            let evt_id = e_data.id,
+            con;
+            if(_expand_state[evt_id]===undefined){
+                con = $('#'+uevent_id(evt_id)+'-expandcon');
+                _expand_state[evt_id] = {
+                    'is_expanded' : true,
+                    'con' : con,
+                    'event_info' : APP.nostr.gui.event_detail.create({
+                        'con' : con,
+                        'event': e_data
+                    })
+                };
+                _expand_state[evt_id].event_info.draw();
+                con.fadeIn();
+            }else{
+                if(_expand_state[evt_id].is_expanded){
+                    _expand_state[evt_id].con.fadeOut();
+                }else{
+                    _expand_state[evt_id].con.fadeIn();
+                }
+                _expand_state[evt_id].is_expanded = !_expand_state[evt_id].is_expanded;
+            }
+
+        }
+
+        function _create_contents(){
+            // profiles must have loaded before notes
+            if(_notes_arr===undefined){
+                return;
+            };
+
+            _render_arr = [];
+            // event map contains both the event and event after we added our
+            // extra fields
+            _event_map = {};
+
+            _notes_arr.forEach(function(c_evt){
+                _event_map[c_evt.id] = {
+                    'event' : c_evt
+                }
+            });
+            // evts ordered and rendered for screen
+            event_ordered().forEach(function(c_evt){
+                let add_content = _note_content(c_evt);
+                _render_arr.push(add_content);
+                _event_map[c_evt.id].render_event = c_evt;
+            });
+
+            if(_my_list===undefined){
+                _my_list = APP.nostr.gui.list.create({
+                    'con' : _con,
+                    'data' : _render_arr,
+                    'row_tmpl': _row_tmpl,
+                    'click' : function(id){
+                        let parts = id.replace(_uid+'-','').split('-'),
+                            event_id = parts[0],
+                            type = parts[1],
+                            evt = _event_map[event_id].event;
+                        if(type==='expand'){
+                            _expand_event(evt);
+                        }else if(type==='pt' || type==='pp'){
+                           _profile_clicked(evt.pubkey);
+                        }else if(type===undefined){
+                            // event clicked wants to see is_parent_missing field
+                            // which mean using the render_event
+                            // at the moment this won't exist for evts added to screen seen last refresh
+                            // (via websocket) in which case it just gets the event and parent_missing assumned false
+                            // the whole evts added after page load needs going through anyhow...
+                            if(_event_map[event_id].render_event!==undefined){
+                                evt = _event_map[event_id].render_event;
+                            }
+                            _event_clicked(evt);
+                        }
+
+
+                    }
+                });
+            }else{
+                _my_list.set_data(_render_arr);
+            }
+
+            _my_list.draw();
+        };
+
+
+        function event_ordered(){
+            /* where tags refrence a parent, if we have that event we'll lift it up so it appears
+                before it's child event (otherwise everything is just date ordered)
+
+            */
+            let roots = {},
+                ret = [],
+                notes_arr_copy = [];
+
+            function add_children(evt){
+                // reverse the children so newest are first
+                evt.children.reverse();
+                evt.children.forEach(function(c_evt,j){
+                    c_evt.is_child = true;
+                    ret.push(c_evt);
+                });
+            }
+
+            // 1. look through all events and [] thouse that have the same parent
+            _notes_arr.forEach(function(c_evt,i){
+                let tag,j,parent;
+                // everything is done on a copy of tthe event as we're going to add some of
+                // our own fields
+                c_evt = jQuery.extend({}, c_evt);
+
+                notes_arr_copy.push(c_evt);
+                parent = get_event_parent(c_evt);
+
+                if(parent!==null){
+                    if(roots[parent]===undefined){
+                        roots[parent] = {
+                            'children' : []
+                        }
+                    }
+                    roots[parent].children.push(c_evt);
+                }else{
+                    if(roots[c_evt.id]!==undefined){
+                        roots[c_evt.id]['event'] = c_evt;
+                    }else{
+                        roots[c_evt.id] = {
+                            'event' : c_evt,
+                            'children': []
+                        }
+                    }
+                }
+            });
+
+            // 3. now create the ordered version
+            notes_arr_copy.forEach(function(c_evt,i){
+                let parent = get_event_parent(c_evt);
+
+                // parent, draw it and any children
+                if(roots[c_evt.id]!==undefined && roots[c_evt.id].added!==true){
+                    if(roots[c_evt.id].children.length>0){
+                        c_evt.is_parent = true;
+                    }
+
+                    ret.push(c_evt);
+//                    // now reverse the children and add
+//                    roots[c_evt.id].children.reverse();
+//                    roots[c_evt.id].children.forEach(function(c_evt,j){
+//                        c_evt.is_child = true;
+//                        order_arr.push(c_evt);
+//                    });
+                    add_children(roots[c_evt.id]);
+
+                    roots[c_evt.id].added=true;
+                // child of a parent, draw parent if we have it and all children
+                }else if(parent!==null && roots[parent].added!==true){
+                    // do we have parent event
+                    if(roots[parent].event){
+                        roots[parent].event.is_parent = true;
+                        ret.push(roots[parent].event);
+                    }
+                    // now reverse the children and add
+//                    roots[parent].children.reverse();
+//                    roots[parent].children.forEach(function(c_evt,j){
+//                        c_evt.is_child = true;
+//                        order_arr.push(c_evt);
+//                    });
+                    add_children(roots[parent]);
+
+                    roots[parent].added=true;
+                }
+
+            });
+//            alert(order_arr.length)
+//            alert(_notes_arr.length)
+// 2. mark those missing a parent and those that are the last child we have
+            for(let j in roots){
+                if(roots[j].event===undefined){
+                    roots[j].children[0].missing_parent=true;
+//                    alert(roots[j].children[0].id);
+                }
+            }
+
+
+
+            // 4. switch note_arr for the order_arr we created
+            return ret;
+        }
+
         function set_notes(the_notes){
             _notes_arr = the_notes;
+
             // makes [] that'll be used render display
             _create_contents();
-
         };
 
         function _time_update(){
             _render_arr.forEach(function(c){
-                let id = c.id,
+                let id = uevent_id(c.event_id),
                     ntime = dayjs.unix(c['evt'].created_at).fromNow();
 
                 // update in render obj, at the moment it never gets reused anyhow
@@ -839,17 +1169,9 @@ APP.nostr.gui.event_view = function(){
                 // we won't redraw the whole list just insert at top
                 // which should be safe (end might be ok, but anywhere else would be tricky...)
                 _con.prepend(Mustache.render(_row_tmpl,_render_arr[0]));
-                _add_click_funcs(add_content);
+                _event_map[evt.id] = evt;
             }
         }
-
-        // listen for clicks
-        $(_con).on('click', function(e){
-            let id = APP.nostr.gui.get_clicked_id(e);
-            if(_click_map[id]!==undefined){
-                _click_map[id].func(_click_map[id].data);
-            }
-        });
 
         // update the since every 30s
         setInterval(_time_update, 1000*30);
@@ -885,19 +1207,22 @@ APP.nostr.gui.profile_about = function(){
                     '{{/picture}}',
                 '</span>',
                 '<span style="width:100%; display:table-cell;word-break: break-all;vertical-align:top; background-color:#221124" >',
-                    '<span style="color:cyan">{{pub_k}}</span>',
-                    '<svg id="{{pub_k}}-cc" class="bi" >',
-                        '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#clipboard-plus-fill"/>',
-                    '</svg>',
-                    '<br>',
                     '{{#name}}',
-                        '<div>',
-                            '<span class="profile-about-label">name: </span><span style="display:table-cell">{{name}}</span>',
-                        '</div>',
+                        '<span>{{name}}@</span>',
                     '{{/name}}',
+                    '<span class="pubkey-text" >{{pub_k}}</span>',
+//                    '<svg id="{{pub_k}}-cc" class="bi" >',
+//                        '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#clipboard-plus-fill"/>',
+//                    '</svg>',
+//                    '<br>',
+//                    '{{#name}}',
+//                        '<div>',
+//                            '{{name}}',
+//                        '</div>',
+//                    '{{/name}}',
                     '{{#about}}',
                         '<div>',
-                            '<span class="profile-about-label">about: </span><span style="display:table-cell">{{{about}}}</span>',
+                            '{{{about}}}',
                         '</div>',
                     '{{/about}}',
                     '<div id="contacts-con" ></div>',
@@ -907,15 +1232,18 @@ APP.nostr.gui.profile_about = function(){
         ].join(''),
         // used to render a limited list of follower/contacts imgs and counts
         _fol_con_sub = [
-            '<span class="profile-about-label">{{label}}: </span>',
-            '<span style="display:table-cell; width:50px;">{{count}}</span>',
+            '<span class="profile-about-label">{{label}} {{count}}</span>',
             '{{#images}}',
             '<span style="display:table-cell;">',
                 '<img id="{{id}}" src="{{src}}" class="profile-pic-verysmall" />',
             '</span>',
             '{{/images}}',
             '{{#trail}}',
-                '<span style="display:table-cell">...</span>',
+                '<span style="display:table-cell">',
+                    '<svg class="bi" >',
+                        '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#three-dots"/>',
+                    '</svg>',
+                '</span>',
             '{{/trail}}'
         ].join('');
 
@@ -996,10 +1324,11 @@ APP.nostr.gui.profile_about = function(){
                     let id = APP.nostr.gui.get_clicked_id(e);
                     if(_click_map[id]!==undefined){
                         _click_map[id].func(_click_map[id].data);
-                    }else if((id!==null) && (id.indexOf('-cc')>0)){
-//                        alert('clipboard copy!!!!' + id.replace('-cc',''));
-                        navigator.clipboard.writeText(id.replace('-cc',''));
                     }
+//                    else if((id!==null) && (id.indexOf('-cc')>0)){
+////                        alert('clipboard copy!!!!' + id.replace('-cc',''));
+//                        navigator.clipboard.writeText(id.replace('-cc',''));
+//                    }
                 });
         }
 
@@ -1080,23 +1409,26 @@ APP.nostr.gui.profile_list = function (){
         _profiles = APP.nostr.data.profiles,
         // template for profile output
         _row_tmpl = [
-            '<div id="{{pub_k}}-pubk-{{list_id}}" style="padding-top:2px;cursor:pointer">',
-                '<span style="display:table-cell;height:64px;width:128px; background-color:#111111;padding-right:10px;" >',
+            '<div id="{{uid}}-{{pub_k}}" style="padding-top:2px;cursor:pointer">',
+                '<span style="display:table-cell;width:128px; background-color:#111111;padding-right:10px;" >',
                     // TODO: do something if unable to load pic
                     '{{#picture}}',
-                        '<img src="{{picture}}"  class="profile-pic-small"/>',
+                        '<img src="{{picture}}" loading="lazy" class="profile-pic-small"/>',
                     '{{/picture}}',
                 '</span>',
-                '<span style="height:64px;width:100%; display:table-cell;word-break: break-all;vertical-align:top; background-color:#221124" >',
-                    '<span style="color:cyan">{{pub_k}}</span><br>',
+                '<span style="width:100%; display:table-cell;word-break: break-all;vertical-align:top; background-color:#221124" >',
                     '{{#name}}',
-                        '<div>',
-                            '<span style="display:inline-block; width:100px; font-weight:bold;">name: </span><span>{{name}}</span>',
-                        '</div>',
+                        '@{{name}}',
                     '{{/name}}',
+                    '<span class="pubkey-text">{{short_pub_k}}</span><br>',
+//                    '{{#name}}',
+//                        '<div>',
+//                            '<span style="display:inline-block; width:100px; font-weight:bold;">name: </span><span>{{name}}</span>',
+//                        '</div>',
+//                    '{{/name}}',
                     '{{#about}}',
                         '<div>',
-                            '<span style="display:table-cell; width:100px; font-weight:bold;">about: </span><span style="display:table-cell">{{{about}}}</span>',
+                            '{{{about}}}',
                         '</div>',
                     '{{/about}}',
                 '</span>',
@@ -1122,7 +1454,7 @@ APP.nostr.gui.profile_list = function (){
             // only profiles that pass this filter will be showing
             _filter_text = args.filter || '',
             // so ids will be unique per this list
-            _id = APP.nostr.gui.uid(),
+            _uid = APP.nostr.gui.uid(),
             // list obj that actually does the rendering
             _my_list;
 
@@ -1152,7 +1484,11 @@ APP.nostr.gui.profile_list = function (){
                 'con' : _con,
                 'data' : create_render_data(),
                 'row_tmpl': _row_tmpl,
-                'filter' : test_filter
+                'filter' : test_filter,
+                'click' : function(id){
+                    let pubk = id.replace(_uid+'-','');
+                    location.href = '/html/profile?pub_k='+pubk;
+                }
             });
 
             // draw was called before we were ready, draw now
@@ -1185,8 +1521,9 @@ APP.nostr.gui.profile_list = function (){
             let the_profile = _profiles.lookup(pub_k),
                 render_profile = {
                     // required to make unique ids if page has more than one list showing same items on page
-                    'list_id' : _id,
-                    'pub_k' : pub_k
+                    'uid' : _uid,
+                    'pub_k' : pub_k,
+                    'short_pub_k' : APP.nostr.util.short_key(pub_k)
                 },
                 attrs;
 
@@ -1232,17 +1569,6 @@ APP.nostr.gui.profile_list = function (){
             _filter_text = str;
             _my_list.draw();
         }
-
-
-        // add click events
-        _con.on('click', function(e){
-            let id = APP.nostr.gui.get_clicked_id(e),
-            pub_k;
-            if((id!==undefined) && (id.indexOf('-pubk')>0)){
-                pub_k = id.replace('-pubk-'+_id,'');
-                location.href = '/html/profile?pub_k='+pub_k;
-            }
-        });
 
         return {
             'draw': draw,

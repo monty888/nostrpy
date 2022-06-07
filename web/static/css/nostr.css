@@ -3,7 +3,23 @@ body {
     font-family : courier;
     background-color: black;
     color: white;
-    min-width: 800px;
+    min-width: 480px;
+    font-size: 16px;
+}
+
+img{
+    max-width:100%;
+}
+
+.pubkey-text {
+    color: cyan;
+}
+
+.tab-tool-area{
+    float:right;
+    display:table-cell;
+    padding-top:4px;
+    padding-bottom:4px;
 }
 
 .profile-pic-large, .profile-pic-small, .profile-pic-verysmall{
@@ -13,24 +29,39 @@ body {
 }
 
 .profile-pic-large{
+    min-width: 128px;
     width: 128px;
     height: 128px;
 }
 
 .profile-pic-small{
+    min-width: 64px;
     width: 64px;
     height: 64px;
 }
 
 .profile-pic-verysmall{
+    min-width: 24px;
     width: 24px;
     height: 24px;
 }
 
 .profile-about-label{
+    width: 160px;
+    color: gray;
     display:table-cell;
-    width:120px;
-    font-weight:bold;
+}
+
+.post-content{
+    min-height:60px;
+    width:100%;
+    max-width:100%;
+    display:table-cell;
+    /* overflow-wrap:break-word; would be better but doesn;t seem to work in table cell*/
+    overflow-wrap:anywhere;
+    vertical-align:top;
+    background-color:#221124;
+    cursor: pointer;
 }
 
 /* bootstrap icons */
@@ -41,4 +72,48 @@ body {
     cursor: pointer;
 }
 
+@media (max-width: 480px) {
+    body {
+        min-width: 100%;
+    }
+
+    .profile-pic-large{
+        min-width: 64px;
+        width: 64px;
+        height: 64px;
+    }
+
+    .profile-pic-small{
+        min-width: 32px;
+        width: 32px;
+        height: 32px;
+    }
+
+    .profile-pic-verysmall{
+        min-width: 16px;
+        width: 16px;
+        height: 16px;
+    }
+
+    .profile-about-label{
+        display: block;
+    }
+
+    .tab-tool-area{
+        float:none;
+        padding-top:0px;
+        padding-bottom:0px;
+        display: inline-block;
+        width:100%;
+    }
+
+}
+
+@media (hover: none) {
+    .bi{
+        width: 20px;
+        height: 20px;
+        margin-right: 5px;
+    }
+}
 
