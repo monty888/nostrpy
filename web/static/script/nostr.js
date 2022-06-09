@@ -458,7 +458,98 @@ APP.nostr.gui.tabs = function(){
     }
 }();
 
+APP.nostr.gui.post_button = function(){
+    /*
+        put a buttom in the bottom right of the screen that when clicked brings up the post modal
+    */
+    let _post_html = [
+            '<div id="post-button" class="post-div">',
+                '<div style="width:50%;height:50%;margin:25%;">',
+                        '<svg class="bi" style="height:100%;width:100%;">',
+                            '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#send-plus"/>',
+                        '</svg>',
+                '</div>',
+            '</div>'
+        ].join(''),
+        _post_el;
 
+    function create(){
+        // should only ever be called once anyway but just incase
+        if(_post_el===undefined){
+            $(document.body).prepend(_post_html);
+            _post_el = $('#post-button');
+            _post_el.on('click', function(){
+                APP.nostr.gui.modal.create({
+                    'title' : 'make post',
+                    'content' : '<div><textarea class="form-control" rows="10" placeholder="whats going down?"></textarea></div>',
+                    'ok_text' : 'send'
+                });
+
+                APP.nostr.gui.modal.show();
+            });
+        }
+    }
+
+    return {
+        'create' : create
+    }
+}();
+
+/*
+    modal, we only ever create one of this and just fill the content differently
+    used to make posts, maybe set options?
+*/
+APP.nostr.gui.modal = function(){
+    let _modal_html = [
+            '<div style="color:black;height:100%" id="nostr-modal" class="modal fade" role="dialog">',
+                '<div class="modal-dialog">',
+                    '<div class="modal-content">',
+                        '<div class="modal-header">',
+                            '<button type="button" class="close" data-dismiss="modal" style="opacity:1;color:white;" >&times;</button>',
+                            '<h4 class="modal-title" id="nostr-modal-title"></h4>',
+                        '</div>',
+                        '<div class="modal-body" id="nostr-modal-content" >',
+                        '</div>',
+                        '<div class="modal-footer">',
+                            '<button id="nostr-modal-ok-button" type="button" class="btn btn-default" data-dismiss="modal">Close</button>',
+                        '</div>',
+                    '</div>',
+                '</div>',
+            '</div>'
+        ].join(''),
+        _my_modal,
+        _my_title,
+        _my_content,
+        _my_ok_button;
+
+    function create(args){
+        let title = args.title || '?no title?';
+            content = args.content || '',
+            ok_text = args.ok_text || '?no_text?';
+
+        // make sure we only ever create one
+        if(_my_modal===undefined){
+            $(document.body).prepend(_modal_html);
+            _my_modal = $('#nostr-modal');
+            _my_title = $('#nostr-modal-title');
+            _my_content = $('#nostr-modal-content');
+            _my_ok_button = $('#nostr-modal-ok-button');
+        }
+        _my_title.html(title);
+        _my_content.html(content);
+        _my_ok_button.html(ok_text);
+    }
+
+    function show(){
+        // create must have been called before calling show
+        _my_modal.modal()
+    }
+
+    return {
+        'create' : create,
+        'show' : show
+    };
+}();
 
 /*
     profiles data is global,
@@ -688,6 +779,15 @@ APP.nostr.gui.event_detail = function(){
                 '<div style="font-weight:bold;">{{name}}</div>',
                 '<div id="{{uid}}-{{name}}" style="color:gray;{{clickable}}" >{{{value}}}</div>',
             '{{/fields}}',
+            '<div style="font-weight:bold;">tags</div>',
+            '{{^tags}}',
+                '<div style="color:gray" >[]</div>',
+            '{{/tags}}',
+            '{{#tags}}',
+                '<div style="font-weight:bold;">{{name}}</div>',
+                '<div id="{{uid}}-{{name}}" style="color:gray;" >{{.}}</div>',
+            '{{/tags}}',
+
         ].join(''),
         _clicks = new Set(['event_id','sig','pubkey']);
 
@@ -740,14 +840,12 @@ APP.nostr.gui.event_detail = function(){
                 {
                     'title' : 'sig',
                     'func' : block_split
-                },
-                {
-                    'title' : 'tags'
                 }
             ];
 
             _render_obj = {
-                'fields': []
+                'fields': [],
+                'tags' : _event.tags
             }
 
             to_add.forEach(function(c_f,i){

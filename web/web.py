@@ -458,8 +458,8 @@ def nostr_web():
         sys.exit(0)
 
     signal.signal(signal.SIGINT, sigint_handler)
-    my_server.start(host='localhost')
-    # my_server.start(host='192.168.0.14')
+    # my_server.start(host='localhost')
+    my_server.start(host='192.168.0.14')
 
 if __name__ == '__main__':
     logging.getLogger().setLevel(logging.DEBUG)

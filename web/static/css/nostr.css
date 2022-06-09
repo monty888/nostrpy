@@ -109,6 +109,72 @@ img{
 
 }
 
+.modal {
+  padding: 0 !important; // override inline padding-right added from js
+}
+
+.modal .modal-dialog {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+/*  padding-left: 10%;
+  padding-right: 10%;
+  margin-left: 10%;
+  margin-right: 10%;*/
+}
+
+.modal .modal-content {
+  height: auto;
+  min-height: 100%;
+  height: 100%;
+  border: 0 none;
+  border-radius: 0;
+  box-shadow: none;
+  background-color: black;
+  color: white;
+}
+
+.event-feed {
+    height:100%;
+    overflow-y:scroll;
+    padding-right:10px;
+}
+
+/*
+    for post buttom bottom right of screen
+    kind of works but because based on viewport not great
+    when the height is shrunk down. would be better if we could get min size and
+    still keep it circular..
+*/
+.post-div {
+    display: inline-block;
+    position : absolute;
+    bottom: 3%;
+    right: 3%;
+    height: 8vh;
+    min-height : 8vh;
+    width: 8vh;
+    min-width : 8vh;
+    background-color : blue;
+    border-radius : 50%;
+    padding : 0px;
+    background-color: #337ab7;
+    border: 2px solid #2e6da4;
+    z-index : 100;
+    cursor: pointer;
+}
+
+@media (max-height: 600px) {
+    .post-div {
+        height: 20vh;
+        min-height : 20vh;
+        width: 20vh;
+        min-width : 20vh;
+    }
+}
+
+
 @media (hover: none) {
     .bi{
         width: 20px;

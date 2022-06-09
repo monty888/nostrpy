@@ -49,5 +49,16 @@
         });
         // to see events as they happen
         start_client();
+
+        $('#make-post').on('click', function(){
+            $(document.body).prepend(Mustache.render(modal_tmpl, {
+                'header': 'make post'
+            }));
+            $("#myModal").modal()
+        });
+
+        APP.nostr.gui.post_button.create();
+
+
     });
 }();
