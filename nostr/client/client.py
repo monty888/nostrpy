@@ -311,7 +311,8 @@ class Client:
 
     def end(self):
         self._run = False
-        self._ws.close()
+        if self._ws:
+            self._ws.close()
 
         # rel.abort()
 

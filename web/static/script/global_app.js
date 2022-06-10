@@ -8,12 +8,7 @@
     let _client,
         // inline media where we can, where false just the link is inserted
         _enable_media = true,
-        // main container where we'll draw out the events
-        _text_con = $('#feed-pane'),
-        _my_event_view = APP.nostr.gui.event_view.create({
-            'con' : _text_con,
-            'enable_media': _enable_media
-        });
+        _my_event_view;
 
     function start_client(){
         APP.nostr_client.create('ws://' + location.host + '/websocket', function(client){
@@ -39,6 +34,21 @@
 
     // start when everything is ready
     $(document).ready(function() {
+        $('#main_container').html(Mustache.render(APP.nostr.gui.templates.get('screen'),{
+            'head-size' : 64
+        }));
+        APP.nostr.gui.header.create({
+            'enable_media': _enable_media
+        });
+        // main container where we'll draw out the events
+        let main_con = $('#main-con');
+
+        _my_event_view = APP.nostr.gui.event_view.create({
+            'con' : main_con,
+            'enable_media': _enable_media
+        });
+
+
         // start client for future notes....
         load_notes();
         // init the profiles data
@@ -47,6 +57,8 @@
                 _my_event_view.profiles_loaded();
             }
         });
+        APP.nostr.data.local_profiles.init({});
+
         // to see events as they happen
         start_client();
 
@@ -57,8 +69,7 @@
             $("#myModal").modal()
         });
 
+//        APP.nostr.gui.profile_button.create();
         APP.nostr.gui.post_button.create();
-
-
     });
 }();

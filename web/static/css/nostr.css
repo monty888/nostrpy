@@ -165,6 +165,21 @@ img{
     cursor: pointer;
 }
 
+.left-post-div {
+    left: 3%;
+    background-image: url('https://thetravelhack.com/wp-content/uploads/2013/05/letterbox-in-Falmouth.jpg');
+    background-size: cover;
+}
+
+.header-button {
+    height:64px;
+    width:64px;
+    background-color: #337ab7;
+    border-radius:50%;
+    cursor: pointer;
+}
+
+
 @media (max-height: 600px) {
     .post-div {
         height: 20vh;

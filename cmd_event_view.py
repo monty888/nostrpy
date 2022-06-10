@@ -25,7 +25,7 @@ DB_FILE = '%s/nostr-client.db' % WORK_DIR
 # RELAYS = ['wss://rsslay.fiatjaf.com','wss://nostr-pub.wellorder.net']
 # RELAYS = ['wss://rsslay.fiatjaf.com']
 # RELAYS = ['wss://nostr-pub.wellorder.net']
-RELAYS = ['ws://localhost:8081','wss://nostr-pub.wellorder.net','wss://rsslay.fiatjaf.com']
+RELAYS = ['ws://localhost:8081','wss://nostr-pub.wellorder.net','wss://rsslay.fiatjaf.com','wss://relay.damus.io']
 
 # defaults if not provided at command line or from config file
 # RELAYS = ['ws://localhost:8081']

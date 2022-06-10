@@ -212,6 +212,10 @@ class Profile:
             'pub_k': self.public_key,
             'attrs': self.attrs
         }
+
+        if self.profile_name:
+            ret['profile_name'] = self.profile_name
+
         return ret
 
     def sign_event(self, e: Event):

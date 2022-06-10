@@ -6,4 +6,5 @@
 /.idea/inspectionProfiles/profiles_settings.xml
 /.idea/vcs.xml
 /.idea/.gitignore
+/nostr/data/
 /err.txt

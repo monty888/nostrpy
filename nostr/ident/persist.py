@@ -2,6 +2,7 @@ import json
 import logging
 from datetime import datetime
 from abc import ABC, abstractmethod
+from enum import Enum
 from nostr.ident.profile import Profile, ProfileList, Contact, ContactList
 # from nostr.client.persist import ClientEventStoreInterface
 from nostr.event.persist import ClientEventStoreInterface
@@ -11,6 +12,10 @@ from data.data import DataSet
 from nostr.util import util_funcs
 from nostr.encrypt import Keys
 
+class ProfileType(Enum):
+    LOCAL = 0       # ours/ profile with priv_k
+    REMOTE = 1      # not ours/profile without priv_k
+    ANY = 2         # either of the above
 
 class ProfileStoreInterface(ABC):
     """
@@ -44,7 +49,7 @@ class ProfileStoreInterface(ABC):
         """
 
     @abstractmethod
-    def select(self, filter={}) -> ProfileList:
+    def select(self, filter={}, profile_type=ProfileType.ANY) -> ProfileList:
         """
         TODO : filter support
         :param filter: [
@@ -287,10 +292,25 @@ class TransientProfileStore(ProfileStoreInterface):
             to_update.profile_name = p.profile_name
             to_update.private_key = p.private_key
 
-    def select(self, filter={}) -> ProfileList:
-        profiles = []
-        for i, c_p in enumerate(self._profiles):
-            profiles.append(c_p)
+    def select(self, filter={}, profile_type=ProfileType.ANY) -> ProfileList:
+        c_p: Profile
+        profiles: [Profile] = []
+
+        for i, pub_k in enumerate(self._profiles):
+            c_p = self._profiles[pub_k]
+
+            matches = 'public_key' in filter and pub_k in filter['public_key'] \
+                      or 'private_key' in filter and c_p.private_key in filter['private_key'] \
+                      or'profile_name' in filter and c_p.profile_name in filter['profile_name'] \
+                      or len(filter) == 0
+
+            if matches:
+                if profile_type == ProfileType.ANY:
+                    profiles.append(c_p)
+                elif profile_type == ProfileType.LOCAL and c_p.private_key is not None:
+                    profiles.append(c_p)
+                elif profile_type == ProfileType.REMOTE and c_p.private_key is None:
+                    profiles.append(c_p)
 
         return ProfileList(profiles)
 
@@ -309,7 +329,10 @@ class SQLProfileStore(ProfileStoreInterface):
         self._db = db
 
     @staticmethod
-    def _get_profile_sql_filter(filter={}, placeholder='?'):
+    def _get_profile_sql_filter(filter={},
+                                profile_type=ProfileType.ANY,
+                                placeholder='?'):
+
         """
         :param filter: {
             public_key : [],
@@ -350,6 +373,15 @@ class SQLProfileStore(ProfileStoreInterface):
         _add_for_field('public_key','pub_k')
         _add_for_field('profile_name', 'profile_name')
         _add_for_field('private_key', 'priv_k')
+
+
+        if join==' or ':
+            join=' and '
+        if profile_type == ProfileType.LOCAL:
+            sql_arr.append(' %s priv_k is not null ' % join)
+        elif profile_type==ProfileType.REMOTE:
+            sql_arr.append(' %s priv_k is null ' % join
+                           )
 
         # for now we're ordering what we return
         sql_arr.append("""
@@ -462,9 +494,10 @@ class SQLProfileStore(ProfileStoreInterface):
         logging.debug('SQLProfileStore::update_profile_local sql: %s args: %s' % (sql, args))
         self._db.execute_sql(sql, args)
 
-    def select(self, filter={}) -> ProfileList:
-        filter_query = self._get_profile_sql_filter(filter,
-                                                    placeholder=self._db.placeholder)
+    def select(self, filter={}, profile_type=ProfileType.ANY) -> ProfileList:
+        filter_query = SQLProfileStore._get_profile_sql_filter(filter,
+                                                               profile_type=profile_type,
+                                                               placeholder=self._db.placeholder)
         data = self._db.select_sql(sql=filter_query['sql'],
                                    args=filter_query['args'])
 

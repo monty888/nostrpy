@@ -12,12 +12,8 @@ APP.nostr = {
             _video_tmpl = '<video width=100% height=auto style="display:block" controls>' +
             '<source src="{{url}}" >' +
             'Your browser does not support the video tag.' +
-            '</video>';
-
-        // init area for notifications
-        $(document).ready(function(){
-            $(document.body).prepend('<div id="notifications" style="position:absolute;opacity:0.9;z-index:100;width:100%"></div>');
-        });
+            '</video>',
+            _notifications_con;
 
         return {
             'enable_media' : true,
@@ -105,13 +101,10 @@ APP.nostr = {
                 let _text = args.text;
                     // boostrap alert types
                     _type = args.type || 'success',
-                    _tmpl = ['<div id="{{id}}" class="alert alert-{{type}}" role="alert" style="margin-bottom:2px;overflow-wrap:anywhere;" >',
-                        '{{text}}',
-                    '</div>'].join('');
-
+                    _tmpl = APP.nostr.gui.templates.get('notification');
                 function do_notification(){
                     let _id = APP.nostr.gui.uid();
-                    $('#notifications').prepend(Mustache.render(_tmpl, {
+                    _notifications_con.prepend(Mustache.render(_tmpl, {
                         'text' : _text,
                         'type' : _type,
                         'id' : _id
@@ -124,6 +117,11 @@ APP.nostr = {
                             el.remove();
                         });
                     },1000);
+                }
+                // first notification
+                if(_notifications_con===undefined){
+                    $(document.body).prepend(APP.nostr.gui.templates.get('notification-container'));
+                    _notifications_con = $('#notifications');
                 }
 
                 do_notification();
@@ -496,6 +494,141 @@ APP.nostr.gui.post_button = function(){
 }();
 
 /*
+    renders the section at the top of the screen
+*/
+APP.nostr.gui.header = function(){
+    let _con,
+        _current_profile,
+        _profile_but,
+        _enable_media;
+
+    // watches which profile we're using and calls set_profile_button when it changes
+    function watch_profile(){
+        // look for future updates
+        APP.nostr.data.event.add_listener('profile_set',function(of_type, data){
+            if(data.pub_k !== _current_profile.pub_k){
+                _current_profile = data;
+                set_profile_button();
+            }
+        });
+    }
+
+    // actually update the image on the profile button
+    function set_profile_button(){
+        let url;
+        if(_current_profile.pub_k===undefined){
+            _profile_but.html(APP.nostr.gui.templates.get('no_user_profile_button'));
+        }else{
+            _profile_but.html('');
+            _profile_but.css('background-size',' cover');
+            if(_current_profile.attrs && _current_profile.attrs.picture && _enable_media){
+                url = _current_profile.attrs.picture;
+            }else{
+                url = APP.nostr.gui.robo_images.get_url({
+                    'text' : _current_profile.pub_k
+                });
+            }
+            _profile_but.css('background-image','url("'+url+'")');
+        }
+    }
+
+    function create(args){
+        args = args || {};
+        _con = args.con || $('#header-con');
+        _enable_media = args.enable_media != undefined ? args.enable_media : false;
+        // this is just a str
+        _con.html(APP.nostr.gui.templates.get('head'));
+        _profile_but = $('#profile_button');
+        _current_profile = APP.nostr.data.user.get_profile();
+        set_profile_button();
+        watch_profile();
+
+        // add events
+        _profile_but.on('click', function(){
+            APP.nostr.gui.profile_select_modal.show();
+        });
+
+    }
+
+    return {
+        'create' : create
+    }
+}();
+
+APP.nostr.gui.profile_select_modal = function(){
+    let _uid = APP.nostr.gui.uid();
+
+    function draw_profiles(profiles){
+        let row_tmpl = APP.nostr.gui.templates.get('profile-list'),
+            list,
+            render_obj = [],
+            create_render_obj = function(){
+                profiles.forEach(function(c_p,i){
+                    let img_src;
+
+                    // a profile doesn't necessarily exist
+                    if(c_p && c_p.attrs.picture!==undefined && true){
+                        img_src = c_p.attrs.picture;
+                    }else{
+                        img_src = APP.nostr.gui.robo_images.get_url({
+                            'text' : c_p.pub_k
+                        });
+                    }
+
+                    let to_add = {
+                        'uid' : _uid,
+                        'short_pub_k' : APP.nostr.util.short_key(c_p.pub_k),
+                        'pub_k' : c_p.pub_k,
+                        'profile_name' : c_p.profile_name,
+                        'name' : c_p.attrs.name,
+                        'picture' : img_src
+                    };
+
+                    to_add.profile_name = c_p.profile_name;
+                    render_obj.push(to_add);
+                });
+            };
+
+        create_render_obj();
+
+        APP.nostr.gui.modal.set_content('<div id="'+_uid+'"></div>');
+
+        list = APP.nostr.gui.list.create({
+            'con' : $('#'+_uid),
+            'data' : render_obj,
+            'row_tmpl': row_tmpl,
+            'click' : function(id){
+                let pub_k = id.replace(_uid+'-', '');
+                APP.nostr.data.user.set_profile(pub_k);
+                APP.nostr.gui.modal.hide();
+            }
+        });
+        list.draw();
+    }
+
+    function show(){
+        // set the modal as we want it
+        APP.nostr.gui.modal.create({
+            'title' : 'choose profile',
+            'content' : 'loading...',
+            'ok_text' : 'ok'
+        });
+
+        // show it
+        APP.nostr.gui.modal.show();
+
+        APP.nostr.data.local_profiles.init({
+            'success' : draw_profiles
+        });
+
+    }
+
+    return {
+        'show' : show
+    }
+}();
+
+/*
     modal, we only ever create one of this and just fill the content differently
     used to make posts, maybe set options?
 */
@@ -534,10 +667,19 @@ APP.nostr.gui.modal = function(){
             _my_title = $('#nostr-modal-title');
             _my_content = $('#nostr-modal-content');
             _my_ok_button = $('#nostr-modal-ok-button');
+
+            // escape to hide
+            $(document).on('keydown', function(e){
+                if(e.key==='Escape' && _my_modal.hasClass('in')){
+                    hide();
+                }
+            });
+
         }
         _my_title.html(title);
         _my_content.html(content);
         _my_ok_button.html(ok_text);
+
     }
 
     function show(){
@@ -545,9 +687,19 @@ APP.nostr.gui.modal = function(){
         _my_modal.modal()
     }
 
+    function hide(){
+        _my_modal.modal('hide');
+    }
+
+    function set_content(content){
+        _my_content.html(content);
+    }
+
     return {
         'create' : create,
-        'show' : show
+        'show' : show,
+        'hide' : hide,
+        'set_content' : set_content
     };
 }();
 
@@ -668,6 +820,48 @@ APP.nostr.data.profiles = function(){
         }
 
     };
+}();
+
+
+/*
+    same thing but this os only for local profiles,
+    ie the ones that we can use to mkae posts, edit their meta etc.
+    done without the load code from above...probably need to add it...but work out what the fuck thats
+    doing first because I thought the network code was stopping mutiple requests to the same resource...
+*/
+APP.nostr.data.local_profiles = function(){
+        // as loaded
+    let _profiles_arr,
+        // set true when initial load is done
+    _is_loaded = false,
+        // has loaded started
+    _load_started = false;
+
+    function init(args){
+        let o_success = args.success;
+        _load_started = true;
+        args.success = function(data){
+            _is_loaded = true;
+            _profiles_arr = data['profiles'];
+            if(typeof(o_success)==='function'){
+                o_success(o_success)
+            }
+        }
+
+        if(_is_loaded){
+            o_success(_profiles_arr);
+        }else{
+            APP.remote.local_profiles(args);
+        }
+    };
+
+    return {
+        'init' : init,
+        'profiles' : function(){
+            return _profiles_arr;
+        }
+    }
+
 }();
 
 APP.nostr.gui.list = function(){
@@ -898,6 +1092,20 @@ APP.nostr.gui.event_detail = function(){
             _my_tabs.draw();
             render_fields();
             render_raw();
+
+
+            $(_con).on('click', function(e){
+                let id = APP.nostr.gui.get_clicked_id(e);
+                if(id.indexOf(_uid)>=0){
+                    id = id.replace(_uid+'-','');
+                    if(_clicks.has(id)){
+                        id = id==='event_id' ? 'id' : id;
+                        APP.nostr.util.copy_clipboard(_event[id], _event[id]+' - copied to clipboard');
+                    }
+                    e.stopPropagation()
+                }
+
+            });
 
         }
 
@@ -1142,12 +1350,12 @@ APP.nostr.gui.event_view = function(){
                         let parts = id.replace(_uid+'-','').split('-'),
                             event_id = parts[0],
                             type = parts[1],
-                            evt = _event_map[event_id].event;
+                            evt = _event_map[event_id] !==undefined ? _event_map[event_id].event : null;
                         if(type==='expand'){
                             _expand_event(evt);
                         }else if(type==='pt' || type==='pp'){
                            _profile_clicked(evt.pubkey);
-                        }else if(type===undefined){
+                        }else if(type===undefined && evt!==null){
                             // event clicked wants to see is_parent_missing field
                             // which mean using the render_event
                             // at the moment this won't exist for evts added to screen seen last refresh
@@ -1553,34 +1761,7 @@ APP.nostr.gui.profile_list = function (){
         // lib shortcut
     let _gui = APP.nostr.gui,
         // short cut ot profiles helper
-        _profiles = APP.nostr.data.profiles,
-        // template for profile output
-        _row_tmpl = [
-            '<div id="{{uid}}-{{pub_k}}" style="padding-top:2px;cursor:pointer">',
-                '<span style="display:table-cell;width:128px; background-color:#111111;padding-right:10px;" >',
-                    // TODO: do something if unable to load pic
-                    '{{#picture}}',
-                        '<img src="{{picture}}" loading="lazy" class="profile-pic-small"/>',
-                    '{{/picture}}',
-                '</span>',
-                '<span style="width:100%; display:table-cell;word-break: break-all;vertical-align:top; background-color:#221124" >',
-                    '{{#name}}',
-                        '@{{name}}',
-                    '{{/name}}',
-                    '<span class="pubkey-text">{{short_pub_k}}</span><br>',
-//                    '{{#name}}',
-//                        '<div>',
-//                            '<span style="display:inline-block; width:100px; font-weight:bold;">name: </span><span>{{name}}</span>',
-//                        '</div>',
-//                    '{{/name}}',
-                    '{{#about}}',
-                        '<div>',
-                            '{{{about}}}',
-                        '</div>',
-                    '{{/about}}',
-                '</span>',
-            '</div>'
-        ].join('');
+        _profiles = APP.nostr.data.profiles;
 
     function create(args){
             // container for list
@@ -1603,7 +1784,9 @@ APP.nostr.gui.profile_list = function (){
             // so ids will be unique per this list
             _uid = APP.nostr.gui.uid(),
             // list obj that actually does the rendering
-            _my_list;
+            _my_list,
+            // template to render into
+            _row_tmpl = APP.nostr.gui.templates.get('profile-list');
 
         // handed pub_k rather than profiles directly, attempt to load there followers/contacts
         // then set _view_profiles dependent on view_type

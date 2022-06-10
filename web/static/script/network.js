@@ -9,6 +9,9 @@ APP.remote = function(){
         _events_by_seach_str = '/events_text_search',
         // this will probably need to change in future
         _all_profiles = '/profiles',
+        _local_profiles_url = '/local_profiles',
+        _set_profile_url = '/set_profile',
+        _current_profile_url = '/current_profile',
         // details on a single profile
         _profile_url = '/profile',
         // to stop making duplicate calls we key here only one call per key will be made
@@ -153,14 +156,24 @@ APP.remote = function(){
             };
             do_query(args);
         },
-//        'load_profile_contacts' : function(pub_k,callback){
-//            $.ajax({
-//                url: '/contact_list?pub_k=' + pub_k
-//            }).done(callback);
-//        },
-//        'load_profile_notes' : function(pub_k, callback){
-//            load_notes(callback, pub_k)
-//        },
+        'local_profiles' : function(args){
+            args['url'] = _local_profiles_url;
+            do_query(args);
+        },
+        'set_profile' : function(args){
+            args['url'] = _set_profile_url;
+            args['method'] = 'POST';
+            args['params'] = {
+                // either pub key or profile name
+                'profile' : args['key']
+            };
+            do_query(args);
+        },
+        'current_profile' : function(args){
+            args['url'] = _current_profile_url;
+            do_query(args);
+        },
+
         'load_notes_from_profile': function(args){
             args['url'] = _note_url;
             args['params'] = {

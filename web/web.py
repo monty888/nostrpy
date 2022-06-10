@@ -1,11 +1,17 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
+
+import beaker.middleware
+import cryptography.x509
+
 if TYPE_CHECKING:
     pass
 
 import json
 from json import JSONDecodeError
 from bottle import request, Bottle, static_file, abort
+from beaker import session
+
 import logging
 from pathlib import Path
 from gevent.pywsgi import WSGIServer
@@ -13,10 +19,9 @@ from geventwebsocket import WebSocketError
 from geventwebsocket.handler import WebSocketHandler
 from nostr.event.event import Event
 from nostr.ident.profile import ProfileEventHandler, ProfileList, Profile, Contact
-from nostr.ident.persist import SQLiteProfileStore
+from nostr.ident.persist import SQLiteProfileStore, ProfileType
 from nostr.event.persist import ClientEventStoreInterface, SQLiteEventStore
 from nostr.encrypt import Keys
-
 
 class StaticServer:
     """
@@ -25,6 +30,8 @@ class StaticServer:
     def __init__(self, file_root):
         self._app = Bottle()
         self._file_root = file_root+'/'
+        # if running in our own server, probably only suiatable for dev
+        self._server = None
 
         """
             basically or statics are the same just ext and name of sub dir and the route text that changes
@@ -127,11 +134,19 @@ class StaticServer:
 
     def start(self, host='localhost', port=8080):
         logging.debug('started web server at %s port=%s' % (host, port))
-        server = WSGIServer((host, port), self._app, handler_class=WebSocketHandler)
-        server.serve_forever()
+        self._server = WSGIServer((host, port), self._app, handler_class=WebSocketHandler)
+        self._server.serve_forever()
 
     def stop(self):
-        self._app.close()
+        self._server.stop()
+
+    @property
+    def app(self):
+        return self._app
+
+    @app.setter
+    def app(self, app):
+        self._app = app
 
 class NostrWebException(Exception):
     pass
@@ -179,7 +194,12 @@ class NostrWeb(StaticServer):
 
         self._app.route('/profile', callback=self._profile)
         self._app.route('/profiles', callback=self._profiles_list)
-        self._app.route('/contact_list',callback=self._contact_list)
+        self._app.route('/local_profiles', callback=_get_err_wrapped(self._local_profiles))
+        self._app.route('/set_profile', method='POST', callback=_get_err_wrapped(self._set_profile))
+        self._app.route('/current_profile', callback=_get_err_wrapped(self._get_profile))
+        self._app.route('/state/js', callback=_get_err_wrapped(self._state))
+
+        # self._app.route('/contact_list',callback=self._contact_list)
         self._app.route('/events', method='POST', callback=_get_err_wrapped(self._events_route))
         self._app.route('/events_text_search', callback=_get_err_wrapped(self._events_text_search_route))
         self._app.route('/text_events', callback=self._text_events_route)
@@ -284,20 +304,97 @@ class NostrWeb(StaticServer):
 
         return ret
 
-    def _contact_list(self):
-        pub_k = request.query.pub_k
+    def _local_profiles(self):
+        """
+        :return: profiles that we have priv_k for
+        """
+        profiles = self._profile_store.select(profile_type=ProfileType.LOCAL)
+        c_p: Profile
 
-        # will throw if we don't think valid pub_k
-        self._check_pub_key(pub_k)
-
-        for_profile = self._profile_handler.profiles.get_profile(pub_k,
-                                                                 create_type=ProfileList.CREATE_PUBLIC)
-        contacts = for_profile.load_contacts(self._profile_store)
-
-        return {
-            'pub_k_owner': pub_k,
-            'contacts': 'TODO'
+        ret = {
+            'profiles': [c_p.as_dict() for c_p in profiles]
         }
+        return ret
+
+    @property
+    def session(self):
+        return request.environ.get('beaker.session')
+
+    def _set_profile(self):
+        """
+        set the profile that will be used when perfoming any action,
+            TODO: on some pages it will also change what the users sees and how its displayed
+             note currently there is no authentication it assumed that if you can see the web server then it safe
+             it could be served over tor and use their basic auth now I think...
+             or we can add some sort of basic auth (if available over web you'd want to serve over SSL...)
+        :return: profile if it was found
+        """
+        p_name = request.query.profile
+
+        if p_name == '':
+            raise Exception('profile not supplied')
+
+        profiles = self._profile_store.select({
+            'private_key': p_name,
+            'public_key': p_name,
+            'profile_name': p_name
+        }, profile_type=ProfileType.LOCAL)
+
+        if not len(profiles):
+            raise Exception('no profile found for key: %s' % p_name)
+
+        c_p = profiles[0]
+        self.session['profile'] = c_p.as_dict()
+        self.session.save()
+
+        return c_p.as_dict()
+
+    def _get_profile(self):
+        """
+        :return: current profile or {} if not set
+        """
+        ret = {}
+        if 'profile' in self.session:
+            ret = self.session['profile']
+
+        return ret
+
+    def _state(self):
+        """
+        special route to return a js file that reflects some state on the server
+        currently this is only current profile but probbaly include othere settings
+        it should mainly things that we hold in the session var
+        don't do too much here, for most things its better to make requests as needed
+        :return:
+        """
+
+        c_profile = {}
+        if 'profile' in self.session:
+            c_profile = self.session['profile']
+
+        ret = """
+            APP.nostr.data.state = {
+                'current_user' : %s
+            };
+        """ % c_profile
+
+        return ret
+
+
+    # def _contact_list(self):
+    #     pub_k = request.query.pub_k
+    #
+    #     # will throw if we don't think valid pub_k
+    #     self._check_pub_key(pub_k)
+    #
+    #     for_profile = self._profile_handler.profiles.get_profile(pub_k,
+    #                                                              create_type=ProfileList.CREATE_PUBLIC)
+    #     contacts = for_profile.load_contacts(self._profile_store)
+    #
+    #     return {
+    #         'pub_k_owner': pub_k,
+    #         'contacts': 'TODO'
+    #     }
 
     def _get_events(self, filter):
         events = self._event_store.get_filter(filter)
@@ -459,6 +556,16 @@ def nostr_web():
 
     signal.signal(signal.SIGINT, sigint_handler)
     # my_server.start(host='localhost')
+
+    # set up the session middleware
+    session_opts = {
+        'session.type': 'file',
+        'session.cookie_expires': 300,
+        'session.data_dir': './data',
+        'session.auto': True
+    }
+    my_server.app = beaker.middleware.SessionMiddleware(my_server.app, session_opts)
+
     my_server.start(host='192.168.0.14')
 
 if __name__ == '__main__':
