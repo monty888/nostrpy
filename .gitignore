@@ -6,5 +6,6 @@
 /.idea/inspectionProfiles/profiles_settings.xml
 /.idea/vcs.xml
 /.idea/.gitignore
-/nostr/data/
+/data/container_file/
+/data/container_file_lock/
 /err.txt
