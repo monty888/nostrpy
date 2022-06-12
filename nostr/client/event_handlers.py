@@ -48,6 +48,21 @@ class DeduplicateAcceptor(EventAccepter):
         return ret
 
 
+class LengthAcceptor(EventAccepter):
+
+    def __init__(self, min=1, max=None):
+        self._min = min
+        self._max = max
+
+    def accept_event(self, evt: Event) -> bool:
+        ret = True
+        msg_len = len(evt.content)
+        if self._min and msg_len<self._min:
+            ret = False
+        if self._max and msg_len>self._max:
+            ret = False
+        return ret
+
 class EventHandler(ABC):
 
     def __init__(self, event_acceptors: [EventAccepter]=[]):

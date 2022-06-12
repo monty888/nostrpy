@@ -11,11 +11,10 @@
         _my_event_view;
 
     function start_client(){
-        APP.nostr_client.create('ws://' + location.host + '/websocket', function(client){
-            _client = client;
-        },
-        function(data){
-            _my_event_view.add(data);
+        APP.nostr_client.create({
+            'on_data' : function(data){
+                _my_event_view.add(data);
+            }
         });
     }
 

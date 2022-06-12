@@ -28,7 +28,7 @@ class LengthAcceptReqHandler(AcceptReqHandler):
     """
     use to only accept messages of set lengths, most likely upto a max size
     """
-    def __init__(self, max=10, min=0, descriptive_msg=True):
+    def __init__(self, min=1, max=None, descriptive_msg=True):
         """
         :param max: accept no longer then this
         :param min: - would this ever be useful? Probably not
@@ -39,9 +39,9 @@ class LengthAcceptReqHandler(AcceptReqHandler):
 
     def accept_post(self, ws: WebSocket, evt: Event):
         msg_len = len(evt.content)
-        if msg_len < self._min:
+        if self._min and msg_len < self._min:
             self.raise_err('REQ content < accepted min %s got %s' % (self._min, msg_len))
-        elif msg_len > self._max:
+        elif self._max and msg_len > self._max:
             self.raise_err('REQ content > accepted max %s got %s' % (self._max, msg_len))
 
     def __str__(self):

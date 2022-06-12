@@ -22,6 +22,7 @@ from nostr.ident.profile import ProfileEventHandler, ProfileList, Profile, Conta
 from nostr.ident.persist import SQLiteProfileStore, ProfileType
 from nostr.event.persist import ClientEventStoreInterface, SQLiteEventStore
 from nostr.encrypt import Keys
+from nostr.client.client import ClientPool, Client
 
 class StaticServer:
     """
@@ -158,7 +159,8 @@ class NostrWeb(StaticServer):
                  file_root,
                  event_store: ClientEventStoreInterface,
                  profile_store: SQLiteProfileStore,
-                 profile_handler: ProfileEventHandler):
+                 profile_handler: ProfileEventHandler,
+                 client: Client):
 
         self._event_store = event_store
         self._profile_store = profile_store
@@ -173,6 +175,9 @@ class NostrWeb(StaticServer):
         self._default_query_limit = 100
         # queries will be limited to this even if caller asks for more, None unlimited
         self._max_query = None
+
+        self._client = client
+
 
     def _add_routes(self):
         # methods wrapped so that if they raise NostrException it'll be returned as json {error: text}
@@ -195,15 +200,18 @@ class NostrWeb(StaticServer):
         self._app.route('/profile', callback=self._profile)
         self._app.route('/profiles', callback=self._profiles_list)
         self._app.route('/local_profiles', callback=_get_err_wrapped(self._local_profiles))
-        self._app.route('/set_profile', method='POST', callback=_get_err_wrapped(self._set_profile))
-        self._app.route('/current_profile', callback=_get_err_wrapped(self._get_profile))
-        self._app.route('/state/js', callback=_get_err_wrapped(self._state))
+        # self._app.route('/set_profile', method='POST', callback=_get_err_wrapped(self._set_profile))
+        # self._app.route('/current_profile', callback=_get_err_wrapped(self._get_profile))
+        # self._app.route('/state/js', callback=_get_err_wrapped(self._state))
 
         # self._app.route('/contact_list',callback=self._contact_list)
         self._app.route('/events', method='POST', callback=_get_err_wrapped(self._events_route))
         self._app.route('/events_text_search', callback=_get_err_wrapped(self._events_text_search_route))
         self._app.route('/text_events', callback=self._text_events_route)
         self._app.route('/text_events_for_profile', callback=self._text_events_for_profile)
+
+        self._app.route('/post_text', method='POST', callback=_get_err_wrapped(self._do_post))
+
         self._app.route('/websocket', callback=self._handle_websocket)
 
 
@@ -320,65 +328,85 @@ class NostrWeb(StaticServer):
     def session(self):
         return request.environ.get('beaker.session')
 
-    def _set_profile(self):
-        """
-        set the profile that will be used when perfoming any action,
-            TODO: on some pages it will also change what the users sees and how its displayed
-             note currently there is no authentication it assumed that if you can see the web server then it safe
-             it could be served over tor and use their basic auth now I think...
-             or we can add some sort of basic auth (if available over web you'd want to serve over SSL...)
-        :return: profile if it was found
-        """
-        p_name = request.query.profile
+    def _do_post(self):
+        pub_k = request.forms['pub_k']
+        msg_text = request.forms['text']
 
-        if p_name == '':
-            raise Exception('profile not supplied')
+        self._check_pub_key(pub_k)
+        the_profile = self._profile_handler.profiles.get_profile(pub_k)
+        if the_profile is None:
+            raise Exception('no profile found for pub_k - %s' % pub_k)
+        if the_profile.private_key is None:
+            raise Exception('don\'t have private key for pub_k - %s' % pub_k)
 
-        profiles = self._profile_store.select({
-            'private_key': p_name,
-            'public_key': p_name,
-            'profile_name': p_name
-        }, profile_type=ProfileType.LOCAL)
+        evt = Event(kind=Event.KIND_TEXT_NOTE,
+                    content=msg_text,
+                    pub_key=pub_k)
+        evt.sign(the_profile.private_key)
 
-        if not len(profiles):
-            raise Exception('no profile found for key: %s' % p_name)
+        self._client.publish(evt)
 
-        c_p = profiles[0]
-        self.session['profile'] = c_p.as_dict()
-        self.session.save()
+        return evt.event_data()
 
-        return c_p.as_dict()
+    # def _set_profile(self):
+    #     """
+    #     set the profile that will be used when perfoming any action,
+    #         TODO: on some pages it will also change what the users sees and how its displayed
+    #          note currently there is no authentication it assumed that if you can see the web server then it safe
+    #          it could be served over tor and use their basic auth now I think...
+    #          or we can add some sort of basic auth (if available over web you'd want to serve over SSL...)
+    #     :return: profile if it was found
+    #     """
+    #     p_name = request.query.profile
+    #
+    #     if p_name == '':
+    #         raise Exception('profile not supplied')
+    #
+    #     profiles = self._profile_store.select({
+    #         'private_key': p_name,
+    #         'public_key': p_name,
+    #         'profile_name': p_name
+    #     }, profile_type=ProfileType.LOCAL)
+    #
+    #     if not len(profiles):
+    #         raise Exception('no profile found for key: %s' % p_name)
+    #
+    #     c_p = profiles[0]
+    #     self.session['profile'] = c_p.as_dict()
+    #     self.session.save()
+    #
+    #     return c_p.as_dict()
 
-    def _get_profile(self):
-        """
-        :return: current profile or {} if not set
-        """
-        ret = {}
-        if 'profile' in self.session:
-            ret = self.session['profile']
+    # def _get_profile(self):
+    #     """
+    #     :return: current profile or {} if not set
+    #     """
+    #     ret = {}
+    #     if 'profile' in self.session:
+    #         ret = self.session['profile']
+    #
+    #     return ret
 
-        return ret
-
-    def _state(self):
-        """
-        special route to return a js file that reflects some state on the server
-        currently this is only current profile but probbaly include othere settings
-        it should mainly things that we hold in the session var
-        don't do too much here, for most things its better to make requests as needed
-        :return:
-        """
-
-        c_profile = {}
-        if 'profile' in self.session:
-            c_profile = self.session['profile']
-
-        ret = """
-            APP.nostr.data.state = {
-                'current_user' : %s
-            };
-        """ % c_profile
-
-        return ret
+    # def _state(self):
+    #     """
+    #     special route to return a js file that reflects some state on the server
+    #     currently this is only current profile but probbaly include othere settings
+    #     it should mainly things that we hold in the session var
+    #     don't do too much here, for most things its better to make requests as needed
+    #     :return:
+    #     """
+    #
+    #     c_profile = {}
+    #     if 'profile' in self.session:
+    #         c_profile = self.session['profile']
+    #
+    #     ret = """
+    #         APP.nostr.data.state = {
+    #             'current_user' : %s
+    #         };
+    #     """ % c_profile
+    #
+    #     return ret
 
 
     # def _contact_list(self):
@@ -531,19 +559,27 @@ def nostr_web():
     profile_store = SQLiteProfileStore(nostr_db_file)
     profile_handler = ProfileEventHandler(SQLiteProfileStore(nostr_db_file))
 
-    my_server = NostrWeb(file_root='%s/PycharmProjects/nostrpy/web/static/' % Path.home(),
-                         event_store=event_store,
-                         profile_store=profile_store,
-                         profile_handler=profile_handler)
-
-    from nostr.client.client import ClientPool
     from datetime import datetime
     def my_connect(the_client):
         the_client.subscribe(handlers=my_server, filters={
             'since': util_funcs.date_as_ticks(datetime.now())
         })
 
-    my_client = ClientPool(['ws://localhost:8081','wss://nostr-pub.wellorder.net'], on_connect=my_connect)
+    clients = [
+        {
+            'client' : 'wss://nostr-pub.wellorder.net',
+            'write': False
+        },
+        'ws://localhost:8081'
+    ]
+
+    my_client = ClientPool(clients, on_connect=my_connect)
+    my_server = NostrWeb(file_root='%s/PycharmProjects/nostrpy/web/static/' % Path.home(),
+                         event_store=event_store,
+                         profile_store=profile_store,
+                         profile_handler=profile_handler,
+                         client=my_client)
+
     my_client.start()
 
     # example clean exit... need to look into more though

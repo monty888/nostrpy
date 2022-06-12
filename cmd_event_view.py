@@ -12,7 +12,7 @@ from nostr.ident.profile import Profile, ProfileEventHandler, ProfileList, Conta
 from nostr.ident.persist import SQLProfileStore, TransientProfileStore, ProfileStoreInterface
 from nostr.client.client import ClientPool, Client
 from nostr.event.persist import ClientSQLEventStore
-from nostr.client.event_handlers import PrintEventHandler, PersistEventHandler, EventAccepter, DeduplicateAcceptor
+from nostr.client.event_handlers import PrintEventHandler, PersistEventHandler, EventAccepter, DeduplicateAcceptor, LengthAcceptor
 from nostr.util import util_funcs
 from nostr.event.event import Event
 from app.post import PostApp
@@ -209,10 +209,12 @@ def run_watch(config):
 
     # prints out the events
     my_printer = PrintEventHandler(profile_handler=profile_handler,
-                                   event_acceptors=[DeduplicateAcceptor(), MyAccept(as_user=as_user,
-                                                                                    view_profiles=view_profiles,
-                                                                                    public_inboxes=inboxes,
-                                                                                    since=since)])
+                                   event_acceptors=[DeduplicateAcceptor(),
+                                                    LengthAcceptor(),
+                                                    MyAccept(as_user=as_user,
+                                                             view_profiles=view_profiles,
+                                                             public_inboxes=inboxes,
+                                                             since=since)])
     # we'll attach our own evt printer rather than basic 1 liner of PrintEventHandler
     my_print = FormattedEventPrinter(profile_handler=profile_handler,
                                      as_user=as_user,

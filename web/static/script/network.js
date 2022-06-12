@@ -10,10 +10,12 @@ APP.remote = function(){
         // this will probably need to change in future
         _all_profiles = '/profiles',
         _local_profiles_url = '/local_profiles',
-        _set_profile_url = '/set_profile',
-        _current_profile_url = '/current_profile',
+//        _set_profile_url = '/set_profile',
+//        _current_profile_url = '/current_profile',
         // details on a single profile
         _profile_url = '/profile',
+        _post_text_url = '/post_text',
+
         // to stop making duplicate calls we key here only one call per key will be made
         // either supply a key field else the call_args string is used
         // which will be url+params, no caching is done fo post methods
@@ -202,8 +204,14 @@ APP.remote = function(){
                 'search_str' : args['search_str']
             };
             do_query(args);
-        }
-
+        },
+        'post_text' : function(args){
+            args['url'] = _post_text_url;
+            args['method'] = 'POST';
+            args['data'] = 'pub_k=' + args.pub_k;
+            args['data'] += '&text=' + args.text;
+            do_query(args);
+        },
 
     }
 }();
