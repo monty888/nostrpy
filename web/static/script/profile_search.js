@@ -10,9 +10,10 @@
         _enable_media = true,
         // profiles helper
         _profiles = APP.nostr.data.profiles,
-        _search_con,
+        // main draw area
+        _main_con,
         // the search input
-        _search_in = $('#search-in'),
+        _search_in,
         // delay action using timer
         _search_timer,
         // gui profile list objs
@@ -34,6 +35,18 @@
 
     // start when everything is ready
     $(document).ready(function() {
+        // main page struc
+        $('#main_container').html(APP.nostr.gui.templates.get('screen'));
+        APP.nostr.gui.header.create({
+            'enable_media': _enable_media
+        });
+        // add specifc page scafold
+        _main_con = $('#main-con')
+        _main_con.css('overflow','hidden');
+        _main_con.html(APP.nostr.gui.templates.get('screen-profiles-search'));
+        // grab the search button
+        _search_in = $('#search-in');
+
         // init the profiles data
         _profiles.init({
             'on_load' : function(){

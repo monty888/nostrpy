@@ -31,7 +31,7 @@ class LengthAcceptReqHandler(AcceptReqHandler):
     def __init__(self, min=1, max=None, descriptive_msg=True):
         """
         :param max: accept no longer then this
-        :param min: - would this ever be useful? Probably not
+        :param min: - could be used to stop 0 length messages but maybe should include kind?
         """
         self._min = min
         self._max = max

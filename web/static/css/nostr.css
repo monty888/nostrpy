@@ -7,6 +7,14 @@ body {
     font-size: 16px;
 }
 
+.header-row{
+    height :64px;
+}
+
+.main-row{
+    height: calc(100% - 64px);
+}
+
 img{
     max-width:100%;
 }
@@ -72,43 +80,6 @@ img{
     cursor: pointer;
 }
 
-@media (max-width: 480px) {
-    body {
-        min-width: 100%;
-    }
-
-    .profile-pic-large{
-        min-width: 64px;
-        width: 64px;
-        height: 64px;
-    }
-
-    .profile-pic-small{
-        min-width: 32px;
-        width: 32px;
-        height: 32px;
-    }
-
-    .profile-pic-verysmall{
-        min-width: 16px;
-        width: 16px;
-        height: 16px;
-    }
-
-    .profile-about-label{
-        display: block;
-    }
-
-    .tab-tool-area{
-        float:none;
-        padding-top:0px;
-        padding-bottom:0px;
-        display: inline-block;
-        width:100%;
-    }
-
-}
-
 .modal {
   padding: 0 !important; // override inline padding-right added from js
 }
@@ -152,10 +123,13 @@ img{
     position : absolute;
     bottom: 3%;
     right: 3%;
-    height: 8vh;
+    /*height: 8vh;
     min-height : 8vh;
     width: 8vh;
-    min-width : 8vh;
+    min-width : 8vh;*/
+    min-width: 64px;
+    width: 64px;
+    height: 64px;
     background-color : blue;
     border-radius : 50%;
     padding : 0px;
@@ -165,30 +139,80 @@ img{
     cursor: pointer;
 }
 
+/*
 .left-post-div {
     left: 3%;
     background-image: url('https://thetravelhack.com/wp-content/uploads/2013/05/letterbox-in-Falmouth.jpg');
     background-size: cover;
 }
+*/
 
 .header-button {
     height:64px;
     width:64px;
+    min-width: 64px;
+    min-height: 64px;
     background-color: #337ab7;
     border-radius:50%;
     cursor: pointer;
+    display: inline-block;
+    magin-left : 8px;
+    margin-right: 8px;
 }
 
-
-@media (max-height: 600px) {
-    .post-div {
-        height: 20vh;
-        min-height : 20vh;
-        width: 20vh;
-        min-width : 20vh;
+@media (max-width: 480px) {
+    body {
+        min-width: 100%;
     }
+
+    .profile-pic-large{
+        min-width: 64px;
+        width: 64px;
+        height: 64px;
+    }
+
+    .profile-pic-small{
+        min-width: 32px;
+        width: 32px;
+        height: 32px;
+    }
+
+    .profile-pic-verysmall{
+        min-width: 16px;
+        width: 16px;
+        height: 16px;
+    }
+
+    .profile-about-label{
+        display: block;
+    }
+
+    .tab-tool-area{
+        float:none;
+        padding-top:0px;
+        padding-bottom:0px;
+        display: inline-block;
+        width:100%;
+    }
+
+    .header-button {
+        height:32px;
+        width:32px;
+        min-width: 32px;
+        min-height: 32px;
+        magin-left : 4px;
+        margin-right: 4px;
+    }
+
+.header-row{
+    height :32px;
 }
 
+.main-row{
+    height: calc(100% - 32px);
+}
+
+}
 
 @media (hover: none) {
     .bi{
@@ -197,4 +221,3 @@ img{
         margin-right: 5px;
     }
 }
-

@@ -33,9 +33,8 @@
 
     // start when everything is ready
     $(document).ready(function() {
-        $('#main_container').html(Mustache.render(APP.nostr.gui.templates.get('screen'),{
-            'head-size' : 64
-        }));
+        // main page struc
+        $('#main_container').html(APP.nostr.gui.templates.get('screen'));
         APP.nostr.gui.header.create({
             'enable_media': _enable_media
         });

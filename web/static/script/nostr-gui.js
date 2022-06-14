@@ -5,6 +5,7 @@ APP.nostr.gui.header = function(){
     let _con,
         _current_profile,
         _profile_but,
+        _profile_search_but,
         _enable_media;
 
     // watches which profile we're using and calls set_profile_button when it changes
@@ -43,7 +44,10 @@ APP.nostr.gui.header = function(){
         _enable_media = args.enable_media != undefined ? args.enable_media : false;
         // this is just a str
         _con.html(APP.nostr.gui.templates.get('head'));
-        _profile_but = $('#profile_button');
+        // grab buttons
+        _profile_but = $('#profile_but');
+        _profile_search_but = $('#profile_search_but');
+
         _current_profile = APP.nostr.data.user.get_profile();
         set_profile_button();
         watch_profile();
@@ -51,6 +55,9 @@ APP.nostr.gui.header = function(){
         // add events
         _profile_but.on('click', function(){
             APP.nostr.gui.profile_select_modal.show();
+        });
+        _profile_search_but.on('click', function(){
+            location.href = '/html/profile_search.html';
         });
 
     }
@@ -82,22 +89,265 @@ APP.nostr.gui.post_button = function(){
             $(document.body).prepend(_post_html);
             _post_el = $('#post-button');
             _post_el.on('click', function(){
-                APP.nostr.gui.modal.create({
-                    'title' : 'make post',
-                    'content' : '<div><textarea id="nostr-post-text" class="form-control" rows="10" placeholder="whats going down?"></textarea></div>',
-                    'ok_text' : 'send',
-                    'on_ok' : function(){
-                        APP.remote.post_text({
-                            'pub_k' : APP.nostr.data.user.get_profile().pub_k,
-                            'text': _post_text_area.val()
-                        });
-
-                    }
-                });
-                _post_text_area = $('#nostr-post-text');
-                APP.nostr.gui.modal.show();
+                APP.nostr.gui.post_modal.show();
             });
         }
+    }
+
+    return {
+        'create' : create
+    }
+}();
+
+/*
+    modal, we only ever create one of this and just fill the content differently
+    used to make posts, maybe set options?
+*/
+APP.nostr.gui.modal = function(){
+    let _modal_html = [
+            '<div style="color:black;height:100%" id="nostr-modal" class="modal fade" role="dialog">',
+                '<div class="modal-dialog">',
+                    '<div class="modal-content">',
+                        '<div class="modal-header">',
+                            '<button type="button" class="close" data-dismiss="modal" style="opacity:1;color:white;" >&times;</button>',
+                            '<h4 class="modal-title" id="nostr-modal-title"></h4>',
+                        '</div>',
+                        '<div class="modal-body" id="nostr-modal-content" >',
+                        '</div>',
+                        '<div class="modal-footer">',
+                            '<button id="nostr-modal-ok-button" type="button" class="btn btn-default" data-dismiss="modal">Close</button>',
+                        '</div>',
+                    '</div>',
+                '</div>',
+            '</div>'
+        ].join(''),
+        _my_modal,
+        _my_title,
+        _my_content,
+        _my_ok_button;
+
+    function create(args){
+        args = args||{};
+        let title = args.title || '?no title?';
+            content = args.content || '',
+            ok_text = args.ok_text || '?no_text?',
+            on_ok = args.on_ok,
+            on_show = args.on_show;
+
+        // make sure we only ever create one
+        if(_my_modal===undefined){
+            $(document.body).prepend(_modal_html);
+            _my_modal = $('#nostr-modal');
+            _my_title = $('#nostr-modal-title');
+            _my_content = $('#nostr-modal-content');
+            _my_ok_button = $('#nostr-modal-ok-button');
+
+            // escape to hide
+            $(document).on('keydown', function(e){
+                if(e.key==='Escape' && _my_modal.hasClass('in')){
+                    hide();
+                }
+            });
+
+            _my_modal.on('shown.bs.modal', function () {
+                if(typeof(on_show)==='function'){
+                    on_show();
+                }
+            })
+
+            _my_ok_button.on('click', function(){
+                if(typeof(on_ok)==='function'){
+                    on_ok();
+                }
+            });
+
+        }
+        _my_title.html(title);
+        _my_content.html(content);
+        _my_ok_button.html(ok_text);
+
+    }
+
+    function show(on_show){
+
+        // create must have been called before calling show
+        _my_modal.modal();
+    }
+
+    function hide(){
+        _my_modal.modal('hide');
+    }
+
+    function set_content(content){
+        _my_content.html(content);
+    }
+
+    return {
+        'create' : create,
+        'show' : show,
+        'hide' : hide,
+        'set_content' : set_content
+    };
+}();
+
+APP.nostr.gui.post_modal = function(){
+
+    function show(args){
+        args =args || {};
+        let gui = APP.nostr.gui,
+            type = args.type!==undefined ? args.type : 'post',
+            event = args.event !==undefined ? args.event : {
+                'id' : '?',
+                'content' : 'something has gone wrong!!'
+            },
+            title = 'make post',
+            post_text_area,
+            render_obj= {},
+            uid = gui.uid();
+
+            if(type==='reply'){
+                title = 'reply to event <span class="pubkey-text" >'+APP.nostr.util.short_key(event.event_id)+'<span/>';
+                // because we're going to give another id just so we don't get mutiple els with same id in dom
+                render_obj['event'] = jQuery.extend({}, event);
+                render_obj['event'].uid = uid;
+
+            }
+
+            APP.nostr.gui.modal.create({
+                'title' : title,
+                'content' : Mustache.render(gui.templates.get('modal-note-post'),render_obj, {
+                    'event' : gui.templates.get('event'),
+                    'profile' : gui.templates.get('event-profile'),
+                    'content' : gui.templates.get('event-content'),
+                }),
+                'ok_text' : 'send',
+                'on_ok' : function(){
+                    APP.remote.post_text({
+                        'pub_k' : APP.nostr.data.user.get_profile().pub_k,
+                        'text': post_text_area.val()
+                    });
+                },
+                'on_show' : function(){
+                    post_text_area.focus();
+                }
+            });
+
+        post_text_area = $('#nostr-post-text');
+        // nothing is clickable!
+        if(type==='reply'){
+            $('#'+uid+'-'+render_obj.event.event_id+'-pp').css('cursor','default');
+            $('#'+uid+'-'+render_obj.event.event_id-'content').css('cursor','default !important');
+        }
+
+
+        APP.nostr.gui.modal.show();
+
+    }
+
+    return {
+        'show': show
+    }
+}();
+
+APP.nostr.gui.list = function(){
+    const CHUNK_SIZE = 50,
+        CHUNK_DELAY = 200;
+
+    function create(args){
+        let _con = args.con,
+            _data = args.data || [],
+            _filter = args.filter || false,
+            _row_tmpl = args.row_tmpl,
+            _row_render = args.row_render,
+            _render_chunk = args.chunk || true,
+            _chunk_size = args.chunk_size || CHUNK_SIZE,
+            _chunk_delay = args.chunk_delay || CHUNK_DELAY,
+            _draw_timer,
+            _uid = APP.nostr.gui.uid(),
+            _click = args.click;
+
+        // draw the entire list
+        // TODO: chunk draw, max draw amount
+        // future
+        function draw(){
+            clearInterval(_draw_timer);
+            _con.html('');
+
+            if(_render_chunk && _data.length> _chunk_size){
+                let c_start=0,
+                    c_end=_chunk_size,
+                    last_block = false;
+
+                function _prog_draw(){
+                    c_start = draw_chunk(c_start, c_end);
+                    if(!last_block){
+                        c_end+=_chunk_size;
+                        if(c_end>=_data.length){
+                            c_end = _data.length;
+                            last_block = true
+                        }
+                        _draw_timer = setTimeout(_prog_draw,CHUNK_DELAY);
+                    }
+
+
+                }
+
+                _prog_draw();
+//                _draw_timer = setTimeout(_prog_draw,CHUNK_DELAY);
+
+
+            }else{
+                draw_chunk(0, _data.length);
+            }
+        }
+
+        function draw_chunk(start,end){
+            let draw_arr = [],
+                r_obj,
+                pos;
+            for(pos=start;pos<end;pos++){
+                r_obj = _data[pos];
+                if((_filter===false)||(_filter(r_obj))){
+                    draw_arr.push(get_row_html(r_obj, pos));
+                }else if(end<_data.length){
+                    // as we're not drawing move the end on
+                    end+=1;
+                }
+            }
+//            console.log(draw_arr);
+            _con.append(draw_arr.join(''));
+
+            return pos;
+        }
+
+        function get_row_html(r_obj, i){
+            let ret,
+                r_id = _uid+'-'+i;
+
+            if(_row_render){
+                ret = _row_render(r_obj, i);
+            }else if(_row_tmpl!==undefined){
+                ret = Mustache.render(_row_tmpl, r_obj);
+            }else{
+                ret = '?list row?';
+            }
+            return ret;
+        }
+
+        // add click to con
+        if(_click!==undefined){
+            $(_con).on('click', function(e){
+                _click(APP.nostr.gui.get_clicked_id(e));
+            });
+        };
+
+
+        return {
+            'draw' : draw,
+            'set_data' : function(data){
+                _data = data;
+            }
+        };
     }
 
     return {
@@ -109,63 +359,7 @@ APP.nostr.gui.event_view = function(){
         // short ref
     let _gui = APP.nostr.gui,
         // global profiles obj
-        _profiles = APP.nostr.data.profiles,
-        // template for individual event in the view, styleing should move to css and classes
-        _row_tmpl = [
-            '<div id="{{uid}}-{{event_id}}" style="padding-top:2px;border 1px solid #222222">',
-            '<span style="height:60px;width:120px; word-break: break-all; display:table-cell; background-color:#111111;padding-right:10px;" >',
-                // TODO: do something if unable to load pic
-                '{{#picture}}',
-                    '<img id="{{uid}}-{{event_id}}-pp" src="{{picture}}" class="profile-pic-small" />',
-                '{{/picture}}',
-                // if no picture, again do something here
-//                    '{{^picture}}',
-//                        '<div id="{{id}}-pp" style="height:60px;width:64px">no pic</div>',
-//                    '{{/picture}}',
-            '</span>',
-            '{{#is_parent}}',
-                '<div style="height:60px;min-width:10px;border-left: 2px dashed white; border-bottom: 2px dashed white;display:table-cell;background-color:#441124;" >',
-                '</div>',
-            '{{/is_parent}}',
-            '{{#missing_parent}}',
-                '<div style="height:60px;min-width:10px;border-right: 2px dashed white; border-top: 2px dashed white;display:table-cell;background-color:#221124;" >',
-                '</div>',
-            '{{/missing_parent}}',
-            '{{^missing_parent}}',
-                '{{#is_child}}',
-                    '<div style="height:60px;min-width:10px;border-right:2px dashed white;background-color:#221124;display:table-cell;" >',
-                    '</div>',
-                '{{/is_child}}',
-            '{{/missing_parent}}',
-            '<span class="post-content" >',
-                '<div border-bottom: 1px solid #443325;">',
-                    '<span id="{{uid}}-{{event_id}}-pt" >',
-                        '{{#name}}',
-                            '<span style="font-weight:bold">{{name}}</span>@<span style="color:cyan">{{short_key}}</span>',
-                        '{{/name}}',
-                        '{{^name}}',
-                            '<span style="color:cyan;font-weight:bold">{{short_key}}</span>',
-                        '{{/name}}',
-                    '</span>',
-                    '<span id="{{uid}}-{{event_id}}-time" style="float:right">{{at_time}}</span>',
-                '</div>',
-                '{{{content}}}',
-                '<div style="width:100%">',
-//                    '<span style="color:gray;">{{short_event_id}}</span>',
-                    '<span>&nbsp;</span>',
-                    '<span style="float:right" >',
-                        '<svg class="bi" >',
-                            '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#reply-fill"/>',
-                        '</svg>',
-                        '<svg id="{{uid}}-{{event_id}}-expand" class="bi" >',
-                            '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#three-dots-vertical"/>',
-                        '</svg>',
-                    '</span>',
-                    '<div style="border:1px dashed gray;display:none" id="{{uid}}-{{event_id}}-expandcon" style="display:none">event detail...</div>',
-                '</div>',
-            '</span>',
-            '</div>'
-        ].join('');
+        _profiles = APP.nostr.data.profiles;
 
     function _profile_clicked(pub_k){
         location.href = '/html/profile?pub_k='+pub_k;
@@ -186,14 +380,6 @@ APP.nostr.gui.event_view = function(){
         // no parent
         return null;
     };
-
-    function _event_clicked(evt){
-        let root = '';
-        if(evt['missing_parent']!==undefined && evt.missing_parent===true){
-            root = '&root='+get_event_parent(evt);
-        }
-        location.href = '/html/event?id='+evt.id+root;
-    }
 
     function create(args){
         // notes as given to us (as they come from the load)
@@ -221,8 +407,20 @@ APP.nostr.gui.event_view = function(){
             // underlying APP.nostr.gui.list
             _my_list;
 
+
         function uevent_id(event_id){
             return _uid+'-'+event_id;
+        }
+
+        function _event_clicked(evt){
+            let root = '',
+                // the parent info only exits on the render obj currently
+                render_evt = _event_map[evt.id].render_event;
+
+            if(render_evt['missing_parent']!==undefined && render_evt.missing_parent===true){
+                root = '&root='+get_event_parent(evt);
+            }
+            location.href = '/html/event?id='+evt.id+root;
         }
 
         function _note_content(the_note){
@@ -303,6 +501,15 @@ APP.nostr.gui.event_view = function(){
 
         }
 
+        function _row_render(r_obj, i){
+            return Mustache.render(_gui.templates.get('event'), r_obj,{
+                'profile' : _gui.templates.get('event-profile'),
+                'path' : _gui.templates.get('event-path'),
+                'content' : _gui.templates.get('event-content'),
+                'actions' : _gui.templates.get('event-actions')
+            })
+        }
+
         function _create_contents(){
             // profiles must have loaded before notes
             if(_notes_arr===undefined){
@@ -323,32 +530,33 @@ APP.nostr.gui.event_view = function(){
             event_ordered().forEach(function(c_evt){
                 let add_content = _note_content(c_evt);
                 _render_arr.push(add_content);
-                _event_map[c_evt.id].render_event = c_evt;
+                _event_map[c_evt.id].render_event = add_content;
             });
 
             if(_my_list===undefined){
                 _my_list = APP.nostr.gui.list.create({
                     'con' : _con,
                     'data' : _render_arr,
-                    'row_tmpl': _row_tmpl,
+                    'row_render' : _row_render,
                     'click' : function(id){
                         let parts = id.replace(_uid+'-','').split('-'),
                             event_id = parts[0],
                             type = parts[1],
                             evt = _event_map[event_id] !==undefined ? _event_map[event_id].event : null;
+
                         if(type==='expand'){
                             _expand_event(evt);
                         }else if(type==='pt' || type==='pp'){
                            _profile_clicked(evt.pubkey);
-                        }else if(type===undefined && evt!==null){
-                            // event clicked wants to see is_parent_missing field
-                            // which mean using the render_event
-                            // at the moment this won't exist for evts added to screen seen last refresh
-                            // (via websocket) in which case it just gets the event and parent_missing assumned false
-                            // the whole evts added after page load needs going through anyhow...
-                            if(_event_map[event_id].render_event!==undefined){
-                                evt = _event_map[event_id].render_event;
-                            }
+                        }else if(type==='reply'){
+                            // we actually pass the render_event, probably it'd be better if it could work from just evt
+                            // maybe once we make the event render a bit more sane...
+                            APP.nostr.gui.post_modal.show({
+                                'type' : 'reply',
+                                'event' : _event_map[event_id].render_event
+                            });
+                        // anywhere else click to event, to change
+                        }else if(evt!==null){
                             _event_clicked(evt);
                         }
 
@@ -384,7 +592,7 @@ APP.nostr.gui.event_view = function(){
             // 1. look through all events and [] thouse that have the same parent
             _notes_arr.forEach(function(c_evt,i){
                 let tag,j,parent;
-                // everything is done on a copy of tthe event as we're going to add some of
+                // everything is done on a copy of the event as we're going to add some of
                 // our own fields
                 c_evt = jQuery.extend({}, c_evt);
 
@@ -421,12 +629,6 @@ APP.nostr.gui.event_view = function(){
                     }
 
                     ret.push(c_evt);
-//                    // now reverse the children and add
-//                    roots[c_evt.id].children.reverse();
-//                    roots[c_evt.id].children.forEach(function(c_evt,j){
-//                        c_evt.is_child = true;
-//                        order_arr.push(c_evt);
-//                    });
                     add_children(roots[c_evt.id]);
 
                     roots[c_evt.id].added=true;
@@ -437,12 +639,6 @@ APP.nostr.gui.event_view = function(){
                         roots[parent].event.is_parent = true;
                         ret.push(roots[parent].event);
                     }
-                    // now reverse the children and add
-//                    roots[parent].children.reverse();
-//                    roots[parent].children.forEach(function(c_evt,j){
-//                        c_evt.is_child = true;
-//                        order_arr.push(c_evt);
-//                    });
                     add_children(roots[parent]);
 
                     roots[parent].added=true;
@@ -508,8 +704,13 @@ APP.nostr.gui.event_view = function(){
 
                 // we won't redraw the whole list just insert at top
                 // which should be safe (end might be ok, but anywhere else would be tricky...)
-                _con.prepend(Mustache.render(_row_tmpl,_render_arr[0]));
-                _event_map[evt.id] = evt;
+//                _con.prepend(Mustache.render(_row_tmpl,_render_arr[0]));
+                _con.prepend(_row_render(_render_arr[0], 0));
+                _event_map[evt.id] = {
+                    'event' : evt,
+                    'render_event': add_content
+                };
+
             }
         }
 
@@ -894,88 +1095,6 @@ APP.nostr.gui.profile_list = function (){
     return {
         'create': create
     }
-}();
-
-/*
-    modal, we only ever create one of this and just fill the content differently
-    used to make posts, maybe set options?
-*/
-APP.nostr.gui.modal = function(){
-    let _modal_html = [
-            '<div style="color:black;height:100%" id="nostr-modal" class="modal fade" role="dialog">',
-                '<div class="modal-dialog">',
-                    '<div class="modal-content">',
-                        '<div class="modal-header">',
-                            '<button type="button" class="close" data-dismiss="modal" style="opacity:1;color:white;" >&times;</button>',
-                            '<h4 class="modal-title" id="nostr-modal-title"></h4>',
-                        '</div>',
-                        '<div class="modal-body" id="nostr-modal-content" >',
-                        '</div>',
-                        '<div class="modal-footer">',
-                            '<button id="nostr-modal-ok-button" type="button" class="btn btn-default" data-dismiss="modal">Close</button>',
-                        '</div>',
-                    '</div>',
-                '</div>',
-            '</div>'
-        ].join(''),
-        _my_modal,
-        _my_title,
-        _my_content,
-        _my_ok_button;
-
-    function create(args){
-        let title = args.title || '?no title?';
-            content = args.content || '',
-            ok_text = args.ok_text || '?no_text?',
-            on_ok = args.on_ok;
-
-        // make sure we only ever create one
-        if(_my_modal===undefined){
-            $(document.body).prepend(_modal_html);
-            _my_modal = $('#nostr-modal');
-            _my_title = $('#nostr-modal-title');
-            _my_content = $('#nostr-modal-content');
-            _my_ok_button = $('#nostr-modal-ok-button');
-
-            // escape to hide
-            $(document).on('keydown', function(e){
-                if(e.key==='Escape' && _my_modal.hasClass('in')){
-                    hide();
-                }
-            });
-
-            _my_ok_button.on('click', function(){
-                if(typeof(on_ok)==='function'){
-                    on_ok();
-                }
-            });
-
-        }
-        _my_title.html(title);
-        _my_content.html(content);
-        _my_ok_button.html(ok_text);
-
-    }
-
-    function show(){
-        // create must have been called before calling show
-        _my_modal.modal()
-    }
-
-    function hide(){
-        _my_modal.modal('hide');
-    }
-
-    function set_content(content){
-        _my_content.html(content);
-    }
-
-    return {
-        'create' : create,
-        'show' : show,
-        'hide' : hide,
-        'set_content' : set_content
-    };
 }();
 
 APP.nostr.gui.profile_select_modal = function(){

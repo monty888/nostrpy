@@ -5,13 +5,13 @@ APP.nostr.gui.templates = function(){
     let _lookup = {
         // basic template for screen we use
         'screen' : [
-            '<div class="row" style="height: {{head-size}}px;">',
+            '<div class="row header-row" >',
                 '<div class="col-sm-12" style="height:100%">',
                     '<div id="header-con" style="height:100%;">',
                     '</div>',
                 '</div>',
             '</div>',
-            '<div class="row" style="height: calc(100% - {{head-size}}px);">',
+            '<div class="row main-row" >',
                 '<div class="col-sm-12" style="height:100%">',
                     '<div style="height:100%;">',
                         '<div id="main-con" class="event-feed">',
@@ -20,8 +20,47 @@ APP.nostr.gui.templates = function(){
                 '</div>',
             '</div>'
         ],
+        'screen-profiles-search' : [
+            '<!-- search inputs here -->',
+            '<div style="width:100%;overflow:hidden; height:40px;">',
+                '<input placeholder="search" type="text" class="form-control" id="search-in" />',
+            '</div>',
+            '<!-- profiles we searching here-->',
+            '<div id="profile-list-con" style="overflow-y:scroll;height: calc(100% - 40px);"></div>'
+        ],
         'head' : [
-            '<div id="profile_button" class="header-button"></div>'
+            '<div id="profile_but" class="header-button"></div>',
+            '<div id="search_but" class="header-button">',
+                '<svg class="bi" style="height:100%;width:100%;padding-left:10%;padding-right:10%;">',
+                    '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#search"/>',
+                '</svg>',
+            '</div>',
+            '<div id="profile_search_but" class="header-button">',
+                '<svg class="bi" style="height:100%;width:100%;padding-left:10%;padding-right:10%;">',
+                    '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#person-plus-fill"/>',
+                '</svg>',
+            '</div>',
+            '<div id="new_but" class="header-button" style="margin-left:25%;margin-right:25%;">',
+                '<svg class="bi" style="height:100%;width:100%;padding-left:10%;padding-right:10%;">',
+                    '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#app"/>',
+                '</svg>',
+            '</div>',
+            '<div id="relay_but" class="header-button" style="float:right;">',
+                '<svg class="bi" style="height:100%;width:100%;padding-left:10%;padding-right:10%;">',
+                    '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#diagram-3"/>',
+                '</svg>',
+            '</div>'
+        ],
+        // templates for modals
+        'modal-note-post' : [
+            '<div>',
+                '{{#event}}',
+                    '{{> event}}',
+                '{{/event}}',
+            '</div>',
+            '<div>',
+                '<textarea id="nostr-post-text" class="form-control" rows="10" placeholder="whats going down?"></textarea>',
+            '</div>'
         ],
         // the render for when we don't have a profile (user hasn't selected one)
         'no_user_profile_button' : [
@@ -58,7 +97,74 @@ APP.nostr.gui.templates = function(){
                                 '{{/about}}',
                             '</span>',
                         '</div>'
-                        ]
+                        ],
+        // event templates
+        'event-profile' : [
+            // publishers profile pic
+            '<span style="height:60px;width:120px; word-break: break-all; display:table-cell; background-color:#111111;padding-right:10px;" >',
+                // TODO: do something if unable to load pic
+                '{{#picture}}',
+                    '<img id="{{uid}}-{{event_id}}-pp" src="{{picture}}" class="profile-pic-small" />',
+                '{{/picture}}',
+            '</span>',
+        ],
+        'event-content' : [
+            '<span id="{{uid}}-{{event_id}}-content" class="post-content" >',
+                '<div border-bottom: 1px solid #443325;">',
+                    '<span id="{{uid}}-{{event_id}}-pt" >',
+                        '{{#name}}',
+                            '<span style="font-weight:bold">{{name}}</span>@<span style="color:cyan">{{short_key}}</span>',
+                        '{{/name}}',
+                        '{{^name}}',
+                            '<span style="color:cyan;font-weight:bold">{{short_key}}</span>',
+                        '{{/name}}',
+                    '</span>',
+                    '<span id="{{uid}}-{{event_id}}-time" style="float:right">{{at_time}}</span>',
+                '</div>',
+                '{{{content}}}',
+                '{{> actions}}',
+            '</span>'
+        ],
+        'event-actions' : [
+            '<div style="width:100%">',
+                '<span>&nbsp;</span>',
+                '<span style="float:right" >',
+                    '<svg id="{{uid}}-{{event_id}}-reply" class="bi" >',
+                        '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#chat-right-fill"/>',
+                    '</svg>',
+                    '<svg id="{{uid}}-{{event_id}}-expand" class="bi" >',
+                        '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#three-dots-vertical"/>',
+                    '</svg>',
+                '</span>',
+                '<div style="border:1px dashed gray;display:none" id="{{uid}}-{{event_id}}-expandcon" style="display:none">event detail...</div>',
+            '</div>'
+        ],
+        // attempts to give some visual info about linkage of this event to others if any...
+        'event-path' : [
+            '{{#is_parent}}',
+                '<div style="height:60px;min-width:10px;border-left: 2px dashed white; border-bottom: 2px dashed white;display:table-cell;background-color:#441124;" >',
+                '</div>',
+            '{{/is_parent}}',
+            '{{#missing_parent}}',
+                '<div style="height:60px;min-width:10px;border-right: 2px dashed white; border-top: 2px dashed white;display:table-cell;background-color:#221124;" >',
+                '</div>',
+            '{{/missing_parent}}',
+            '{{^missing_parent}}',
+                '{{#is_child}}',
+                    '<div style="height:60px;min-width:10px;border-right:2px dashed white;background-color:#221124;display:table-cell;" >',
+                    '</div>',
+                '{{/is_child}}',
+            '{{/missing_parent}}'
+        ],
+        // main event view
+        'event' : [
+            '<div id="{{uid}}-{{event_id}}" style="padding-top:2px;border 1px solid #222222">',
+                '{{> profile}}',
+                '{{> path}}',
+                // the note content
+                '{{> content}}',
+            '</div>'
+        ]
 
     };
 

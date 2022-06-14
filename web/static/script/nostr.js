@@ -130,8 +130,8 @@ APP.nostr = {
         };
     }(),
     'util' : {
-        'short_key': function (pub_k){
-            return pub_k.substring(0, 3) + '...' + pub_k.substring(pub_k.length-4)
+        'short_key': function (key){
+            return key.substring(0, 3) + '...' + key.substring(key.length-4)
         },
         'html_escape': function (in_str, ignore){
             let _replacements = [
@@ -495,109 +495,6 @@ APP.nostr.data.local_profiles = function(){
         }
     }
 
-}();
-
-APP.nostr.gui.list = function(){
-    const CHUNK_SIZE = 50,
-        CHUNK_DELAY = 200;
-
-    function create(args){
-        let _con = args.con,
-            _data = args.data || [],
-            _filter = args.filter || false,
-            _row_tmpl = args.row_tmpl,
-            _row_render = args.row_render,
-            _render_chunk = args.chunk || true,
-            _chunk_size = args.chunk_size || CHUNK_SIZE,
-            _chunk_delay = args.chunk_delay || CHUNK_DELAY,
-            _draw_timer,
-            _uid = APP.nostr.gui.uid(),
-            _click = args.click;
-
-        // draw the entire list
-        // TODO: chunk draw, max draw amount
-        // future
-        function draw(){
-            clearInterval(_draw_timer);
-            _con.html('');
-
-            if(_render_chunk && _data.length> _chunk_size){
-                let c_start=0,
-                    c_end=_chunk_size,
-                    last_block = false;
-
-                function _prog_draw(){
-                    c_start = draw_chunk(c_start, c_end);
-                    if(!last_block){
-                        c_end+=_chunk_size;
-                        if(c_end>=_data.length){
-                            c_end = _data.length;
-                            last_block = true
-                        }
-                        _draw_timer = setTimeout(_prog_draw,CHUNK_DELAY);
-                    }
-
-
-                }
-
-                _prog_draw();
-//                _draw_timer = setTimeout(_prog_draw,CHUNK_DELAY);
-
-
-            }else{
-                draw_chunk(0, _data.length);
-            }
-        }
-
-        function draw_chunk(start,end){
-            let draw_arr = [],
-                r_obj,
-                pos;
-            for(pos=start;pos<end;pos++){
-                r_obj = _data[pos];
-                if((_filter===false)||(_filter(r_obj))){
-                    draw_arr.push(get_row_html(r_obj, pos));
-                }else if(end<_data.length){
-                    // as we're not drawing move the end on
-                    end+=1;
-                }
-            }
-//            console.log(draw_arr);
-            _con.append(draw_arr.join(''));
-
-            return pos;
-        }
-
-        function get_row_html(r_obj, i){
-            let ret,
-                r_id = _uid+'-'+i;
-
-            if(_row_tmpl!==undefined){
-                ret = Mustache.render(_row_tmpl, r_obj);
-            }
-
-            return ret;
-        }
-
-        // add click to con
-        if(_click!==undefined){
-            $(_con).on('click', function(e){
-                _click(APP.nostr.gui.get_clicked_id(e));
-            });
-        };
-
-
-        return {
-            'draw' : draw,
-            'set_data' : function(data){
-                _data = data;
-            }
-        };
-    }
-
-    return {
-        'create' : create
-    }
 }();
 
 APP.nostr.gui.event_detail = function(){
