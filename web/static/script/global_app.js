@@ -40,6 +40,8 @@
         });
         // main container where we'll draw out the events
         let main_con = $('#main-con');
+        main_con.css('height','100%');
+        main_con.css('overflow-y','scroll');
 
         _my_event_view = APP.nostr.gui.event_view.create({
             'con' : main_con,
@@ -55,7 +57,6 @@
                 _my_event_view.profiles_loaded();
             }
         });
-        APP.nostr.data.local_profiles.init({});
 
         // to see events as they happen
         start_client();

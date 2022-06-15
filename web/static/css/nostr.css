@@ -1,6 +1,10 @@
+html {
+    height:100vh;
+}
 body {
     height:100vh;
-    font-family : courier;
+    /*font-family : courier;*/
+    font-family : ariel;
     background-color: black;
     color: white;
     min-width: 480px;
@@ -13,6 +17,7 @@ body {
 
 .main-row{
     height: calc(100% - 64px);
+    max-height: calc(100% - 64px);
 }
 
 img{
@@ -21,6 +26,7 @@ img{
 
 .pubkey-text {
     color: cyan;
+    font-family : courier;
 }
 
 .tab-tool-area{
@@ -106,20 +112,15 @@ img{
   color: white;
 }
 
-.event-feed {
-    height:100%;
-    overflow-y:scroll;
-    padding-right:10px;
-}
-
 /*
     for post buttom bottom right of screen
     kind of works but because based on viewport not great
     when the height is shrunk down. would be better if we could get min size and
     still keep it circular..
 */
+
 .post-div {
-    display: inline-block;
+    display: none;
     position : absolute;
     bottom: 3%;
     right: 3%;
@@ -130,7 +131,6 @@ img{
     min-width: 64px;
     width: 64px;
     height: 64px;
-    background-color : blue;
     border-radius : 50%;
     padding : 0px;
     background-color: #337ab7;

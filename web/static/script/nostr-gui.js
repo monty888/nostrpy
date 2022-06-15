@@ -5,6 +5,8 @@ APP.nostr.gui.header = function(){
     let _con,
         _current_profile,
         _profile_but,
+        _home_but,
+        _event_search_but,
         _profile_search_but,
         _enable_media;
 
@@ -24,6 +26,7 @@ APP.nostr.gui.header = function(){
         let url;
         if(_current_profile.pub_k===undefined){
             _profile_but.html(APP.nostr.gui.templates.get('no_user_profile_button'));
+            _profile_but.css('background-image','');
         }else{
             _profile_but.html('');
             _profile_but.css('background-size',' cover');
@@ -45,8 +48,12 @@ APP.nostr.gui.header = function(){
         // this is just a str
         _con.html(APP.nostr.gui.templates.get('head'));
         // grab buttons
-        _profile_but = $('#profile_but');
-        _profile_search_but = $('#profile_search_but');
+        _profile_but = $('#profile-but');
+        _home_but = $('#home-but');
+        _event_search_but = $('#event-search-but');
+        _profile_search_but = $('#profile-search-but');
+
+
 
         _current_profile = APP.nostr.data.user.get_profile();
         set_profile_button();
@@ -56,6 +63,17 @@ APP.nostr.gui.header = function(){
         _profile_but.on('click', function(){
             APP.nostr.gui.profile_select_modal.show();
         });
+
+        _home_but.on('click', function(){
+            if(window.location.pathname!=='/'){
+                window.location='/';
+            }
+        });
+
+        _event_search_but.on('click', function(){
+            location.href = '/html/event_search.html';
+        });
+
         _profile_search_but.on('click', function(){
             location.href = '/html/profile_search.html';
         });
@@ -81,7 +99,15 @@ APP.nostr.gui.post_button = function(){
             '</div>'
         ].join(''),
         _post_el,
-        _post_text_area;
+        _post_text_area
+
+    function check_show(p){
+        if(p.pub_k===undefined){
+            _post_el.hide();
+        }else{
+            _post_el.show();
+        }
+    }
 
     function create(){
         // should only ever be called once anyway but just incase
@@ -91,6 +117,15 @@ APP.nostr.gui.post_button = function(){
             _post_el.on('click', function(){
                 APP.nostr.gui.post_modal.show();
             });
+            check_show(APP.nostr.data.user.get_profile());
+
+            // if profile changes we check that it's a user that can post
+            APP.nostr.data.event.add_listener('profile_set',function(of_type, data){
+                check_show(data);
+            });
+
+
+
         }
     }
 
@@ -192,13 +227,53 @@ APP.nostr.gui.modal = function(){
 
 APP.nostr.gui.post_modal = function(){
 
+    // TODO as https://github.com/nostr-protocol/nips/blob/master/10.md
+    // add reply and root markers, we need a preferred relay first though
+    // as it's not optional
+    function add_reply_tags(o_event){
+        let ret = [],
+            to_pub_key = o_event.pubkey;
+            to_evt_id = o_event.id,
+            add_pub = true;
+            add_evt = true;
+        // copy all tags, don't thinnk it matters much but also check that
+        // we're not going to dupl the p or e tags that we are going to add
+        o_event.tags.forEach(function(c_tag,i){
+            // tags from the original event that are kept
+            const keep = new Set(['p','e']);
+
+            // if it has a val and is a tag that we keep then add
+            if(keep.has(c_tag[0]) && c_tag[1]!==undefined && c_tag[1]!==null && c_tag[1]!==''){
+                ret.push(c_tag);
+                // don't think its a problem but won't duplicate anyhow
+                if((c_tag[0]==='p' && c_tag[1]===to_pub_key)){
+                    add_pub = false;
+                }
+                if((c_tag[0]==='e' && c_tag[1]===to_evt_id)){
+                    add_evt = false;
+                }
+            }
+        });
+
+        if(add_pub){
+            ret.push(['p', to_pub_key]);
+        }
+        if(add_evt){
+            ret.push(['e', to_evt_id]);
+        }
+
+        return ret;
+    }
+
     function show(args){
         args =args || {};
         let gui = APP.nostr.gui,
+            user = APP.nostr.data.user,
             type = args.type!==undefined ? args.type : 'post',
             event = args.event !==undefined ? args.event : {
                 'id' : '?',
-                'content' : 'something has gone wrong!!'
+                'content' : 'something has gone wrong!!',
+                'tags' :[]
             },
             title = 'make post',
             post_text_area,
@@ -206,10 +281,12 @@ APP.nostr.gui.post_modal = function(){
             uid = gui.uid();
 
             if(type==='reply'){
-                title = 'reply to event <span class="pubkey-text" >'+APP.nostr.util.short_key(event.event_id)+'<span/>';
+                title = 'reply to event <span class="pubkey-text" >'+APP.nostr.util.short_key(event.id)+'<span/>';
                 // because we're going to give another id just so we don't get mutiple els with same id in dom
                 render_obj['event'] = jQuery.extend({}, event);
                 render_obj['event'].uid = uid;
+                render_obj['picture'] = gui.get_profile_picture(event.pubkey);
+                render_obj['content'] = gui.get_note_content_for_render(event);
 
             }
 
@@ -222,9 +299,29 @@ APP.nostr.gui.post_modal = function(){
                 }),
                 'ok_text' : 'send',
                 'on_ok' : function(){
-                    APP.remote.post_text({
-                        'pub_k' : APP.nostr.data.user.get_profile().pub_k,
-                        'text': post_text_area.val()
+                    let n_tags = type==='reply' ? add_reply_tags(event) : [],
+                        content = post_text_area.val()
+                        hash_tags = content.match(/\#\w*/g);
+
+                    // add hashtags
+                    if(hash_tags!==null){
+                        hash_tags.forEach(function(c_tag){
+                            n_tags.push(['hashtag',c_tag.replace('#','')]);
+                        });
+                    }
+
+                    if(user.is_add_client_tag()===true){
+                        n_tags.push(['client', user.get_client()]);
+                    }
+
+                    APP.remote.post_event({
+
+
+                        'event' : {
+                            'pub_k' : user.get_profile().pub_k,
+                            'content': content,
+                            'tags' : n_tags
+                        }
                     });
                 },
                 'on_show' : function(){
@@ -249,6 +346,163 @@ APP.nostr.gui.post_modal = function(){
     }
 }();
 
+APP.nostr.gui.tabs = function(){
+    /*
+        creates a tabbed area, probably only used to set up the, and events for moving between tabs
+        but otherwise caller can deal with rendering the content
+    */
+    let _head_tmpl = [
+        '<ul class="nav nav-tabs" style="overflow:hidden;height:32px;" >',
+            '{{#tabs}}',
+                '<li class="{{active}}" ><a style="padding:3px;" data-toggle="tab" href="#{{tab-ref}}">{{tab-title}}</a></li>',
+            '{{/tabs}}',
+            // extra area for e.g. search field,
+            '<span id="{{id}}-tool-con" class="tab-tool-area" >',
+            '</span>',
+        '</ul>'
+        ].join(''),
+        _body_tmpl = [
+            '<div class="tab-content" style="overflow-y:auto;height:calc(100% - 32px);padding-right:5px;" >',
+            '{{#tabs}}',
+                '<div id="{{tab-ref}}" class="tab-pane {{transition}} {{active}}">',
+                    '<div id="{{tab-ref}}-con">{{content}}</div>',
+                '</div>',
+            '{{/tabs}}',
+            '</div>'
+        ].join('');
+
+    function create(args){
+            // where we'll be drawn
+        let _con = args.con,
+            // data preped for template render
+            _render_obj,
+            // do a draw as soon as created
+            _init_draw = args.do_draw|| false,
+            // content if no content given for tab
+            _default_content = args.default_content || '',
+            _tabs = args.tabs||[],
+            // our own id
+            _id = APP.nostr.gui.uid(),
+            // area to the right of tab heads for caller to render additional gui elements
+            _tool_con,
+            // index of currently selected tab
+            _cur_index,
+            // function called on a tab being selected
+            _on_tab_change = args.on_tab_change;
+
+        function create_render_obj(){
+            _render_obj = {
+                'id' : _id,
+                'tabs' : []
+            };
+            _tabs.forEach(function(c_tab, i){
+                let to_add = {};
+                to_add['tab-title'] = c_tab.title!==undefined ? c_tab.title : '?no title?';
+                to_add['tab-ref'] = c_tab.id!==undefined ? c_tab.id : APP.nostr.gui.uid();
+                to_add['content'] = c_tab.content!==undefined ? c_tab.content : _default_content;
+                if(c_tab.active===true){
+                    to_add['active'] = 'active';
+                    to_add['transition'] = 'fade in';
+                    _cur_index = i;
+                }else{
+                    to_add['transition'] = 'fade';
+                }
+                _render_obj.tabs.push(to_add);
+            });
+
+            // no active tab given we'll set to 0
+            if(_tabs.length>0 && _cur_index===undefined){
+                _render_obj.tabs[0]['active'] = 'active';
+                _render_obj.tabs[0]['transition'] = 'fade in';
+                _cur_index = 0;
+            }
+
+        }
+
+        function draw(){
+            let render_html = [
+                Mustache.render(_head_tmpl, _render_obj),
+                Mustache.render(_body_tmpl, _render_obj)
+                ].join('')
+            // now render
+            _con.html(render_html);
+
+            // get the content objects and put in render_obj so we don't have to go through the
+            // dom again
+            _render_obj.tabs.forEach(function(c_tab){
+                c_tab['tab_content_con'] = $('#'+c_tab['tab-ref']+'-con');
+            });
+            // and the tool area
+            _tool_con = $("#"+_id+"-tool-con");
+
+            // before anims
+            $('.nav-tabs a').on('show.bs.tab', function(e){
+                let id = e.currentTarget.href.split('#')[1];
+                for(var i=0;i<_render_obj.tabs.length;i++){
+                    if(_render_obj.tabs[i]['tab-ref']===id){
+                        _cur_index = i;
+                    }
+                }
+
+                if(typeof(_on_tab_change)==='function'){
+                    _on_tab_change(_cur_index, _render_obj.tabs[_cur_index]['tab_content_con']);
+                }
+
+            });
+
+            // after anims
+            $('.nav-tabs a').on('shown.bs.tab', function(e){
+            });
+
+            // not sure we should count this as a change??
+            // anyway on first draw fire _on_tab_change for selected tab
+            if(typeof(_on_tab_change)==='function'){
+                _on_tab_change(_cur_index, _render_obj.tabs[_cur_index]['tab_content_con']);
+            }
+
+        }
+
+        function get_tab(ident){
+            let ret = {},
+                tab_render_obj;
+            if(typeof(ident)=='number'){
+                tab_render_obj = _render_obj.tabs[ident];
+            }
+
+            // TODO: by title
+
+            // now copy relavent bits
+            ret['content-con'] = tab_render_obj['tab_content_con'];
+
+            return ret;
+        }
+
+        function init(){
+            create_render_obj();
+        }
+        // do the init
+        init();
+
+        return {
+            'draw': draw,
+            'get_tab' : get_tab,
+            'get_tool_con' : function(){
+                return _tool_con;
+            },
+            'get_selected_tab' : function(){
+                return get_tab(_cur_index);
+            },
+            'get_selected_index' : function(){
+                return _cur_index;
+            }
+        };
+    };
+
+    return {
+        'create' : create
+    }
+}();
+
 APP.nostr.gui.list = function(){
     const CHUNK_SIZE = 50,
         CHUNK_DELAY = 200;
@@ -264,7 +518,8 @@ APP.nostr.gui.list = function(){
             _chunk_delay = args.chunk_delay || CHUNK_DELAY,
             _draw_timer,
             _uid = APP.nostr.gui.uid(),
-            _click = args.click;
+            _click = args.click,
+            _empty_message = args.empty_message || 'nothing to show!';
 
         // draw the entire list
         // TODO: chunk draw, max draw amount
@@ -272,8 +527,9 @@ APP.nostr.gui.list = function(){
         function draw(){
             clearInterval(_draw_timer);
             _con.html('');
-
-            if(_render_chunk && _data.length> _chunk_size){
+            if(_data.length===0){
+                _con.html(_empty_message);
+            }else if(_render_chunk && _data.length> _chunk_size){
                 let c_start=0,
                     c_end=_chunk_size,
                     last_block = false;
@@ -405,7 +661,9 @@ APP.nostr.gui.event_view = function(){
             // track which event details are expanded
             _expand_state = {},
             // underlying APP.nostr.gui.list
-            _my_list;
+            _my_list,
+            // interval timer for updating times
+            _time_interval;
 
 
         function uevent_id(event_id){
@@ -436,41 +694,26 @@ APP.nostr.gui.event_view = function(){
                 'evt': the_note,
                 'event_id' : the_note.id,
                 'short_event_id' : APP.nostr.util.short_key(the_note.id),
-                'content' : the_note['content'],
+                'content' : _gui.get_note_content_for_render(the_note),
                 'short_key' : APP.nostr.util.short_key(pub_k),
                 'pub_k' : pub_k,
-                'picture' : APP.nostr.gui.robo_images.get_url({
-                    'text' : pub_k
-                }),
+                'picture' : _gui.get_profile_picture(pub_k),
                 'at_time': dayjs.unix(the_note.created_at).fromNow()
             };
 
 
-            // make safe
-            to_add.content = APP.nostr.util.html_escape(to_add.content);
-            // insert media tags to content
-            to_add.content = _gui.http_media_tags_into_text(to_add.content, _enable_media);
-            // do p tag replacement
-            to_add.content = _gui.tag_replacement(to_add.content, the_note.tags)
-            // add line breaks
-            to_add.content = to_add.content.replace(/\n/g,'<br>');
-            // fix special characters as we're rendering in html el
-            to_add.content = APP.nostr.util.html_unescape(to_add.content);
-
             if(_profiles.is_loaded()){
-            p = _profiles.lookup(name);
-            if(p!==undefined){
-                attrs = p['attrs'];
-                if(attrs!==undefined){
-                    if(attrs['name']!==undefined){
-                        to_add['name'] = attrs['name'];
-                    }
-                    if(_enable_media && attrs['picture']!==undefined){
-                        to_add['picture'] = attrs['picture'];
-                    }
+                p = _profiles.lookup(name);
+                if(p!==undefined){
+                    attrs = p['attrs'];
+                    if(attrs!==undefined){
+                        if(attrs['name']!==undefined){
+                            to_add['name'] = attrs['name'];
+                        }
+                        to_add.picture = _gui.get_profile_picture(pub_k);
 
+                    }
                 }
-            }
             };
             return to_add;
         }
@@ -553,10 +796,10 @@ APP.nostr.gui.event_view = function(){
                             // maybe once we make the event render a bit more sane...
                             APP.nostr.gui.post_modal.show({
                                 'type' : 'reply',
-                                'event' : _event_map[event_id].render_event
+                                'event' : _event_map[event_id].event
                             });
                         // anywhere else click to event, to change
-                        }else if(evt!==null){
+                        }else if(evt!==null && type==='content'){
                             _event_clicked(evt);
                         }
 
@@ -669,6 +912,12 @@ APP.nostr.gui.event_view = function(){
         };
 
         function _time_update(){
+            // think we've been killed ..?
+            if(_render_arr===undefined){
+                clearInterval(_time_interval);
+                return;
+            }
+
             _render_arr.forEach(function(c){
                 let id = uevent_id(c.event_id),
                     ntime = dayjs.unix(c['evt'].created_at).fromNow();
@@ -697,25 +946,29 @@ APP.nostr.gui.event_view = function(){
 
         function add_note(evt){
             if(_test_filter(evt)){
-                let add_content = _note_content(evt);
+//                let add_content = _note_content(evt);
                 // just insert the new event
                 _notes_arr.unshift(evt);
-                _render_arr.unshift(add_content);
+                // this results in a full recheck of order and redraw
+                // probably we could do more efficent but this is simplest and will do for now
+                _create_contents();
 
-                // we won't redraw the whole list just insert at top
-                // which should be safe (end might be ok, but anywhere else would be tricky...)
-//                _con.prepend(Mustache.render(_row_tmpl,_render_arr[0]));
-                _con.prepend(_row_render(_render_arr[0], 0));
-                _event_map[evt.id] = {
-                    'event' : evt,
-                    'render_event': add_content
-                };
+//                _render_arr.unshift(add_content);
+//
+//                // we won't redraw the whole list just insert at top
+//                // which should be safe (end might be ok, but anywhere else would be tricky...)
+////                _con.prepend(Mustache.render(_row_tmpl,_render_arr[0]));
+//                _con.prepend(_row_render(_render_arr[0], 0));
+//                _event_map[evt.id] = {
+//                    'event' : evt,
+//                    'render_event': add_content
+//                };
 
             }
         }
 
         // update the since every 30s
-        setInterval(_time_update, 1000*30);
+        _time_update = setInterval(_time_update, 1000*30);
 
         // methods for event_view obj
         return {
@@ -1103,9 +1356,17 @@ APP.nostr.gui.profile_select_modal = function(){
         _profiles = APP.nostr.data.profiles;
 
     function draw_profiles(profiles){
+        // just incase it didn't get inted yet
+        _profiles.init();
+
         let row_tmpl = APP.nostr.gui.templates.get('profile-list'),
             list,
-            render_obj = [],
+            render_obj = [{
+                // the no profile profile.. just browse
+                'uid' : _uid,
+                'profile_name' : 'lurker',
+                'about' : 'browse without using a profile'
+            }],
             create_render_obj = function(){
                 profiles.forEach(function(c_p,i){
                     let img_src;
@@ -1142,8 +1403,15 @@ APP.nostr.gui.profile_select_modal = function(){
             'data' : render_obj,
             'row_tmpl': row_tmpl,
             'click' : function(id){
-                let pub_k = id.replace(_uid+'-', '');
-                APP.nostr.data.user.set_profile(_profiles.lookup(pub_k));
+                let pub_k = id.replace(_uid+'-', ''),
+                    p = _profiles.lookup(pub_k);
+
+                // should be the lurker profile
+                if(p===undefined){
+                    p = {}
+                };
+
+                APP.nostr.data.user.set_profile(p);
                 APP.nostr.gui.modal.hide();
             }
         });
@@ -1170,4 +1438,27 @@ APP.nostr.gui.profile_select_modal = function(){
     return {
         'show' : show
     }
+}();
+
+/*
+    using https://robohash.org/ so we can provide unique profile pictures even where user hasn't set one
+    url route here so that at some point we can use the lib and create local route to do the same
+*/
+APP.nostr.gui.robo_images = function(){
+    let _root_url = 'https://robohash.org/';
+
+    return {
+        // change the server that we're getting robos from
+        'set_root': function(url){
+            _root_url = url;
+        },
+        'get_url': function(args){
+            let text = args.text;
+                // got rid of size as it seems to be included in the hash which means you get a different robo with different
+                // size val
+//                size = args.size || '128x128';
+            return _root_url+'/'+text;
+        }
+    }
+
 }();

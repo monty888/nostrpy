@@ -6,24 +6,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Text match view</title>
+    <title>Home</title>
 
      <!-- Bootstrap core CSS -->
     <link href="/css/bootstrap.css" rel="stylesheet">
     <link href="/css/nostr.css" rel="stylesheet">
 </head>
-<body>
+<body style="height:100vh;">
 
- <div class="container" style="height:100%">
-  <div class="row" style="height:100%">
+<div class="container" style="height:100%;" id="main_container">
 
-    <div class="col-sm-12" style="background-color:black;color:white;">
-        <input placeholder="Event content contains" type="text" class="form-control" id="search-in">
-
-        <div id="feed-pane">
-        </div>
-    </div>
-  </div>
 </div>
 
     <!-- load js -->
@@ -42,7 +34,8 @@
     <script src="/script/nostr-data.js"></script>
     <script src="/script/nostr-gui.js"></script>
     <script src="/script/nostr-templates.js"></script>
-    <script src="/script/search_app.js"></script>
+<!--    <script src="/state/js"></script>-->
+    <script src="/script/home.js"></script>
 
 </body>
 

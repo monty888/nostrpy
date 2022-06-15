@@ -41,8 +41,7 @@
             'enable_media': _enable_media
         });
         // add specifc page scafold
-        _main_con = $('#main-con')
-        _main_con.css('overflow','hidden');
+        _main_con = $('#main-con');
         _main_con.html(APP.nostr.gui.templates.get('screen-profiles-search'));
         // grab the search button
         _search_in = $('#search-in');
@@ -65,7 +64,7 @@
                 });
 
                 _profiles_list = APP.nostr.gui.profile_list.create({
-                    'con': $('#profile-list-con'),
+                    'con': $('#list-con'),
                     'profiles' : keys,
                     'view_type': 'contacts',
                     'enable_media': _enable_media

@@ -11,7 +11,7 @@ from db.db import SQLiteDatabase
 from nostr.ident.profile import Profile, ProfileEventHandler, ProfileList, Contact
 from nostr.ident.persist import SQLProfileStore, TransientProfileStore, ProfileStoreInterface
 from nostr.client.client import ClientPool, Client
-from nostr.event.persist import ClientSQLEventStore
+from nostr.event.persist import ClientSQLEventStore, ClientSQLiteEventStore
 from nostr.client.event_handlers import PrintEventHandler, PersistEventHandler, EventAccepter, DeduplicateAcceptor, LengthAcceptor
 from nostr.util import util_funcs
 from nostr.event.event import Event
@@ -164,7 +164,7 @@ class MyAccept(EventAccepter):
 
 def run_watch(config):
     my_db = SQLiteDatabase(DB_FILE)
-    event_store = ClientSQLEventStore(my_db)
+    event_store = ClientSQLiteEventStore(DB_FILE, full_text=True)
     my_persist = PersistEventHandler(event_store)
     profile_store = SQLProfileStore(my_db)
     profile_handler = ProfileEventHandler(profile_store)

@@ -207,7 +207,7 @@ class ClientMemoryEventStore(MemoryEventStore, ClientEventStoreInterface):
 class SQLEventStore(EventStoreInterface):
 
     @staticmethod
-    def _make_filter_sql(filters, placeholder='?'):
+    def _make_filter_sql(filters, placeholder='?', custom=None):
         """
         creates the sql to select events from a db given nostr filter
         :param filter:
@@ -275,6 +275,17 @@ class SQLEventStore(EventStoreInterface):
                 if c_name[0] == '#':
                     do_tags(c_name[1:])
                     join = 'and'
+
+            if custom is not None:
+                # where custom queries are of the form select id from
+                # only for non standard query additions, currently content by the client
+                # if something standard ever replaces should be moved into the make construction here
+                # assuming it can be done in a non db specifc way...
+                custom_queries = custom(filter, join)
+                for c_cust_q in custom_queries:
+                    print(c_cust_q)
+                    sql_arr.append(c_cust_q['sql'])
+                    args.append(c_cust_q['args'])
 
             return {
                 'sql': ''.join(sql_arr),
@@ -393,7 +404,7 @@ class SQLEventStore(EventStoreInterface):
     def add_event(self, evt: Event):
         self._db.execute_batch(self._prepare_add_event_batch(evt))
 
-    def get_filter(self, filter) -> [Event]:
+    def get_filter(self, filter, custom=None) -> [Event]:
         """
         from database returns events that match filter/s
         doesn't do #e and #p filters yet (maybe never)
@@ -402,7 +413,8 @@ class SQLEventStore(EventStoreInterface):
         :return:
         """
         filter_query = SQLEventStore._make_filter_sql(filter,
-                                                      placeholder=self._db.placeholder)
+                                                      placeholder=self._db.placeholder,
+                                                      custom=custom)
 
         # print(filter_query['sql'], filter_query['args'])
 
@@ -693,31 +705,83 @@ class ClientSQLiteEventStore(SQLiteEventStore, ClientSQLEventStore,  ClientEvent
 
         self._db.execute_batch(create_batch)
 
-    """
-        search of event content, eventually to be part of the client store interface...
-    """
-    def get_text(self, the_text, limit=None):
+    def add_event(self, evt: Event):
+        evt_batch = super()._prepare_add_event_batch(evt)
+        if self._full_text and evt.kind == Event.KIND_TEXT_NOTE:
+            print('>>>>>> addding text')
+            evt_batch.append({
+                'sql': """
+                                            insert into event_content values (
+                                            (select id from events where event_id=%s),
+                                            %s)
+                                        """.replace('%s', self._db.placeholder),
+                'args': [evt.id, evt.content]
+            })
+
+        self._db.execute_batch(evt_batch)
+
+    # """
+    #     search of event content, eventually to be part of the client store interface...
+    # """
+    # def get_text(self, the_text, limit=None):
+    #
+    #     # ideally full text search is enabled and the table event_content has been created
+    #     # and content for kind1/text notes is being added here
+    #     if self._full_text:
+    #         my_sql = """
+    #                     select e.* from events e
+    #                         inner join event_content ec on e.id=ec.id
+    #                         where ec.content match ?
+    #                         order by created_at desc
+    #                 """
+    #
+    #         # we'll just take this as is which mean user can do ands/or etc. we're binding so should be ok
+    #         # though expect we still might want to do some sanity check here....
+    #         args = [the_text]
+    #         if limit:
+    #             my_sql += ' limit ?'
+    #             args.append(limit)
+    #
+    #         data = self._db.select_sql(sql=my_sql,
+    #                                    args=args)
+    #         return SQLEventStore._events_data_to_event_arr(data)
+    #     else:
+    #         raise Exception('fuck to implement fullback like styleee')
+
+    def get_filter(self, filter) -> [Event]:
+        def my_custom(filter, join):
+            ret = []
+            if 'content' in filter:
+                if self._full_text:
+                    sql = """
+                        %s id in (
+                            select id from event_content ec
+                            where ec.content match %s  
+                        )
+                    """ % (join, self._db.placeholder)
+
+                    ret.append(
+                        {
+                            'sql': sql,
+                            'args': filter['content']
+                        }
+                    )
+                else:
+                    # standard like style this should work in postgres (postgres probably has its own full text search)
+                    sql = """
+                            %s id in (
+                                select id from events where content like %s  
+                            )
+                        """ % (join, self._db.placeholder)
+
+                    ret.append(
+                        {
+                            'sql': sql,
+                            'args': '%' + filter['content'] + '%'
+                        }
+                    )
 
 
-        # ideally full text search is enabled and the table event_content has been created
-        # and content for kind1/text notes is being added here
-        if self._full_text:
-            my_sql = """
-                        select e.* from events e 
-                            inner join event_content ec on e.id=ec.id
-                            where ec.content match ?
-                            order by created_at desc
-                    """
+            return ret
 
-            # we'll just take this as is which mean user can do ands/or etc. we're binding so should be ok
-            # though expect we still might want to do some sanity check here....
-            args = [the_text]
-            if limit:
-                my_sql += ' limit ?'
-                args.append(limit)
-
-            data = self._db.select_sql(sql=my_sql,
-                                       args=args)
-            return SQLEventStore._events_data_to_event_arr(data)
-        else:
-            raise Exception('fuck to implement fullback like styleee')
+        return super().get_filter(filter, my_custom)

@@ -36,6 +36,7 @@ APP.nostr.data.event = function(){
 }();
 
 APP.nostr.data.user = function(){
+    const CLIENT = 'nostrpy-web';
 
     function set_cookie(cName, cValue, expDays) {
             let date = new Date();
@@ -85,6 +86,24 @@ APP.nostr.data.user = function(){
 //                    APP.nostr.data.event.fire_event('profile_set', data);
 //                }
 //            });
+        },
+        'get_client' : function(){
+            return CLIENT;
+        },
+        'is_add_client_tag' : function(){
+            return get_cookie('add_client_tag', true);
+        },
+        'set_add_client_tag' : function(val){
+            set_cookie('add_client_tag', val);
+        },
+        'enable_media' : function(val){
+            let ret = val;
+            if(val!==undefined){
+                set_cookie('enable_media', val);
+            }else{
+                ret = get_cookie('enable_media', true);
+            }
+            return ret
         }
     };
 }();

@@ -49,14 +49,14 @@ class Profile:
         self._followed_by = None
         self._priv_k = priv_k
         self._pub_k = pub_k
-        self._attrs = attrs
-        if self._attrs is None:
-            self._attrs = {}
-        else:
+        self._attrs = {}
+        if attrs is not None:
+            if isinstance(attrs, dict):
+                self._attrs = attrs
             # if is str rep e.g. directly from event turn it to {}
-            if isinstance(self._attrs, str):
+            elif isinstance(attrs, str):
                 try:
-                    self._attrs = json.loads(self._attrs)
+                    self._attrs = json.loads(attrs)
                 except JSONDecodeError as e:
                     logging.debug(e)
 

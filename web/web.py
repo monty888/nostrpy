@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     pass
 
 import json
+import re
 from json import JSONDecodeError
 from bottle import request, Bottle, static_file, abort
 from beaker import session
@@ -34,46 +35,22 @@ class StaticServer:
         # if running in our own server, probably only suiatable for dev
         self._server = None
 
-        """
-            basically or statics are the same just ext and name of sub dir and the route text that changes
-            so each call this to get the method that'll be called by their route that defines sub_dir and ext for that 
-            files type
-        """
-        def get_for_ftype(sub_dir, ext=None):
-            # where not defined so e.g. sub_dir == /css and file ext == .css
-            if ext is None:
-                ext = sub_dir
-
-            def for_type(name):
-                my_root = self._file_root + '%s/' % sub_dir
-                logging.debug('StaticServer:: root: %s sub_dir: %s name: %s ext: %s' % (self._file_root,
-                                                                                        sub_dir,
-                                                                                        name,
-                                                                                        ext))
-
-                # if ext not already included then we'll add it
-                if not ('.%s' % ext) in name:
-                    name = name + '.%s' % ext
-                print(name, my_root)
-                return static_file(filename=name, root=my_root)
-            return for_type
-
         # html
-        html_method = get_for_ftype('html')
+        html_method = self.get_static('html')
 
         @self._app.route('/html/<name>')
         def html(name):
             return html_method(name)
 
         # js
-        js_method = get_for_ftype('script','js')
+        js_method = self.get_static('script','js')
 
         @self._app.route('/script/<name>')
         def js(name):
             return js_method(name)
 
         # css
-        css_method = get_for_ftype('css','css')
+        css_method = self.get_static('css','css')
 
         @self._app.route('/css/<name>')
         def css(name):
@@ -131,6 +108,26 @@ class StaticServer:
                 # TODO this should readlly be doing a ?501? Auth exception
                 raise Exception('arrrgh icon type not accepted')
             return ret
+
+    def get_static(self, sub_dir, ext=None):
+        # where not defined so e.g. sub_dir == /css and file ext == .css
+        if ext is None:
+            ext = sub_dir
+
+        def for_type(name):
+            my_root = self._file_root + '%s/' % sub_dir
+            logging.debug('StaticServer:: root: %s sub_dir: %s name: %s ext: %s' % (self._file_root,
+                                                                                    sub_dir,
+                                                                                    name,
+                                                                                    ext))
+
+            # if ext not already included then we'll add it
+            if not ('.%s' % ext) in name:
+                name = name + '.%s' % ext
+            print(name, my_root)
+            return static_file(filename=name, root=my_root)
+        return for_type
+
 
 
     def start(self, host='localhost', port=8080):
@@ -197,6 +194,7 @@ class NostrWeb(StaticServer):
             500: my_internal
         }
 
+        self._app.route('/', callback=_get_err_wrapped(self._home_route))
         self._app.route('/profile', callback=self._profile)
         self._app.route('/profiles', callback=self._profiles_list)
         self._app.route('/local_profiles', callback=_get_err_wrapped(self._local_profiles))
@@ -210,10 +208,14 @@ class NostrWeb(StaticServer):
         self._app.route('/text_events', callback=self._text_events_route)
         self._app.route('/text_events_for_profile', callback=self._text_events_for_profile)
 
-        self._app.route('/post_text', method='POST', callback=_get_err_wrapped(self._do_post))
+        # self._app.route('/post_text', method='POST', callback=_get_err_wrapped(self._do_post))
+        self._app.route('/post_event', method='POST', callback=_get_err_wrapped(self._do_post))
 
         self._app.route('/websocket', callback=self._handle_websocket)
 
+    def _home_route(self):
+
+        return static_file(filename='home.html', root=self._file_root+'/html/')
 
     def _check_pub_key(self, pub_k):
         if not pub_k:
@@ -348,6 +350,29 @@ class NostrWeb(StaticServer):
 
         return evt.event_data()
 
+    def _do_post(self):
+        event = json.loads(request.forms['event'])
+        pub_k = event['pub_k']
+        content = event['content']
+        tags = event['tags']
+
+        self._check_pub_key(pub_k)
+        the_profile = self._profile_handler.profiles.get_profile(pub_k)
+        if the_profile is None:
+            raise Exception('no profile found for pub_k - %s' % pub_k)
+        if the_profile.private_key is None:
+            raise Exception('don\'t have private key for pub_k - %s' % pub_k)
+
+        evt = Event(kind=Event.KIND_TEXT_NOTE,
+                    content=content,
+                    pub_key=pub_k,
+                    tags=tags)
+        evt.sign(the_profile.private_key)
+
+        self._client.publish(evt)
+
+        return evt.event_data()
+
     # def _set_profile(self):
     #     """
     #     set the profile that will be used when perfoming any action,
@@ -465,9 +490,56 @@ class NostrWeb(StaticServer):
     def _events_text_search_route(self):
         search_str = request.query.search_str
         limit = self._get_query_limit()
-        evts = []
-        if search_str != '':
-            evts = [c_evt.event_data() for c_evt in self._event_store.get_text(search_str, limit)]
+
+        def extract_tag(tag_prefix, text):
+            pat = '\\%s(\w*)' % tag_prefix
+            matches = re.findall(pat, text)
+            for c_match in matches:
+                text = text.replace(tag_prefix + c_match, '')
+
+            return matches, text
+
+        def find_authors(prefixes):
+            c_p: Profile
+            m_find = 10
+            ret = []
+
+            for c_pre in prefixes:
+                auth_match = self._profile_handler.profiles.matches(c_pre,m_find)
+                if auth_match:
+                    ret = ret + [c_p.public_key for c_p in auth_match]
+                    if len(ret) > m_find:
+                        break
+
+            return ret[:m_find-1]
+
+        filter = {
+            'limit': self._get_query_limit(),
+            'kinds': [Event.KIND_TEXT_NOTE]
+        }
+
+        if search_str.replace(' ', ''):
+            # add hash tags to filter
+            hashtags, search_str = extract_tag('#', search_str)
+            if hashtags:
+                filter['#hashtag'] = hashtags
+
+            # add authors to filter
+            author_pres, search_str = extract_tag('@', search_str)
+            if author_pres:
+                authors = find_authors(author_pres)
+                if authors:
+                    filter['authors'] = authors
+                else:
+                    # so nothing will match
+                    filter['authors'] = [' ']
+
+            search_str = ' '.join(search_str.split())
+            print('  ** ',search_str)
+            if search_str:
+                filter['content'] = search_str
+
+        evts = [c_evt.event_data() for c_evt in self._event_store.get_filter(filter)]
 
         return {
             'events': evts
@@ -520,12 +592,20 @@ class NostrWeb(StaticServer):
         for_profile.load_contacts(self._profile_store)
         c: Contact
 
-        return {
-            'events': self._get_events({
+        filter = [
+            {
                 'authors': [pub_k] + [c.contact_public_key for c in for_profile.contacts],
                 'kinds': [Event.KIND_TEXT_NOTE],
                 'limit': limit
-            })
+            },
+            {
+                'kinds': [Event.KIND_TEXT_NOTE],
+                '#p': [pub_k]
+            }]
+
+        return {
+            'events': self._get_events(filter),
+            'filter': filter
         }
 
     def do_event(self, sub_id, evt:Event, relay):
@@ -555,7 +635,8 @@ def nostr_web():
     nostr_db_file = '%s/.nostrpy/nostr-client.db' % Path.home()
 
     from nostr.util import util_funcs
-    event_store = util_funcs.create_sqlite_store(nostr_db_file, True)
+    event_store = util_funcs.create_sqlite_store(nostr_db_file,
+                                                 full_text=True)
     profile_store = SQLiteProfileStore(nostr_db_file)
     profile_handler = ProfileEventHandler(SQLiteProfileStore(nostr_db_file))
 
@@ -570,7 +651,11 @@ def nostr_web():
             'client' : 'wss://nostr-pub.wellorder.net',
             'write': False
         },
-        'ws://localhost:8081'
+        'ws://localhost:8081',
+        {
+            'client': 'wss://relay.damus.io',
+            'write': False
+        },
     ]
 
     my_client = ClientPool(clients, on_connect=my_connect)

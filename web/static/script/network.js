@@ -15,6 +15,7 @@ APP.remote = function(){
         // details on a single profile
         _profile_url = '/profile',
         _post_text_url = '/post_text',
+        _post_event_url = '/post_event',
 
         // to stop making duplicate calls we key here only one call per key will be made
         // either supply a key field else the call_args string is used
@@ -56,14 +57,16 @@ APP.remote = function(){
                 error: error,
                 success: success
             },
-            key = args.key!==undefined ? args.key : call_args.url,
+            key = args.key!==undefined ? args.key : call_args.method.toLowerCase()==='get' ? call_args.url : data,
+            // by default gets are cached, not posts unless cache is set true
+            cache = args.cache===undefined ? call_args.method.toLowerCase()==='get' : args.cache,
             the_cache;
 
         if(data!==undefined){
             call_args['data'] = data;
         }
 
-        if(call_args.method.toLowerCase()==='get'){
+        if(cache){
             the_cache = _loading_cache[key];
             // just add to the queue and return
             if(the_cache!==undefined){
@@ -98,31 +101,34 @@ APP.remote = function(){
 
             // intercept success/error with are own methods so that multiple calls can be reduced to single ajax req
             // out success and error that call back everyone in the queue
-            call_args.success = function(data){
-                the_cache.success.forEach(function(cSuccess){
-                    try{
-                        cSuccess(data);
-                    }catch(e){};
-                });
-                // so late calls will just get run straight away rather than called
-                the_cache.is_loaded = true;
-                the_cache.data = data;
-            };
-            call_args.error = function(ajax, textstatus, errorThrown){
-                the_cache.error.forEach(function(cError){
-                    try{
-                        cError(ajax, textstatus, errorThrown);
-                    }catch(e){};
-                });
-                // as success but for immidiate error
-                the_cache.is_loaded = true;
-                the_cache.ajax = ajax;
-                the_cache.textstatus = textstatus;
-                the_cache.errorThrown = errorThrown;
-            }
+            call_args.success = function(my_cache){
+                return function(data){
+                    my_cache.success.forEach(function(cSuccess){
+                        try{
+                            cSuccess(data);
+                        }catch(e){};
+                    });
+                    // so late calls will just get run straight away rather than called
+                    my_cache.is_loaded = true;
+                    my_cache.data = data;
+                };
+            }(the_cache);
+            call_args.error = function(my_cache){
+                return function(ajax, textstatus, errorThrown){
+                    my_cache.error.forEach(function(cError){
+                        try{
+                            cError(ajax, textstatus, errorThrown);
+                        }catch(e){};
+                    });
+                    // as success but for immidiate error
+                    my_cache.is_loaded = true;
+                    my_cache.ajax = ajax;
+                    my_cache.textstatus = textstatus;
+                    my_cache.errorThrown = errorThrown;
+                }
+            }(the_cache);
 
         };
-
 
         // make the call
         $.ajax(call_args)
@@ -175,9 +181,8 @@ APP.remote = function(){
             args['url'] = _current_profile_url;
             do_query(args);
         },
-
         'load_notes_from_profile': function(args){
-            args['url'] = _note_url;
+            args['url'] = _note_for_profile_url;
             args['params'] = {
                 'pub_k' : args['pub_k']
             },
@@ -205,13 +210,19 @@ APP.remote = function(){
             };
             do_query(args);
         },
-        'post_text' : function(args){
-            args['url'] = _post_text_url;
+//        'post_text' : function(args){
+//            args['url'] = _post_text_url;
+//            args['method'] = 'POST';
+//            args['data'] = 'pub_k=' + args.pub_k;
+//            args['data'] += '&text=' + args.text;
+//            do_query(args);
+//        },
+        'post_event' : function(args){
+            args['url'] = _post_event_url;
             args['method'] = 'POST';
-            args['data'] = 'pub_k=' + args.pub_k;
-            args['data'] += '&text=' + args.text;
+            args['data'] = 'event=' + JSON.stringify(args.event);
             do_query(args);
-        },
+        }
 
     }
 }();

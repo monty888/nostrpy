@@ -125,8 +125,48 @@ APP.nostr = {
                 }
 
                 do_notification();
-            }
+            },
+            'get_profile_picture' : function(pub_k){
+                // default, note returned even if enable_media is false... thats because
+                // eventually the robos will be local and won't require going external to get...
+                let ret = APP.nostr.gui.robo_images.get_url({
+                        'text' : pub_k
+                    }),
+                    profiles = APP.nostr.data.profiles;
 
+                    if(profiles.is_loaded()){
+                        p = profiles.lookup(pub_k);
+
+                        // we found the profile
+                        if(p!==undefined){
+                            attrs = p['attrs'];
+                            if(attrs!==undefined){
+                                if(APP.nostr.data.user.enable_media() && attrs['picture']!==undefined){
+                                    ret = attrs['picture'];
+                                }
+                            }
+                        }
+
+                    }
+                return ret;
+            },
+            'get_note_content_for_render' : function(evt){
+                let enable_media = APP.nostr.data.user.enable_media(),
+                    content = evt.content;
+
+                // make safe
+                content = APP.nostr.util.html_escape(content);
+                // insert media tags to content
+                content = APP.nostr.gui.http_media_tags_into_text(content, enable_media);
+                // do p tag replacement
+                content = APP.nostr.gui.tag_replacement(content, evt.tags)
+                // add line breaks
+                content = content.replace(/\n/g,'<br>');
+                // fix special characters as we're rendering in html el
+                content = APP.nostr.util.html_unescape(content);
+
+                return content;
+            }
         };
     }(),
     'util' : {
@@ -252,7 +292,7 @@ APP.nostr.gui.tag_replacement = function (text, tags){
             tag_type = ct[0];
             tag_val = ct[1];
 
-            if((_replacements[tag_type]!==undefined) && (tag_val!==undefined)){
+            if((_replacements[tag_type]!==undefined) && (tag_val!==undefined) && (tag_val!==null)){
                 // replacement text is a short version of key
                 // unless there is a lookup function provided
                 replace_text = APP.nostr.util.short_key(ct[1]);
@@ -298,164 +338,6 @@ dayjs.updateLocale('en', {
   }
 });
 
-
-APP.nostr.gui.tabs = function(){
-    /*
-        creates a tabbed area, probably only used to set up the, and events for moving between tabs
-        but otherwise caller can deal with rendering the content
-    */
-    let _head_tmpl = [
-        '<ul class="nav nav-tabs" style="overflow:hidden;" >',
-            '{{#tabs}}',
-                '<li class="{{active}}"><a data-toggle="tab" href="#{{tab-ref}}">{{tab-title}}</a></li>',
-            '{{/tabs}}',
-            // extra area for e.g. search field,
-            '<span id="{{id}}-tool-con" class="tab-tool-area" >',
-            '</span>',
-        '</ul>'
-        ].join(''),
-        _body_tmpl = [
-            '<div class="tab-content">',
-            '{{#tabs}}',
-                '<div id="{{tab-ref}}" class="tab-pane {{transition}} {{active}}">',
-                    '<div id="{{tab-ref}}-con">{{content}}</div>',
-                '</div>',
-            '{{/tabs}}',
-            '</div>'
-        ].join('');
-
-    function create(args){
-            // where we'll be drawn
-        let _con = args.con,
-            // data preped for template render
-            _render_obj,
-            // do a draw as soon as created
-            _init_draw = args.do_draw|| false,
-            // content if no content given for tab
-            _default_content = args.default_content || '',
-            _tabs = args.tabs||[],
-            // our own id
-            _id = APP.nostr.gui.uid(),
-            // area to the right of tab heads for caller to render additional gui elements
-            _tool_con,
-            // index of currently selected tab
-            _cur_index,
-            // function called on a tab being selected
-            _on_tab_change = args.on_tab_change;
-
-        function create_render_obj(){
-            _render_obj = {
-                'id' : _id,
-                'tabs' : []
-            };
-            _tabs.forEach(function(c_tab, i){
-                let to_add = {};
-                to_add['tab-title'] = c_tab.title!==undefined ? c_tab.title : '?no title?';
-                to_add['tab-ref'] = c_tab.id!==undefined ? c_tab.id : APP.nostr.gui.uid();
-                to_add['content'] = c_tab.content!==undefined ? c_tab.content : _default_content;
-                if(c_tab.active===true){
-                    to_add['active'] = 'active';
-                    to_add['transition'] = 'fade in';
-                    _cur_index = i;
-                }else{
-                    to_add['transition'] = 'fade';
-                }
-                _render_obj.tabs.push(to_add);
-            });
-
-            // no active tab given we'll set to 0
-            if(_tabs.length>0 && _cur_index===undefined){
-                _render_obj.tabs[0]['active'] = 'active';
-                _render_obj.tabs[0]['transition'] = 'fade in';
-                _cur_index = 0;
-            }
-
-        }
-
-        function draw(){
-            let render_html = [
-                Mustache.render(_head_tmpl, _render_obj),
-                Mustache.render(_body_tmpl, _render_obj)
-                ].join('')
-            // now render
-            _con.html(render_html);
-
-            // get the content objects and put in render_obj so we don't have to go through the
-            // dom again
-            _render_obj.tabs.forEach(function(c_tab){
-                c_tab['tab_content_con'] = $('#'+c_tab['tab-ref']+'-con');
-            });
-            // and the tool area
-            _tool_con = $("#"+_id+"-tool-con");
-
-            // before anims
-            $('.nav-tabs a').on('show.bs.tab', function(e){
-                let id = e.currentTarget.href.split('#')[1];
-                for(var i=0;i<_render_obj.tabs.length;i++){
-                    if(_render_obj.tabs[i]['tab-ref']===id){
-                        _cur_index = i;
-                    }
-                }
-
-                if(typeof(_on_tab_change)==='function'){
-                    _on_tab_change(_cur_index, _render_obj.tabs[_cur_index]['tab_content_con']);
-                }
-
-            });
-
-            // after anims
-            $('.nav-tabs a').on('shown.bs.tab', function(e){
-            });
-
-            // not sure we should count this as a change??
-            // anyway on first draw fire _on_tab_change for selected tab
-            if(typeof(_on_tab_change)==='function'){
-                _on_tab_change(_cur_index, _render_obj.tabs[_cur_index]['tab_content_con']);
-            }
-
-        }
-
-        function get_tab(ident){
-            let ret = {},
-                tab_render_obj;
-            if(typeof(ident)=='number'){
-                tab_render_obj = _render_obj.tabs[ident];
-            }
-
-            // TODO: by title
-
-            // now copy relavent bits
-            ret['content-con'] = tab_render_obj['tab_content_con'];
-
-            return ret;
-        }
-
-        function init(){
-            create_render_obj();
-        }
-        // do the init
-        init();
-
-        return {
-            'draw': draw,
-            'get_tab' : get_tab,
-            'get_tool_con' : function(){
-                return _tool_con;
-            },
-            'get_selected_tab' : function(){
-                return get_tab(_cur_index);
-            },
-            'get_selected_index' : function(){
-                return _cur_index;
-            }
-        };
-    };
-
-    return {
-        'create' : create
-    }
-}();
-
 /*
     same thing but this os only for local profiles,
     ie the ones that we can use to mkae posts, edit their meta etc.
@@ -477,7 +359,7 @@ APP.nostr.data.local_profiles = function(){
             _is_loaded = true;
             _profiles_arr = data['profiles'];
             if(typeof(o_success)==='function'){
-                o_success(o_success)
+                o_success(_profiles_arr)
             }
         }
 
@@ -648,27 +530,4 @@ APP.nostr.gui.event_detail = function(){
     return {
         'create' : create
     };
-}();
-
-/*
-    using https://robohash.org/ so we can provide unique profile pictures even where user hasn't set one
-    url route here so that at some point we can use the lib and create local route to do the same
-*/
-APP.nostr.gui.robo_images = function(){
-    let _root_url = 'https://robohash.org/';
-
-    return {
-        // change the server that we're getting robos from
-        'set_root': function(url){
-            _root_url = url;
-        },
-        'get_url': function(args){
-            let text = args.text;
-                // got rid of size as it seems to be included in the hash which means you get a different robo with different
-                // size val
-//                size = args.size || '128x128';
-            return _root_url+'/'+text;
-        }
-    }
-
 }();
