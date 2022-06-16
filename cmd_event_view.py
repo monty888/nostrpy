@@ -294,7 +294,7 @@ def run_event_view():
 
 
 if __name__ == "__main__":
-    logging.getLogger().setLevel(logging.DEBUG)
+    # logging.getLogger().setLevel(logging.DEBUG)
     util_funcs.create_work_dir(WORK_DIR)
     util_funcs.create_sqlite_store(DB_FILE)
     run_event_view()

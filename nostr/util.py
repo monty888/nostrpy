@@ -3,12 +3,11 @@ from datetime import datetime, timedelta
 import logging
 import os
 from pathlib import Path
+from json import JSONEncoder
 
 """
     just a place to hand any util funcs that don't easily fit anywhere else
 """
-
-
 class util_funcs:
 
     @staticmethod

@@ -708,7 +708,6 @@ class ClientSQLiteEventStore(SQLiteEventStore, ClientSQLEventStore,  ClientEvent
     def add_event(self, evt: Event):
         evt_batch = super()._prepare_add_event_batch(evt)
         if self._full_text and evt.kind == Event.KIND_TEXT_NOTE:
-            print('>>>>>> addding text')
             evt_batch.append({
                 'sql': """
                                             insert into event_content values (

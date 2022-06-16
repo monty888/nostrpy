@@ -8,6 +8,7 @@ APP.nostr.gui.header = function(){
         _home_but,
         _event_search_but,
         _profile_search_but,
+        _relay_but,
         _enable_media;
 
     // watches which profile we're using and calls set_profile_button when it changes
@@ -20,6 +21,20 @@ APP.nostr.gui.header = function(){
             }
         });
     }
+
+    function watch_relay(){
+        // look for future updates
+        APP.nostr.data.event.add_listener('relay_status',function(of_type, data){
+            if(data.connected){
+                _relay_but.css('background-color', 'green');
+            }else{
+                _relay_but.css('background-color', 'red');
+            }
+
+
+        });
+    }
+
 
     // actually update the image on the profile button
     function set_profile_button(){
@@ -52,12 +67,12 @@ APP.nostr.gui.header = function(){
         _home_but = $('#home-but');
         _event_search_but = $('#event-search-but');
         _profile_search_but = $('#profile-search-but');
-
-
+        _relay_but = $('#relay-but');
 
         _current_profile = APP.nostr.data.user.get_profile();
         set_profile_button();
         watch_profile();
+        watch_relay();
 
         // add events
         _profile_but.on('click', function(){
@@ -655,9 +670,7 @@ APP.nostr.gui.event_view = function(){
             // not that currently only applied on add, the list you create with is assumed to already be filtered
             // like nostr filter but minimal impl just for what we need
             // TODO: Fix this make filter obj?
-            _sub_filter = args.filter!==undefined ? args.filter : {
-                'kinds' : new Set([1])
-            },
+            _sub_filter = args.filter,
             // track which event details are expanded
             _expand_state = {},
             // underlying APP.nostr.gui.list
@@ -665,6 +678,17 @@ APP.nostr.gui.event_view = function(){
             // interval timer for updating times
             _time_interval;
 
+        // TODO: fix this, filter stuff to change
+        if(_sub_filter===undefined){
+            _sub_filter = {
+                'kinds' : new Set([1])
+            }
+        }else{
+            if(_sub_filter.kinds!==undefined && typeof(_sub_filter.kinds.has)!=='function'){
+                _sub_filter = $.extend({}, _sub_filter);
+                _sub_filter.kinds = new Set(_sub_filter.kinds);
+            }
+        }
 
         function uevent_id(event_id){
             return _uid+'-'+event_id;

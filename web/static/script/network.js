@@ -253,9 +253,7 @@ APP.nostr_client = function(){
 
         _socket.onmessage = function(e) {
             console.log('socket onmessage - ');
-            console.log(e);
-            let json = JSON.parse(e['data']);
-            _on_data(json);
+            _on_data(JSON.parse(e['data']));
         };
 
         _socket.onerror = function(e) {

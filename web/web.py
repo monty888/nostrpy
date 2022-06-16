@@ -8,6 +8,8 @@ if TYPE_CHECKING:
     pass
 
 import json
+from json import JSONEncoder
+from datetime import datetime
 import re
 from json import JSONDecodeError
 from bottle import request, Bottle, static_file, abort
@@ -17,6 +19,7 @@ import logging
 from pathlib import Path
 from gevent.pywsgi import WSGIServer
 from geventwebsocket import WebSocketError
+from geventwebsocket.websocket import WebSocket
 from geventwebsocket.handler import WebSocketHandler
 from nostr.event.event import Event
 from nostr.ident.profile import ProfileEventHandler, ProfileList, Profile, Contact
@@ -24,6 +27,18 @@ from nostr.ident.persist import SQLiteProfileStore, ProfileType
 from nostr.event.persist import ClientEventStoreInterface, SQLiteEventStore
 from nostr.encrypt import Keys
 from nostr.client.client import ClientPool, Client
+
+
+class DateTimeEncoder(JSONEncoder):
+    """
+        dates aren't part of the standard python json encode so add here
+        add as required, just datetime at the moment
+    """
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.timestamp()
+        return super().default(obj)
+
 
 class StaticServer:
     """
@@ -210,6 +225,8 @@ class NostrWeb(StaticServer):
 
         # self._app.route('/post_text', method='POST', callback=_get_err_wrapped(self._do_post))
         self._app.route('/post_event', method='POST', callback=_get_err_wrapped(self._do_post))
+
+        self._app.route('/relays', callback=_get_err_wrapped(self._relay_status))
 
         self._app.route('/websocket', callback=self._handle_websocket)
 
@@ -608,14 +625,19 @@ class NostrWeb(StaticServer):
             'filter': filter
         }
 
+    def _relay_status(self):
+        return DateTimeEncoder().encode(self._client.status)
+
     def do_event(self, sub_id, evt:Event, relay):
+        self.send_data(evt.event_data())
+
+    def send_data(self, the_data):
         for c_sock in self._web_sockets:
-            ws = self._web_sockets[c_sock]
             try:
-                ws.send(json.dumps(evt.event_data()))
-            except WebSocketError as we:
-                print(we, ws)
-                print('kill this guy?')
+                ws = self._web_sockets[c_sock]
+                ws.send(DateTimeEncoder().encode(the_data))
+            except Exception as e:
+                logging.debug('NostrWeb::send_data - %s' % e)
 
     def _handle_websocket(self):
         logging.debug('Websocket opened')
@@ -630,6 +652,14 @@ class NostrWeb(StaticServer):
                 wsock.receive()
             except WebSocketError:
                 break
+        # clean up
+        try:
+            del self._web_sockets[str(wsock)]
+        except Exception as e:
+            print('something bad happened?!?!?!??!?!?!?!')
+
+
+
 
 def nostr_web():
     nostr_db_file = '%s/.nostrpy/nostr-client.db' % Path.home()
@@ -646,19 +676,25 @@ def nostr_web():
             'since': util_funcs.date_as_ticks(datetime.now())
         })
 
-    clients = [
-        {
-            'client' : 'wss://nostr-pub.wellorder.net',
-            'write': False
-        },
-        'ws://localhost:8081',
-        {
-            'client': 'wss://relay.damus.io',
-            'write': False
-        },
-    ]
+    def my_status(status):
+        my_server.send_data([
+            'relay_status', status
+        ])
 
-    my_client = ClientPool(clients, on_connect=my_connect)
+    clients = [
+        # {
+        #     'client' : 'wss://nostr-pub.wellorder.net',
+        #     'write': True
+        # },
+        'ws://localhost:8081'
+        # {
+        #     'client': 'wss://relay.damus.io',
+        #     'write': True
+        # }
+    ]
+    my_client = ClientPool(clients,
+                           on_connect=my_connect,
+                           on_status=my_status)
     my_server = NostrWeb(file_root='%s/PycharmProjects/nostrpy/web/static/' % Path.home(),
                          event_store=event_store,
                          profile_store=profile_store,

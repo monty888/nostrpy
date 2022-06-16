@@ -10,13 +10,42 @@
         _enable_media = true,
         _views = {},
         _current_profile,
-        _main_con;
+        _main_con,
+        _global_filter = {
+            'kinds': [1]
+        };
 
     function start_client(){
+        // just make the status into a string so we can compare, we only want to fire status event if we think things
+        // changed
+        let _relay_status;
+
+        function make_status_str(status){
+            let ret = status.connected+';';
+            // using a pool, we probably always would
+            if(status.relays!==undefined){
+                for(let c_relay in status.relays){
+                    ret+=c_relay+'-'+status.relays[c_relay].connected+';'
+                }
+            }
+            return ret;
+        }
+
         APP.nostr_client.create({
             'on_data' : function(data){
-                for(let i in _views){
-                    _views[i].add(data)
+                let n_relay_status;
+                if(data[0]==='relay_status'){
+                    n_relay_status = make_status_str(data[1]);
+                    if(_relay_status!==n_relay_status){
+                        APP.nostr.data.event.fire_event(data[0], data[1]);
+                        _relay_status = n_relay_status;
+                    }
+
+                // assumed event
+                }else{
+                    for(let i in _views){
+                        _views[i].add(data)
+                    }
                 }
             }
         });
@@ -26,10 +55,7 @@
         // kill old views if any
         _views = {};
 
-        let global_filter = {
-                'kinds': [1]
-            },
-            feed_filter = {},
+        let feed_filter = {},
             post_filter = [{
                 'kinds': [1],
                 'authors': [_current_profile.pub_k]
@@ -48,9 +74,9 @@
             tabs_objs = [
                 {
                     'title' : 'global',
-                    'filter' : global_filter,
+                    'filter' : _global_filter,
                     'load_func' : function (success){
-                        do_load(success, global_filter);
+                        do_load(success, _global_filter);
                     }
                 },
                 {
@@ -103,10 +129,10 @@
     // when using lurker
     function global_only_view(){
         _main_con.css('overflow-y','scroll');
-        _views['global'] = init_view(_main_con, {});
+        _views['global'] = init_view(_main_con, _global_filter);
         do_load(function(data){
             _views['global'].set_notes(data['events']);
-        },{});
+        },_global_filter);
     }
 
 
