@@ -19,16 +19,6 @@
         // gui profile list objs
         _profiles_list;
 
-    // start the client TODO: should update any profiles as we see meta events
-//    function start_client(){
-//        APP.nostr_client.create('ws://localhost:8080/websocket', function(client){
-//            _client = client;
-//        },
-//        function(data){
-////            _my_event_view.add(data);
-//        });
-//    }
-
     function set_list_filter(){
         _profiles_list.set_filter(_search_in.val());
     }
@@ -37,9 +27,7 @@
     $(document).ready(function() {
         // main page struc
         $('#main_container').html(APP.nostr.gui.templates.get('screen'));
-        APP.nostr.gui.header.create({
-            'enable_media': _enable_media
-        });
+        APP.nostr.gui.header.create();
         // add specifc page scafold
         _main_con = $('#main-con');
         _main_con.html(APP.nostr.gui.templates.get('screen-profiles-search'));
@@ -85,7 +73,8 @@
             }
         });
 
-        // to see events as they happen
-//        start_client();
+        // for relay updates
+        APP.nostr_client.create();
+
     });
 }();

@@ -16,22 +16,8 @@
         // inline media where we can, where false just the link is inserted
         _enable_media = true,
         // main container where we'll draw out the events
-        _text_con = $('#feed-pane'),
-        _my_event_view = APP.nostr.gui.event_view.create({
-            'con' : _text_con,
-            'enable_media': _enable_media
-        });
-
-    function start_client(){
-        APP.nostr_client.create({
-            'on_open':function(client){
-                _client = client;
-            },
-            'on_data':function(data){
-                _my_event_view.add(data);
-            }
-        });
-    }
+        _main_con,
+        _my_event_view;
 
     function load_notes(){
         let filter = [
@@ -62,7 +48,7 @@
                 if(data['error']!==undefined){
                     alert(data['error']);
                 }else{
-                    _my_event_view.set_notes(data['events']);
+                    _my_event_view.set_notes(data['events'], filter);
                 }
             }
         });
@@ -74,6 +60,16 @@
             alert('no event id!!!');
             return;
         }
+
+        // main page struc
+        $('#main_container').html(APP.nostr.gui.templates.get('screen'));
+        APP.nostr.gui.header.create();
+        // main container where we'll draw out the events
+        _main_con = $('#main-con');
+        _my_event_view = APP.nostr.gui.event_view.create({
+            'con' : _main_con
+        });
+
         // start client for future notes....
         load_notes();
         // init the profiles data
@@ -82,7 +78,12 @@
                 _my_event_view.profiles_loaded();
             }
         });
-        // to see events as they happen
-        start_client();
+
+        // so we see new events
+        APP.nostr.data.event.add_listener('event', function(type, event){
+            _my_event_view.add(event);
+        });
+        APP.nostr_client.create();
+
     });
 }();

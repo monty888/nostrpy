@@ -9,22 +9,104 @@
         // url params
         _params = new URLSearchParams(window.location.search),
         _pub_k = _params.get('pub_k'),
-        // inline media where we can, where false just the link is inserted
-        _enable_media = true,
-        // gui objs
+        // main render area
+        _main_con,
         // main container where we'll draw the tabs
-        _main_con = $('#main-pane'),
-        // about this profile con
-        _profile_con = $('#about-pane'),
-        // the head obj
+        _tab_con,
+        // about profile header rendered here
+        _profile_con,
+        // about profile obj
+        _my_head,
+        // tab for 2 views of events
+        _my_tab,
+        // only events with current profiles pub_k
+        _post_view,
+        _post_filter = [{
+            'kinds': [1],
+            'authors': [_pub_k]
+        }],
+        // events with profile pub_k or pub_k in p tag of event
+        _reply_view,
+        _reply_filter = [
+            {
+                'kinds': [1],
+                'authors': [_pub_k]
+            },
+            {
+                'kinds': [1],
+                '#p' : [_pub_k]
+            }
+        ];
+
+    function init_view(con, filter){
+        return APP.nostr.gui.event_view.create({
+            'con': con,
+            'filter' : filter
+        });
+    }
+
+    function do_load(success, filter){
+        APP.remote.load_events({
+            'filter' : filter,
+            'success': function(data){
+                if(data['error']!==undefined){
+                    alert(data['error']);
+                }else{
+                    success(data);
+                }
+            }
+        });
+    }
+
+    function load_notes(){
+        if(_pub_k===null){
+            alert('no pub_k supplied');
+        }
+
+        APP.remote.load_notes_from_profile({
+            'pub_k' : _pub_k,
+            'success': function(data){
+                try{
+                    if(data['error']!==undefined){
+                        alert(data['error']);
+                    }else{
+                        _my_event_view.set_notes(data['events']);
+                    }
+                }catch(e){
+                    console.log(e)
+                }
+            }
+        });
+    }
+
+    // create screen, grabing various els as needed along the way
+    function create_screen(){
+        // main page struc
+        $('#main_container').html(APP.nostr.gui.templates.get('screen'));
+        APP.nostr.gui.header.create();
+        // add specifc page scafold
+        _main_con = $('#main-con');
+        _main_con.html(APP.nostr.gui.templates.get('screen-profile-view'));
+
+        // this should now exist
+        _profile_con = $('#about-pane');
+        _tab_con = $('#tab-pane');
+
+        // profile about head
         _my_head = APP.nostr.gui.profile_about.create({
             'con': _profile_con,
-            'pub_k': _pub_k,
-            'enable_media': _enable_media
-        }),
-        // tab for 2 views of events
+            'pub_k': _pub_k
+        });
+
+        // event tabs for this profile
+        create_tabs();
+
+
+    }
+
+    function create_tabs(){
         _my_tab = APP.nostr.gui.tabs.create({
-            'con' : _main_con,
+            'con' : _tab_con,
             'default_content' : 'loading...',
             'on_tab_change': function(i, con){
                 if(i===0){
@@ -52,80 +134,15 @@
                     'title': 'posts & replies'
                 }
             ]
-        }),
-        // only events with current profiles pub_k
-        _post_view,
-        _post_filter = [{
-            'kinds': [1],
-            'authors': [_pub_k]
-        }],
-        // events with profile pub_k or pub_k in p tag of event
-        _reply_view,
-        _reply_filter = [
-            {
-                'kinds': [1],
-                'authors': [_pub_k]
-            },
-            {
-                'kinds': [1],
-                '#p' : [_pub_k]
-            }
-        ];
+        })
 
-    function init_view(con, filter){
-        return APP.nostr.gui.event_view.create({
-            'con': con,
-            'enable_media': _enable_media,
-            'filter' : filter
-        });
     }
 
-    function do_load(success, filter){
-        APP.remote.load_events({
-            'filter' : filter,
-            'success': function(data){
-                if(data['error']!==undefined){
-                    alert(data['error']);
-                }else{
-                    success(data);
-                }
-            }
-        });
-    }
-
-
-    function start_client(){
-        APP.nostr_client.create('ws://localhost:8080/websocket', function(client){
-            _client = client;
-        },
-        function(data){
-            _my_event_view.add(data);
-        });
-    }
-
-    function load_notes(){
-        if(_pub_k===null){
-            alert('no pub_k supplied');
-        }
-
-        APP.remote.load_notes_from_profile({
-            'pub_k' : _pub_k,
-            'success': function(data){
-                try{
-                    if(data['error']!==undefined){
-                        alert(data['error']);
-                    }else{
-                        _my_event_view.set_notes(data['events']);
-                    }
-                }catch(e){
-                    console.log(e)
-                }
-            }
-        });
-    }
 
     // start when everything is ready
     $(document).ready(function() {
+        create_screen();
+
         // start client for future notes....
 //        load_notes();
         // draw the tabs
@@ -135,6 +152,7 @@
         APP.nostr.data.profiles.init({
             'on_load' : function(){
                 _my_head.profiles_loaded();
+
                 if(_post_view!==undefined){
                     _post_view.profiles_loaded();
                 }
@@ -148,7 +166,8 @@
                 document.title = name;
             }
         });
+
         // to see events as they happen
-        start_client();
+
     });
 }();

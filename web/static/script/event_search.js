@@ -88,16 +88,14 @@
             },1000);
         });
 
-        // maybe just do a periodic refresh as otherwise we'd have to duplicate a fulltext seach in the client
-        // that gives the same results as we get via backend...
-        // to see events as they happen
-        // start_client();
-
         window.addEventListener('popstate', function (e) {
             _search_str = e.state['search_str'];
             _search_in.val(_search_str);
             load_notes();
         });
+
+        // for relay updates, note this screen is testing events as they come in
+        APP.nostr_client.create();
 
 
     });

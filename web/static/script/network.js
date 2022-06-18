@@ -229,7 +229,7 @@ APP.remote = function(){
 
 APP.nostr_client = function(){
 
-    function create(args){
+    function _create_ws(args){
         let _url,
             _socket,
             _isopen = false,
@@ -269,12 +269,48 @@ APP.nostr_client = function(){
                 }
             });
         }
-
-
     };
 
+    function start_client(){
+        // just make the status into a string so we can compare, we only want to fire status event if we think things
+        // changed
+        let _relay_status;
+        function make_status_str(status){
+            let ret = status.connected+';';
+            // using a pool, we probably always would
+            if(status.relays!==undefined){
+                for(let c_relay in status.relays){
+                    ret+=c_relay+'-'+status.relays[c_relay].connected+';'
+                }
+            }
+            return ret;
+        }
+
+        _create_ws({
+            'on_data' : function(data){
+                let n_relay_status;
+                if(data[0]==='relay_status'){
+                    n_relay_status = make_status_str(data[1]);
+
+                    // normally use this one that only gets fired on meaningful change
+                    if(_relay_status!==n_relay_status){
+                        APP.nostr.data.event.fire_event(data[0], data[1]);
+                        _relay_status = n_relay_status;
+                    }
+
+                    // relay modal uses this, it fires for every status we get so we can update times
+                    APP.nostr.data.event.fire_event('new_relay_status', data[1]);
+
+                // assumed event
+                }else{
+                    console.log('new event!!!');
+                    APP.nostr.data.event.fire_event('event', data);
+                }
+            }
+        });
+    }
 
     return {
-        'create' : create
+        'create' : start_client
     }
 }();

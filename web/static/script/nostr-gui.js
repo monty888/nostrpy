@@ -59,7 +59,7 @@ APP.nostr.gui.header = function(){
     function create(args){
         args = args || {};
         _con = args.con || $('#header-con');
-        _enable_media = args.enable_media != undefined ? args.enable_media : false;
+        _enable_media = APP.nostr.data.user.enable_media(),
         // this is just a str
         _con.html(APP.nostr.gui.templates.get('head'));
         // grab buttons
@@ -91,6 +91,10 @@ APP.nostr.gui.header = function(){
 
         _profile_search_but.on('click', function(){
             location.href = '/html/profile_search.html';
+        });
+
+        _relay_but.on('click', function(){
+            APP.nostr.gui.relay_view_modal.show();
         });
 
     }
@@ -182,7 +186,8 @@ APP.nostr.gui.modal = function(){
             content = args.content || '',
             ok_text = args.ok_text || '?no_text?',
             on_ok = args.on_ok,
-            on_show = args.on_show;
+            on_show = args.on_show,
+            on_hide = args.on_hide;
 
         // make sure we only ever create one
         if(_my_modal===undefined){
@@ -203,7 +208,13 @@ APP.nostr.gui.modal = function(){
                 if(typeof(on_show)==='function'){
                     on_show();
                 }
-            })
+            });
+
+            _my_modal.on('hidden.bs.modal', function () {
+                if(typeof(on_hide)==='function'){
+                    on_hide();
+                }
+            });
 
             _my_ok_button.on('click', function(){
                 if(typeof(on_ok)==='function'){
@@ -218,8 +229,7 @@ APP.nostr.gui.modal = function(){
 
     }
 
-    function show(on_show){
-
+    function show(){
         // create must have been called before calling show
         _my_modal.modal();
     }
@@ -237,6 +247,9 @@ APP.nostr.gui.modal = function(){
         'show' : show,
         'hide' : hide,
         'set_content' : set_content
+//        'is_showing' : function(){
+//            return _my_modal!==undefined && _my_modal.hasClass('in');
+//        }
     };
 }();
 
@@ -557,7 +570,10 @@ APP.nostr.gui.list = function(){
                             c_end = _data.length;
                             last_block = true
                         }
+
+
                         _draw_timer = setTimeout(_prog_draw,CHUNK_DELAY);
+
                     }
 
 
@@ -665,7 +681,7 @@ APP.nostr.gui.event_view = function(){
             _con = args.con,
             // attempt to render external media in note text.. could be more fine grained to type
             // note also this doesn't cover profile img
-            _enable_media = args.enable_media!==undefined ? args.enable_media : false,
+            _enable_media = APP.nostr.data.user.enable_media(),
             // filter for notes that will be added to notes_arr
             // not that currently only applied on add, the list you create with is assumed to already be filtered
             // like nostr filter but minimal impl just for what we need
@@ -810,7 +826,7 @@ APP.nostr.gui.event_view = function(){
                             event_id = parts[0],
                             type = parts[1],
                             evt = _event_map[event_id] !==undefined ? _event_map[event_id].event : null;
-
+                        console.log(parts);
                         if(type==='expand'){
                             _expand_event(evt);
                         }else if(type==='pt' || type==='pp'){
@@ -969,7 +985,9 @@ APP.nostr.gui.event_view = function(){
         };
 
         function add_note(evt){
-            if(_test_filter(evt)){
+            // does the event pass our filter and also just double check we don't already have it
+            // the server should be trying not to send us duplicates anyhow
+            if(_test_filter(evt) && _event_map[evt.id]===undefined){
 //                let add_content = _note_content(evt);
                 // just insert the new event
                 _notes_arr.unshift(evt);
@@ -1013,39 +1031,49 @@ APP.nostr.gui.event_view = function(){
 APP.nostr.gui.profile_about = function(){
     // if showing max n of preview followers in head
     const MAX_PREVIEW_PROFILES = 10,
-        ENABLE_MEDIA = APP.nostr.gui.enable_media,
         // global profiles obj
         _profiles = APP.nostr.data.profiles,
         _tmpl = [
                 '<div style="padding-top:2px;">',
-                '<span style="display:table-cell;width:128px; background-color:#111111;padding-right:10px;" >',
+              //  '<span style="display:table-cell;width:128px; background-color:#111111;padding-right:10px;" >',
                     // TODO: do something if unable to load pic
                     '{{#picture}}',
-                        '<img id="{{pub_k}}-pp" src="{{picture}}" class="{{profile_pic_class}}" />',
+                        '<img style="display:inline-block;float:left;" id="{{pub_k}}-pp" src="{{picture}}" class="{{profile_pic_class}}" />',
                     '{{/picture}}',
-                '</span>',
-                '<span style="width:100%; display:table-cell;word-break: break-all;vertical-align:top; background-color:#221124" >',
-                    '{{#name}}',
-                        '<span>{{name}}@</span>',
-                    '{{/name}}',
-                    '<span class="pubkey-text" >{{pub_k}}</span>',
-//                    '<svg id="{{pub_k}}-cc" class="bi" >',
-//                        '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#clipboard-plus-fill"/>',
-//                    '</svg>',
-//                    '<br>',
-//                    '{{#name}}',
-//                        '<div>',
-//                            '{{name}}',
-//                        '</div>',
-//                    '{{/name}}',
-                    '{{#about}}',
-                        '<div>',
-                            '{{{about}}}',
-                        '</div>',
-                    '{{/about}}',
+                    '<p style="text-align: justify; vertical-align:top;word-break: break-all;">',
+                        '{{#name}}',
+                            '<span>{{name}}@</span>',
+                        '{{/name}}',
+                        '<span class="pubkey-text" >{{pub_k}}</span>',
+                        '{{#about}}',
+                            '<div>',
+                                '{{{about}}}',
+                            '</div>',
+                        '{{/about}}',
                     '<div id="contacts-con" ></div>',
                     '<div id="followers-con" ></div>',
-                '</span>',
+                    '</p>',
+                //'</span>',
+//                '<span display:inline-block;word-break: break-all;vertical-align:top;" >',
+
+//                    '<span class="pubkey-text" >{{pub_k}}</span>',
+////                    '<svg id="{{pub_k}}-cc" class="bi" >',
+////                        '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#clipboard-plus-fill"/>',
+////                    '</svg>',
+////                    '<br>',
+////                    '{{#name}}',
+////                        '<div>',
+////                            '{{name}}',
+////                        '</div>',
+////                    '{{/name}}',
+//                    '{{#about}}',
+//                        '<div>',
+//                            '{{{about}}}',
+//                        '</div>',
+//                    '{{/about}}',
+//                    '<div id="contacts-con" ></div>',
+//                    '<div id="followers-con" ></div>',
+//                '</span>',
                 '</div>'
         ].join(''),
         // used to render a limited list of follower/contacts imgs and counts
@@ -1081,7 +1109,7 @@ APP.nostr.gui.profile_about = function(){
             _contact_con,
             // gui to click func map
             _click_map = {},
-            _enable_media = args.enable_media!==undefined ? args.enable_media : ENABLE_MEDIA,
+            _enable_media = APP.nostr.data.user.enable_media(),
             _show_follow_section = args.show_follows!=undefined ? args.show_follows : true;
 
         // called when one of our profiles either from follower or contact is clicked
@@ -1214,6 +1242,140 @@ APP.nostr.gui.profile_about = function(){
             'profiles_loaded' : draw
         };
     };
+
+    return {
+        'create' : create
+    };
+}();
+
+APP.nostr.gui.event_detail = function(){
+    let _nv_template = [
+            '{{#fields}}',
+                '<div style="font-weight:bold;">{{name}}</div>',
+                '<div id="{{uid}}-{{name}}" class="event-detail" style="{{clickable}}" >{{{value}}}</div>',
+            '{{/fields}}',
+            '<div style="font-weight:bold;">tags</div>',
+            '{{^tags}}',
+                '<div class="event-detail" >[]</div>',
+            '{{/tags}}',
+            '{{#tags}}',
+                '<div style="font-weight:bold;">{{name}}</div>',
+                '<div id="{{uid}}-{{name}}" class="event-detail" >{{.}}</div>',
+            '{{/tags}}',
+
+        ].join(''),
+        _clicks = new Set(['event_id','sig','pubkey']);
+
+    function create(args){
+        let _con = args.con,
+            _event = args.event,
+            _render_obj,
+            _uid = APP.nostr.gui.uid(),
+            _my_tabs = APP.nostr.gui.tabs.create({
+                'con' : _con,
+                'tabs' : [
+                    {
+                        'title' : 'fields',
+                    },
+                    {
+                        'title' : 'raw'
+                    }
+                ]
+            });
+        // methods
+        function create_render_obj(){
+            let block_split = function(oval){
+                let blocks = oval.match(/.{1,32}/g);
+
+                return blocks.join('<br>');
+            },
+            to_add = [
+                {
+                    'title' : 'event_id',
+                    'field' : 'id',
+                    'func' : block_split
+                },
+                {
+                    'title' : 'created_at',
+                    'func' : function(val){
+                        return dayjs.unix(val).format();
+                    }
+                },
+                {
+                    'title' : 'kind'
+                },
+                {
+                    'title' : 'content',
+                    'func': APP.nostr.util.html_escape
+                },
+                {
+                    'title' : 'pubkey',
+                    'func' : block_split
+                },
+                {
+                    'title' : 'sig',
+                    'func' : block_split
+                }
+            ];
+
+            _render_obj = {
+                'fields': [],
+                'tags' : _event.tags
+            }
+
+            to_add.forEach(function(c_f,i){
+                let val = _event[c_f.field!==undefined ? c_f.field : c_f.title];
+                if(c_f.func){
+                    val = c_f.func(val);
+                }
+                _render_obj.fields.push({
+                    'name' : c_f.title,
+                    'value' : val,
+                    'uid' : _uid,
+                    'clickable' : navigator.clipboard!==undefined && _clicks.has(c_f.title) ? 'cursor:pointer;' : ''
+                });
+            });
+
+        }
+
+        function render_fields(){
+            _my_tabs.get_tab(0)['content-con'].html(Mustache.render(_nv_template, _render_obj));
+        }
+
+        function render_raw(){
+            _my_tabs.get_tab(1)['content-con'].html('<div class="event-detail" >' + APP.nostr.util.html_escape(JSON.stringify(_event))+ '</div>');
+        }
+
+
+        function draw(){
+            if(_render_obj===undefined){
+                create_render_obj();
+            }
+            _my_tabs.draw();
+            render_fields();
+            render_raw();
+
+
+            $(_con).on('click', function(e){
+                let id = APP.nostr.gui.get_clicked_id(e);
+                if(id.indexOf(_uid)>=0){
+                    id = id.replace(_uid+'-','');
+                    if(_clicks.has(id)){
+                        id = id==='event_id' ? 'id' : id;
+                        APP.nostr.util.copy_clipboard(_event[id], _event[id]+' - copied to clipboard');
+                    }
+                    e.stopPropagation()
+                }
+
+            });
+
+        }
+
+        // return funcs
+        return {
+            'draw': draw
+        }
+    }
 
     return {
         'create' : create
@@ -1385,10 +1547,13 @@ APP.nostr.gui.profile_select_modal = function(){
 
         let row_tmpl = APP.nostr.gui.templates.get('profile-list'),
             list,
+            current_profile = APP.nostr.data.user.get_profile(),
             render_obj = [{
                 // the no profile profile.. just browse
                 'uid' : _uid,
                 'profile_name' : 'lurker',
+                'detail-selected' : current_profile.pub_k===undefined ? 'profile-detail-area-selected' : '',
+                'picture-selected' : current_profile.pub_k===undefined ? 'profile-picture-area-selected' : '',
                 'about' : 'browse without using a profile'
             }],
             create_render_obj = function(){
@@ -1408,6 +1573,8 @@ APP.nostr.gui.profile_select_modal = function(){
                         'uid' : _uid,
                         'short_pub_k' : APP.nostr.util.short_key(c_p.pub_k),
                         'pub_k' : c_p.pub_k,
+                        'detail-selected' : current_profile.pub_k===c_p.pub_k ? 'profile-detail-area-selected' : '',
+                        'picture-selected' : current_profile.pub_k===c_p.pub_k ? 'profile-picture-area-selected' : '',
                         'profile_name' : c_p.profile_name,
                         'name' : c_p.attrs.name,
                         'picture' : img_src
@@ -1419,7 +1586,6 @@ APP.nostr.gui.profile_select_modal = function(){
             };
 
         create_render_obj();
-
         APP.nostr.gui.modal.set_content('<div id="'+_uid+'"></div>');
 
         list = APP.nostr.gui.list.create({
@@ -1456,6 +1622,86 @@ APP.nostr.gui.profile_select_modal = function(){
         APP.nostr.data.local_profiles.init({
             'success' : draw_profiles
         });
+
+    }
+
+    return {
+        'show' : show
+    }
+}();
+
+APP.nostr.gui.relay_view_modal = function(){
+    let _uid = APP.nostr.gui.uid(),
+        _relay_status,
+        _gui = APP.nostr.gui,
+        _is_showing = false;
+
+    APP.nostr.data.event.add_listener('new_relay_status',function(of_type, data){
+        _relay_status = data;
+        if(_is_showing){
+            draw_relays();
+        }
+    });
+
+    function draw_relays(){
+        if(_relay_status===undefined){
+            return;
+        }
+
+        let render_obj_arr = [],
+            relay,
+            my_list,
+            r_status,
+            last_con_str;
+
+        APP.nostr.gui.modal.set_content(Mustache.render(APP.nostr.gui.templates.get('modal-relay-status'),{
+            'uid' : _uid,
+            'status' : _relay_status.connected===true ? 'connected' : 'not-connected',
+            'relay-count': _relay_status.relay_count,
+            'connect-count' : _relay_status.connect_count,
+        }));
+
+        for(relay in _relay_status.relays){
+            r_status = _relay_status.relays[relay];
+            last_con_str = dayjs.unix(r_status.last_connect).fromNow();
+            if(last_con_str==='now'){
+                last_con_str = 'recently';
+            }else{
+                last_con_str += ' ago';
+            }
+
+            render_obj_arr.push({
+                'url' : relay,
+                'connected' : r_status.connected,
+                'last_err' : r_status.last_err,
+                'last_connect' : last_con_str
+            })
+        }
+
+        my_list = _gui.list.create({
+            'con' : $('#'+_uid+"-list"),
+            'data' : render_obj_arr,
+            'row_tmpl' : APP.nostr.gui.templates.get('modal-relay-list-row')
+        });
+        my_list.draw();
+
+    }
+
+    function show(){
+        // set the modal as we want it
+        APP.nostr.gui.modal.create({
+            'title' : 'current relays',
+            'content' : 'loading...',
+            'ok_text' : 'ok',
+            'on_hide' : function(){
+                _is_showing = false;
+            }
+        });
+        // show it
+        _is_showing = true;
+        draw_relays();
+        APP.nostr.gui.modal.show();
+
 
     }
 

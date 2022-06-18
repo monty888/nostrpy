@@ -15,42 +15,6 @@
             'kinds': [1]
         };
 
-    function start_client(){
-        // just make the status into a string so we can compare, we only want to fire status event if we think things
-        // changed
-        let _relay_status;
-
-        function make_status_str(status){
-            let ret = status.connected+';';
-            // using a pool, we probably always would
-            if(status.relays!==undefined){
-                for(let c_relay in status.relays){
-                    ret+=c_relay+'-'+status.relays[c_relay].connected+';'
-                }
-            }
-            return ret;
-        }
-
-        APP.nostr_client.create({
-            'on_data' : function(data){
-                let n_relay_status;
-                if(data[0]==='relay_status'){
-                    n_relay_status = make_status_str(data[1]);
-                    if(_relay_status!==n_relay_status){
-                        APP.nostr.data.event.fire_event(data[0], data[1]);
-                        _relay_status = n_relay_status;
-                    }
-
-                // assumed event
-                }else{
-                    for(let i in _views){
-                        _views[i].add(data)
-                    }
-                }
-            }
-        });
-    }
-
     function home_view(){
         // kill old views if any
         _views = {};
@@ -163,9 +127,7 @@
     $(document).ready(function() {
         // main page struc
         $('#main_container').html(APP.nostr.gui.templates.get('screen'));
-        APP.nostr.gui.header.create({
-            'enable_media': APP.nostr.data.user.enable_media()
-        });
+        APP.nostr.gui.header.create();
         // main container where we'll draw out the events
         _main_con = $('#main-con');
 //        _main_con.css('height','100%');
@@ -202,9 +164,14 @@
                 }
             }
         });
-        // so we see new events
-        start_client();
 
+        // so we see new events
+        APP.nostr.data.event.add_listener('event', function(type, event){
+            for(let i in _views){
+                _views[i].add(event)
+            }
+        });
+        APP.nostr_client.create();
 
     });
 }();

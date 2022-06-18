@@ -27,6 +27,7 @@ from nostr.ident.persist import SQLiteProfileStore, ProfileType
 from nostr.event.persist import ClientEventStoreInterface, SQLiteEventStore
 from nostr.encrypt import Keys
 from nostr.client.client import ClientPool, Client
+from nostr.client.event_handlers import DeduplicateAcceptor
 
 
 class DateTimeEncoder(JSONEncoder):
@@ -190,6 +191,7 @@ class NostrWeb(StaticServer):
 
         self._client = client
 
+        self._dedup = DeduplicateAcceptor()
 
     def _add_routes(self):
         # methods wrapped so that if they raise NostrException it'll be returned as json {error: text}
@@ -518,11 +520,11 @@ class NostrWeb(StaticServer):
 
         def find_authors(prefixes):
             c_p: Profile
-            m_find = 10
+            m_find = 100
             ret = []
 
             for c_pre in prefixes:
-                auth_match = self._profile_handler.profiles.matches(c_pre,m_find)
+                auth_match = self._profile_handler.profiles.matches(c_pre, m_find)
                 if auth_match:
                     ret = ret + [c_p.public_key for c_p in auth_match]
                     if len(ret) > m_find:
@@ -628,8 +630,9 @@ class NostrWeb(StaticServer):
     def _relay_status(self):
         return DateTimeEncoder().encode(self._client.status)
 
-    def do_event(self, sub_id, evt:Event, relay):
-        self.send_data(evt.event_data())
+    def do_event(self, sub_id, evt: Event, relay):
+        if self._dedup.accept_event(evt):
+            self.send_data(evt.event_data())
 
     def send_data(self, the_data):
         for c_sock in self._web_sockets:
@@ -682,15 +685,16 @@ def nostr_web():
         ])
 
     clients = [
-        # {
-        #     'client' : 'wss://nostr-pub.wellorder.net',
-        #     'write': True
-        # },
-        'ws://localhost:8081'
-        # {
-        #     'client': 'wss://relay.damus.io',
-        #     'write': True
-        # }
+        {
+            'client' : 'wss://nostr-pub.wellorder.net',
+            'write': True
+        },
+        'ws://localhost:8081',
+        'ws://localhost:8082',
+        {
+            'client': 'wss://relay.damus.io',
+            'write': True
+        }
     ]
     my_client = ClientPool(clients,
                            on_connect=my_connect,
