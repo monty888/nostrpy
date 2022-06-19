@@ -47,7 +47,7 @@ APP.nostr = {
                     'png': 'image',
                     'mp4': 'video'
                     },
-                    parts = ref_str.split('.'),
+                    parts = ref_str.toLowerCase().split('.'),
                     ext = parts[parts.length-1],
                     ret = 'external_link';
 

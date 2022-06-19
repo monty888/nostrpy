@@ -28,6 +28,7 @@ from nostr.event.persist import ClientEventStoreInterface, SQLiteEventStore
 from nostr.encrypt import Keys
 from nostr.client.client import ClientPool, Client
 from nostr.client.event_handlers import DeduplicateAcceptor
+from nostr.util import util_funcs
 
 
 class DateTimeEncoder(JSONEncoder):
@@ -172,12 +173,11 @@ class NostrWeb(StaticServer):
                  file_root,
                  event_store: ClientEventStoreInterface,
                  profile_store: SQLiteProfileStore,
-                 profile_handler: ProfileEventHandler,
                  client: Client):
 
         self._event_store = event_store
         self._profile_store = profile_store
-        self._profile_handler = profile_handler
+        self._profile_handler: ProfileEventHandler = ProfileEventHandler(self._profile_store)
 
         self._web_sockets = {}
         super(NostrWeb, self).__init__(file_root)
@@ -192,6 +192,8 @@ class NostrWeb(StaticServer):
         self._client = client
 
         self._dedup = DeduplicateAcceptor()
+
+        self._started_at = util_funcs.date_as_ticks(datetime.now()_
 
     def _add_routes(self):
         # methods wrapped so that if they raise NostrException it'll be returned as json {error: text}
@@ -632,7 +634,15 @@ class NostrWeb(StaticServer):
 
     def do_event(self, sub_id, evt: Event, relay):
         if self._dedup.accept_event(evt):
-            self.send_data(evt.event_data())
+            # will update are profiles if meta/contact type data
+            self._profile_handler.do_event(sub_id, evt, relay)
+
+            # push the event to our web sockets, only those events that have a time
+            # otherwise client will get flooded with events if server is being started and there
+            # are a lot of events to catch up on or db has just been created and maybe all old events
+            # are being imported
+            if evt.created_at_ticks > self._started_at:
+                self.send_data(evt.event_data())
 
     def send_data(self, the_data):
         for c_sock in self._web_sockets:
@@ -660,8 +670,6 @@ class NostrWeb(StaticServer):
             del self._web_sockets[str(wsock)]
         except Exception as e:
             print('something bad happened?!?!?!??!?!?!?!')
-
-
 
 
 def nostr_web():
@@ -702,7 +710,6 @@ def nostr_web():
     my_server = NostrWeb(file_root='%s/PycharmProjects/nostrpy/web/static/' % Path.home(),
                          event_store=event_store,
                          profile_store=profile_store,
-                         profile_handler=profile_handler,
                          client=my_client)
 
     my_client.start()
