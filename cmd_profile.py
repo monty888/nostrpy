@@ -50,7 +50,7 @@ def create_new(args):
             print('%s - doesn\'t look like a nostr private key - should be 64 char hex' % priv_key)
             sys.exit(2)
 
-        priv_key = bytes(bytearray.fromhex(priv_key))
+        # priv_key = bytes(bytearray.fromhex(priv_key))
 
     print('creating new profile %s' % profile_name)
 
