@@ -9,7 +9,7 @@ import getopt
 from db.db import SQLiteDatabase
 from nostr.ident.profile import Profile
 from nostr.ident.persist import SQLProfileStore
-from nostr.util import util_funcs
+from nostr.encrypt import Keys
 
 # TODO: also postgres
 WORK_DIR = '/home/%s/.nostrpy/' % Path.home().name
@@ -46,7 +46,7 @@ def create_new(args):
     priv_key = None
     if len(args)>1:
         priv_key = args[1]
-        if not util_funcs.is_nostr_key(priv_key):
+        if not Keys.is_key(priv_key):
             print('%s - doesn\'t look like a nostr private key - should be 64 char hex' % priv_key)
             sys.exit(2)
 
@@ -107,7 +107,8 @@ def link_profile(args):
 
     priv_key = args[0]
     profile_name = args[1]
-    if not util_funcs.is_nostr_key(priv_key):
+
+    if not Keys.is_key(priv_key):
         print('%s - doesn\'t look like a nostr private key - should be 64 char hex' % priv_key)
         sys.exit(2)
 

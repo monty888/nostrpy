@@ -256,7 +256,7 @@ class ProfileStoreInterface(ABC):
                 for c_tag in c_evt.tags:
                     if c_tag[0] == 'p' and len(c_tag)>1:
                         contact_pub_k = c_tag[1]
-                        if Keys.is_valid_pubkey(contact_pub_k):
+                        if Keys.is_key(contact_pub_k):
                             # TODO: relay and pet_name to be added
                             n_contact = Contact(owner_pub_k=c_evt.pub_key,
                                                 updated_at=c_evt.created_at_ticks,

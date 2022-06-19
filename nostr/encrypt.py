@@ -44,7 +44,7 @@ class Keys:
         }
 
     @staticmethod
-    def is_valid_pubkey(key_str):
+    def is_key(key_str):
         """
         check that the string looks like a valid nostr pubkey in hex format
         """

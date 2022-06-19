@@ -241,7 +241,7 @@ class NostrWeb(StaticServer):
     def _check_pub_key(self, pub_k):
         if not pub_k:
             raise Exception('pub_k is required')
-        if not Keys.is_valid_pubkey(pub_k):
+        if not Keys.is_key(pub_k):
             raise Exception('value - %s doesn\'t look like a valid nostr pub key' % pub_k)
 
     def _get_all_contacts_profile(self, pub_k):

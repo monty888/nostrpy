@@ -355,7 +355,7 @@ class ProfileList:
 
         # we didn't find a profile but we'll see if we can just use as priv key...
         # also fallback we don't have db
-        if not ret and create_type is not None and Keys.is_valid_pubkey(profile_key):
+        if not ret and create_type is not None and Keys.is_key(profile_key):
             if len(profile_key) == 64:
                 if create_type == ProfileList.CREATE_PRIVATE:
                     ret = Profile(priv_k=profile_key,
