@@ -83,11 +83,10 @@ def run_web():
 
             # the max look back should be an option, maybe the default should just be everything
             # this will do for now
-            since = util_funcs.date_as_ticks(event_store.get_newest(the_client.url))
+            since = event_store.get_newest(the_client.url)
             less_30days = util_funcs.date_as_ticks(datetime.now()-timedelta(days=30))
             if since < less_30days:
                 since = less_30days
-
             the_client.subscribe(handlers=[evt_persist, my_server], filters={
                 'since': since
                 # 'since': util_funcs.date_as_ticks(datetime.now())

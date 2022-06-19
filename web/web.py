@@ -193,7 +193,7 @@ class NostrWeb(StaticServer):
 
         self._dedup = DeduplicateAcceptor()
 
-        self._started_at = util_funcs.date_as_ticks(datetime.now()_
+        self._started_at = util_funcs.date_as_ticks(datetime.now())
 
     def _add_routes(self):
         # methods wrapped so that if they raise NostrException it'll be returned as json {error: text}
@@ -673,13 +673,12 @@ class NostrWeb(StaticServer):
 
 
 def nostr_web():
-    nostr_db_file = '%s/.nostrpy/nostr-client.db' % Path.home()
+    nostr_db_file = '%s/.nostrpy/nostr-client-test.db' % Path.home()
 
     from nostr.util import util_funcs
     event_store = util_funcs.create_sqlite_store(nostr_db_file,
                                                  full_text=True)
     profile_store = SQLiteProfileStore(nostr_db_file)
-    profile_handler = ProfileEventHandler(SQLiteProfileStore(nostr_db_file))
 
     from datetime import datetime
     def my_connect(the_client):
