@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import logging
 import os
 from pathlib import Path
-from json import JSONEncoder
+from db.db import SQLiteDatabase
 
 """
     just a place to hand any util funcs that don't easily fit anywhere else
@@ -65,16 +65,17 @@ class util_funcs:
                     sys.exit(os.EX_CANTCREAT)
 
     @staticmethod
-    def create_sqlite_store(db_file, full_text=False):
+    def create_sqlite_store(db_file):
         from nostr.event.persist import ClientSQLiteEventStore
         from nostr.ident.persist import SQLiteProfileStore
 
-        my_events = ClientSQLiteEventStore(db_file, full_text=full_text)
+        my_events = ClientSQLiteEventStore(db_file)
         if not my_events.exists():
             my_events.create()
             my_profiles = SQLiteProfileStore(db_file)
             my_profiles.create()
-        return my_events
+
+        return SQLiteDatabase(db_file)
 
 if __name__ == "__main__":
     print('monkies')

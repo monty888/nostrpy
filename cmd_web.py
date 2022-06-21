@@ -9,8 +9,9 @@ from pathlib import Path
 import getopt
 from nostr.client.client import ClientPool, Client
 from nostr.client.event_handlers import PersistEventHandler
-from nostr.event.persist import ClientSQLEventStore, Event
+from nostr.event.persist import ClientSQLEventStore, Event, ClientSQLiteEventStore
 from nostr.ident.persist import SQLiteProfileStore
+from nostr.ident.profile import ProfileEventHandler
 from nostr.util import util_funcs
 from web.web import NostrWeb
 import beaker.middleware
@@ -38,13 +39,17 @@ def run_web():
     # db location
     nostr_db_file = '%s/.nostrpy/nostr-client.db' % Path.home()
 
+    # get sqlite db
+    db = util_funcs.create_sqlite_store(nostr_db_file)
+
     # event storage, default sqllite (the only one fully working...)
-    event_store = util_funcs.create_sqlite_store(nostr_db_file,
-                                                 full_text=True)
+    event_store = ClientSQLiteEventStore(nostr_db_file,
+                                         full_text=True)
     evt_persist = PersistEventHandler(event_store)
 
     # profile storage default also sqllite
     profile_store = SQLiteProfileStore(nostr_db_file)
+    peh = ProfileEventHandler(profile_store)
 
     # who to attach to
     clients = [
@@ -74,12 +79,22 @@ def run_web():
         # called on connect and any reconnect
         def my_connect(the_client: Client):
             # all meta updates
-            the_client.subscribe(handlers=my_server, filters={
-                'kinds': Event.KIND_META,
-                'since': event_store.get_newest(the_client.url, {
-                    'kinds': Event.KIND_META
-                })
-            })
+            the_client.subscribe(handlers=my_server, filters=[
+                {
+                    'kinds': Event.KIND_META,
+                    'since': event_store.get_newest(the_client.url,
+                                                    {
+                                                        'kinds': Event.KIND_META}
+                                                    )
+                },
+                {
+                    'kinds': Event.KIND_CONTACT_LIST,
+                    'since': event_store.get_newest(the_client.url,
+                                                    {
+                                                        'kinds': Event.KIND_CONTACT_LIST}
+                                                    )
+                }
+            ])
 
             # the max look back should be an option, maybe the default should just be everything
             # this will do for now
@@ -130,7 +145,7 @@ def run_web():
         }
         my_server.app = beaker.middleware.SessionMiddleware(my_server.app, session_opts)
 
-        my_server.start(host='localhost')
+        my_server.start(host='192.168.0.14')
 
 
     except getopt.GetoptError as e:

@@ -13,7 +13,8 @@
         _main_con,
         _global_filter = {
             'kinds': [1]
-        };
+        },
+        _my_tabs;
 
     function home_view(){
         // kill old views if any
@@ -70,8 +71,9 @@
                         do_load(success, post_filter);
                     }
                 }
-            ],
-            tabs_gui = APP.nostr.gui.tabs.create({
+            ];
+
+            _my_tabs = APP.nostr.gui.tabs.create({
                 'con' : _main_con,
                 'default_content' : 'loading...',
                 'on_tab_change': function(i, con){
@@ -87,11 +89,12 @@
             });
 
         _main_con.css('overflow-y','hidden');
-        tabs_gui.draw();
+        _my_tabs.draw();
     }
 
     // when using lurker
     function global_only_view(){
+        _views = {};
         _main_con.css('overflow-y','scroll');
         _views['global'] = init_view(_main_con, _global_filter);
         do_load(function(data){
@@ -144,7 +147,10 @@
             }
         }
 
-        // if profile changes then we have to redraw everything...
+        APP.nostr.gui.post_button.create();
+
+        // our own listeners
+        // profile has changed
         APP.nostr.data.event.add_listener('profile_set',function(of_type, data){
             if(data.pub_k !== _current_profile.pub_k){
                 _current_profile = data;
@@ -152,8 +158,12 @@
             }
         });
 
-        APP.nostr.gui.post_button.create();
-
+        // saw a new events
+        APP.nostr.data.event.add_listener('event', function(type, event){
+            for(let i in _views){
+                _views[i].add(event)
+            }
+        });
 
         render_screen();
         // init the profiles data
@@ -165,12 +175,6 @@
             }
         });
 
-        // so we see new events
-        APP.nostr.data.event.add_listener('event', function(type, event){
-            for(let i in _views){
-                _views[i].add(event)
-            }
-        });
         APP.nostr_client.create();
 
     });

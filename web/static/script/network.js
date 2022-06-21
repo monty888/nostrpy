@@ -10,6 +10,7 @@ APP.remote = function(){
         // this will probably need to change in future
         _all_profiles = '/profiles',
         _local_profiles_url = '/local_profiles',
+        _update_profile_url = '/update_profile',
 //        _set_profile_url = '/set_profile',
 //        _current_profile_url = '/current_profile',
         // details on a single profile
@@ -210,17 +211,20 @@ APP.remote = function(){
             };
             do_query(args);
         },
-//        'post_text' : function(args){
-//            args['url'] = _post_text_url;
-//            args['method'] = 'POST';
-//            args['data'] = 'pub_k=' + args.pub_k;
-//            args['data'] += '&text=' + args.text;
-//            do_query(args);
-//        },
         'post_event' : function(args){
             args['url'] = _post_event_url;
             args['method'] = 'POST';
             args['data'] = 'event=' + JSON.stringify(args.event);
+            do_query(args);
+        },
+        'update_profile' : function(args){
+            // default is to just save locally
+            let save = args.save!==undefined ? args.save : true,
+                publish = args.publish!==undefined ? args.publish : false;
+
+            args['url'] = _update_profile_url;
+            args['method'] = 'POST';
+            args['data'] = 'profile=' + JSON.stringify(args.profile)+ '&save='+save+'&publish='+publish;
             do_query(args);
         }
 

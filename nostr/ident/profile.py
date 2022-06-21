@@ -79,19 +79,19 @@ class Profile:
     def profile_name(self, name):
         self._profile_name = name
 
-    def load_contacts(self, profile_store: ProfileStoreInterface) -> ContactList:
-        if self._contacts is None:
+    def load_contacts(self, profile_store: ProfileStoreInterface, reload=False) -> ContactList:
+        if self._contacts is None or reload is True:
             self._contacts = profile_store.contacts({
                 'owner': self.public_key
             })
 
         return self._contacts
 
-    def load_followers(self, profile_store: ProfileStoreInterface) -> ContactList:
+    def load_followers(self, profile_store: ProfileStoreInterface, reload=False) -> ContactList:
         # TODO: actually load_contacts and load_followers could be done in a single call
         #  and then just split the contact list ourself?
         #  also add method to set_profile_store then contacts/followed_by could just attempt the loads adhoc?
-        if self._followed_by is None:
+        if self._followed_by is None or reload is True:
             self._followed_by = profile_store.contacts({
                 'contact': self.public_key
             })
@@ -104,13 +104,16 @@ class Profile:
             raise Exception('Profile::contacts - load contacts hasn\'t been called yet for contact %s' % self.display_name())
         return self._contacts
 
+    @contacts.setter
+    def contacts(self, contacts: ContactList):
+        self._contacts = contacts
+
     @property
     def followed_by(self) -> ContactList:
         if self._followed_by is None:
             raise Exception(
                 'Profile::followed_by - load contacts hasn\'t been called yet for contact %s' % self.display_name())
         return self._followed_by
-
 
     @property
     def name(self):
@@ -423,6 +426,30 @@ class Contact:
 
 class ContactList:
 
+    @staticmethod
+    def create_from_event(evt: Event):
+        """
+        makes the contacts from the data in tags, if there are any problems with a particualr tag it's just skipped
+        and won't be added
+        :param evt: should be a contact_list (type3 event)
+        :return:
+        """
+        contacts = []
+
+        for c_tag in evt.tags:
+            # is it a p type and there is a pubkey
+            if c_tag[0] == 'p' and len(c_tag) > 1:
+                contact_pub_k = c_tag[1]
+                # check the key looks correct
+                if Keys.is_key(contact_pub_k):
+                    # TODO: relay and pet_name to be added
+                    n_contact = Contact(owner_pub_k=evt.pub_key,
+                                        updated_at=evt.created_at_ticks,
+                                        contact_pub_k=contact_pub_k)
+                    contacts.append(n_contact)
+
+        return ContactList(contacts)
+
     def __init__(self, contacts):
         self._contacts = contacts
 
@@ -455,6 +482,8 @@ class ProfileEventHandler:
         loads all profiles from db and then keeps that mem copy up to date whenever any meta events are recieved
         obvs at some point keeping all profiles in memory might not work so well but OK at the moment....
         TODO: check and verify NIP05 if profile has it
+        FIXME: on_update-> on_profile_update
+                add on_contacts_update
     """
 
     def __init__(self,
@@ -468,9 +497,10 @@ class ProfileEventHandler:
     def do_event(self, sub_id, evt: Event, relay):
         c_profile: Profile
         evt_profile: Profile
+        pubkey = evt.pub_key
 
         if evt.kind == Event.KIND_META:
-            pubkey = evt.pub_key
+
             c_profile = self._profiles.lookup_pub_key(pubkey)
             evt_profile = Profile(pub_k=pubkey, attrs=evt.content, update_at=evt.created_at_ticks)
 
@@ -488,7 +518,26 @@ class ProfileEventHandler:
                 if self._on_update:
                     self._on_update(evt_profile, c_profile)
 
+        elif evt.kind == Event.KIND_CONTACT_LIST:
 
+            # it's not required that we have a profile to import the events
+            # though it might be hard to get to the contacts later if we don't as (until we have a profile)
+            # as it won't be handing off anything
+            existing_contacts = ContactList(self._store.contacts({
+                'owner': pubkey
+            }))
+
+            if existing_contacts.updated_at is None or existing_contacts.updated_at < evt.created_at_ticks:
+                self._store.set_contacts(ContactList.create_from_event(evt))
+
+                # make sure contacts will be reloaded on next access
+                c_profile = self._profiles.lookup_pub_key(pubkey)
+                if not c_profile is None:
+                    c_profile.contacts = None
+
+                # TODO: contacts changed event
+                # if self._on_update:
+                #     self._on_update()
 
     @property
     def profiles(self) -> ProfileList:
@@ -501,19 +550,36 @@ class ProfileEventHandler:
 
 
 if __name__ == "__main__":
-    logging.getLogger().setLevel(logging.DEBUG)
-    nostr_db_file = '/home/shaun/.nostrpy/nostr-client.db'
-    backup_dir = '/home/shaun/.nostrpy/'
+    from nostr.util import util_funcs
+    from pathlib import Path
     from nostr.client.client import Client
-    from nostr.client.event_handlers import PersistEventHandler
-    from nostr.client.persist import SQLiteEventStore
+    from nostr.client.event_handlers import PrintEventHandler
+    from nostr.ident.persist import SQLProfileStore
 
-    ps = SQLiteEventStore(nostr_db_file)
+    logging.getLogger().setLevel(logging.DEBUG)
+    nostr_db_file = '%s/.nostrpy/nostrb-client.db' % Path.home()
+    backup_dir = '/home/shaun/.nostrpy/'
+    my_db = util_funcs.create_sqlite_store(nostr_db_file)
+    profile_store = SQLProfileStore(my_db)
+
+    def my_connect(the_client: Client):
+        the_client.subscribe(handlers=[PrintEventHandler(),
+                                       ProfileEventHandler(profile_store=profile_store)],
+                             filters={
+                                 'kinds': [Event.KIND_CONTACT_LIST, Event.KIND_META]
+                             }
+                             )
+
+    c = Client('wss://nostr-pub.wellorder.net', on_connect=my_connect)
+
+    c.start()
 
 
 
-    def my_start(the_client: Client):
-        the_client.subscribe(handlers=PersistEventHandler(SQLiteEventStore(nostr_db_file)))
+
+
+    # def my_start(the_client: Client):
+    #     the_client.subscribe(handlers=PersistEventHandler(SQLiteEventStore(nostr_db_file)))
 
     # my_client = Client('wss://nostr-pub.wellorder.net', on_connect=my_start).start()
 

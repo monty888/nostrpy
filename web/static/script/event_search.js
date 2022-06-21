@@ -24,7 +24,8 @@
         _input_timer,
         // timer before we add current val to history
         _history_timer,
-        _my_event_view;
+        _my_event_view,
+        _current_profile = APP.nostr.data.user.get_profile();
 
     function load_notes(on_done){
 
@@ -55,6 +56,7 @@
 
         _search_in = $('#search-in');
         _search_in.val(_search_str);
+        _search_in.focus();
         _list_con = $('#list-con');
         _my_event_view = APP.nostr.gui.event_view.create({
             'con' : _list_con,
@@ -92,6 +94,27 @@
             _search_str = e.state['search_str'];
             _search_in.val(_search_str);
             load_notes();
+        });
+
+        APP.nostr.gui.post_button.create();
+        // our own listeners
+        // profile has changed
+        APP.nostr.data.event.add_listener('profile_set',function(of_type, data){
+            if(data.pub_k !== _current_profile.pub_k){
+                _current_profile = data;
+                _my_event_view.draw();
+            }
+        });
+
+        // saw a new events
+        APP.nostr.data.event.add_listener('event', function(type, event){
+
+//            _my_event_view.draw();
+        });
+
+        // any post/ reply we'll go to the home page
+        APP.nostr.data.event.add_listener('post-success', function(type, event){
+            window.location = '/';
         });
 
         // for relay updates, note this screen is testing events as they come in

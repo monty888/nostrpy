@@ -13,11 +13,10 @@
         // where we clicked to this page and the root wasn't visible we add it so
         // hopefully to put the post in somesort of context
         _root_id = _params.get('root'),
-        // inline media where we can, where false just the link is inserted
-        _enable_media = true,
         // main container where we'll draw out the events
         _main_con,
-        _my_event_view;
+        _my_event_view,
+        _current_profile = APP.nostr.data.user.get_profile();
 
     function load_notes(){
         let filter = [
@@ -79,10 +78,31 @@
             }
         });
 
+
+        APP.nostr.gui.post_button.create();
+        // our own listeners
+        // profile has changed
+        APP.nostr.data.event.add_listener('profile_set',function(of_type, data){
+            if(data.pub_k !== _current_profile.pub_k){
+                _current_profile = data;
+                _my_event_view.draw();
+            }
+        });
+
         // so we see new events
         APP.nostr.data.event.add_listener('event', function(type, event){
             _my_event_view.add(event);
         });
+
+        // any post/ reply we'll go to the home page
+        APP.nostr.data.event.add_listener('post-success', function(type, event){
+            // its just a post better go back to the reply screen
+            if(event.type!=='reply'){
+                window.location = '/';
+            }
+        });
+
+
         APP.nostr_client.create();
 
     });

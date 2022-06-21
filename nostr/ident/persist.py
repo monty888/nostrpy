@@ -12,10 +12,12 @@ from data.data import DataSet
 from nostr.util import util_funcs
 from nostr.encrypt import Keys
 
+
 class ProfileType(Enum):
     LOCAL = 0       # ours/ profile with priv_k
     REMOTE = 1      # not ours/profile without priv_k
     ANY = 2         # either of the above
+
 
 class ProfileStoreInterface(ABC):
     """
@@ -237,6 +239,10 @@ class ProfileStoreInterface(ABC):
 
         # to check if event is newer than what we already have if any
         existing = self.contacts({})
+        lookup = {}
+        c_c: Contact
+        for c_c in existing:
+            lookup[c_c.owner_public_key] = c_c
 
         """
             in the case of contact list when a user updates its done from fresh so we just check that the list
@@ -244,34 +250,27 @@ class ProfileStoreInterface(ABC):
             from the new list...
         """
         c_evt: Event
+        existing_contact: Contact
+
         for c_evt in c_list_updates:
-            exists = existing.matches('pub_k_owner', c_evt.pub_key)
+            existing_contact = None
             is_newer = True
-            if exists and exists[0]['updated_at'] <= c_evt.created_at_ticks:
+            if c_evt.pub_key in lookup:
+                existing_contact = lookup[c_evt.pub_key]
+
+            # the contact info we already have is newer
+            if existing_contact is not None and existing_contact.updated_at <= c_evt.created_at_ticks:
                 is_newer = False
 
-            contacts = []
             if is_newer:
+                self.set_contacts(ContactList.create_from_event(c_evt))
 
-                for c_tag in c_evt.tags:
-                    if c_tag[0] == 'p' and len(c_tag)>1:
-                        contact_pub_k = c_tag[1]
-                        if Keys.is_key(contact_pub_k):
-                            # TODO: relay and pet_name to be added
-                            n_contact = Contact(owner_pub_k=c_evt.pub_key,
-                                                updated_at=c_evt.created_at_ticks,
-                                                contact_pub_k=contact_pub_k)
-
-                            contacts.append(n_contact)
-
-                if contacts:
-                    profile_contacts = ContactList(contacts)
-                    self.set_contacts(profile_contacts)
 
 
 class TransientProfileStore(ProfileStoreInterface):
     """
-        in memory profile store - normally we wouldn't, you have to request all META, CONTACT_LIST events
+        in memory profile store - normally we wouldn't use,
+        you'd have to request all META, CONTACT_LIST events
         from relays again on start up
     """
     def __init__(self):
@@ -314,6 +313,7 @@ class TransientProfileStore(ProfileStoreInterface):
 
         return ProfileList(profiles)
 
+    # TODO - implement me !!
     def contacts(self, filter):
         pass
 
@@ -513,9 +513,13 @@ class SQLProfileStore(ProfileStoreInterface):
 
         return ProfileList(profiles)
 
-    # note not returning contact list cause it's shit maybe will do eventually or get
-    # rid of contact list class altogether?
     def contacts(self, filter):
+        """
+            returned as a list of contacts rather than a contact as the contacts may belong to more than
+            one profile dependent on the filter. Up to the caller to make sense of things, if know that
+            the query can only return for one then can just do ContactList(contacts)
+        """
+
         filter_query = self._get_contacts_sql_filter(filter,
                                                      placeholder=self._db.placeholder)
 
@@ -538,6 +542,10 @@ class SQLProfileStore(ProfileStoreInterface):
 
 
     def set_contacts(self, contacts: ContactList):
+        # nothing to do
+        if len(contacts) == 0:
+            return True
+
         c_contact: Contact
         add_data = []
         for c_contact in contacts:
@@ -547,7 +555,7 @@ class SQLProfileStore(ProfileStoreInterface):
                 contacts.updated_at
             ])
 
-        self._db.execute_batch(
+        return self._db.execute_batch(
             [
                 {
                     'sql': 'delete from contacts where pub_k_owner=%s' % self._db.placeholder,

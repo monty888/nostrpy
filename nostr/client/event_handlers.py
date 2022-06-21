@@ -63,6 +63,7 @@ class LengthAcceptor(EventAccepter):
             ret = False
         return ret
 
+
 class EventHandler(ABC):
 
     def __init__(self, event_acceptors: [EventAccepter]=[]):

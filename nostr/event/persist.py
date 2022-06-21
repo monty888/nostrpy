@@ -1,5 +1,6 @@
 import logging
 import os
+from datetime import datetime
 from abc import ABC, abstractmethod
 import json
 from enum import Enum
@@ -355,7 +356,8 @@ class SQLEventStore(EventStoreInterface):
                 raise NostrCommandException('Newer event for kind %s already exists' % evt.kind)
 
             else:
-                # delete existing
+                # delete existing, note these are done as actual deletes not perhaps
+                # they should also honor the delete mode, so if flagging just mark as deleted?
                 batch.append(
                     {
                         'sql': 'delete from event_tags where id in '
@@ -627,15 +629,28 @@ class RelayPostgresEventStore(PostgresEventStore, RelayEventStoreInterface):
 class ClientSQLEventStore(SQLEventStore, ClientEventStoreInterface):
 
     def get_newest(self, for_relay, filter=None):
+        """
+        returns the newest event we've seen so we can use that as a since in any queries we created and not ask for everthing
+        as event creators set the create_at time will probably need to re-visit this.
+        have added created_at as a filter now so just one event miles in the future won't stop of fetching gaps
+        probably the relay should have a max time in the future that'll it allow events to be set before rejecting,
+        also our EventPersister sshould probably reject events too far in the future...
+
+        :param for_relay:
+        :param filter:
+        :return:
+        """
+
         if filter is None:
             filter = {}
 
         sql_arr = [
             'select created_at from events e'
             ' inner join event_relay er on e.id = er.id'
-            ' where er.relay_url = %s' % self._db.placeholder
+            ' where er.relay_url = %s and e.created_at<=%s' % (self._db.placeholder,
+                                                               self._db.placeholder)
         ]
-        args = [for_relay]
+        args = [for_relay, util_funcs.date_as_ticks(datetime.now())]
 
         if 'kinds' in filter:
             kinds = filter['kinds']
@@ -648,9 +663,9 @@ class ClientSQLEventStore(SQLEventStore, ClientEventStoreInterface):
         my_sql = ''.join(sql_arr)
 
         ret = 0
-        created_by = self._db.select_sql(my_sql, args)
-        if created_by:
-            ret = created_by[0]['created_at']
+        my_recent_evt = self._db.select_sql(my_sql, args)
+        if my_recent_evt:
+            ret = my_recent_evt[0]['created_at']
         else:
             logging.debug('Store::get_newest - no created_at found, db empty?')
 
@@ -718,34 +733,6 @@ class ClientSQLiteEventStore(SQLiteEventStore, ClientSQLEventStore,  ClientEvent
             })
 
         self._db.execute_batch(evt_batch)
-
-    # """
-    #     search of event content, eventually to be part of the client store interface...
-    # """
-    # def get_text(self, the_text, limit=None):
-    #
-    #     # ideally full text search is enabled and the table event_content has been created
-    #     # and content for kind1/text notes is being added here
-    #     if self._full_text:
-    #         my_sql = """
-    #                     select e.* from events e
-    #                         inner join event_content ec on e.id=ec.id
-    #                         where ec.content match ?
-    #                         order by created_at desc
-    #                 """
-    #
-    #         # we'll just take this as is which mean user can do ands/or etc. we're binding so should be ok
-    #         # though expect we still might want to do some sanity check here....
-    #         args = [the_text]
-    #         if limit:
-    #             my_sql += ' limit ?'
-    #             args.append(limit)
-    #
-    #         data = self._db.select_sql(sql=my_sql,
-    #                                    args=args)
-    #         return SQLEventStore._events_data_to_event_arr(data)
-    #     else:
-    #         raise Exception('fuck to implement fullback like styleee')
 
     def get_filter(self, filter) -> [Event]:
         def my_custom(filter, join):

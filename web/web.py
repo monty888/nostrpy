@@ -217,6 +217,8 @@ class NostrWeb(StaticServer):
         self._app.route('/profile', callback=self._profile)
         self._app.route('/profiles', callback=self._profiles_list)
         self._app.route('/local_profiles', callback=_get_err_wrapped(self._local_profiles))
+        self._app.route('/update_profile', method='POST', callback=_get_err_wrapped(self._do_profile_update))
+
         # self._app.route('/set_profile', method='POST', callback=_get_err_wrapped(self._set_profile))
         # self._app.route('/current_profile', callback=_get_err_wrapped(self._get_profile))
         # self._app.route('/state/js', callback=_get_err_wrapped(self._state))
@@ -393,6 +395,42 @@ class NostrWeb(StaticServer):
         self._client.publish(evt)
 
         return evt.event_data()
+
+    def _do_profile_update(self):
+        """
+            update and or save a profile
+        """
+        profile = json.loads(request.forms['profile'])
+        pub_k = profile['pub_k']
+        picture = profile['picture']
+        name = profile['name']
+        about = profile['about']
+        save = request.forms['save'] == 'true'
+        publish = request.forms['publish'] == 'true'
+
+        self._check_pub_key(pub_k)
+        the_profile = self._profile_handler.profiles.get_profile(pub_k)
+        if the_profile is None:
+            raise Exception('no profile found for pub_k - %s' % pub_k)
+
+        # you can't update someone elses profile and definetly can't publish it
+        if the_profile.private_key is None:
+            raise Exception('don\'t have private key for pub_k - %s' % pub_k)
+
+        # ok all looks good lets do this
+        ret = {}
+        the_profile.name = name
+        the_profile.set_attr('about', about)
+        the_profile.set_attr('picture', picture)
+        if save is True:
+            the_profile.update_at = datetime.now()
+            self._profile_store.update(the_profile)
+            ret['save'] = True
+
+        if publish:
+            ret['publish'] = True
+
+        return ret
 
     # def _set_profile(self):
     #     """
@@ -670,79 +708,3 @@ class NostrWeb(StaticServer):
             del self._web_sockets[str(wsock)]
         except Exception as e:
             print('something bad happened?!?!?!??!?!?!?!')
-
-
-def nostr_web():
-    nostr_db_file = '%s/.nostrpy/nostr-client-test.db' % Path.home()
-
-    from nostr.util import util_funcs
-    event_store = util_funcs.create_sqlite_store(nostr_db_file,
-                                                 full_text=True)
-    profile_store = SQLiteProfileStore(nostr_db_file)
-
-    from datetime import datetime
-    def my_connect(the_client):
-        the_client.subscribe(handlers=my_server, filters={
-            'since': util_funcs.date_as_ticks(datetime.now())
-        })
-
-    def my_status(status):
-        my_server.send_data([
-            'relay_status', status
-        ])
-
-    clients = [
-        {
-            'client' : 'wss://nostr-pub.wellorder.net',
-            'write': True
-        },
-        'ws://localhost:8081',
-        'ws://localhost:8082',
-        {
-            'client': 'wss://relay.damus.io',
-            'write': True
-        }
-    ]
-    my_client = ClientPool(clients,
-                           on_connect=my_connect,
-                           on_status=my_status)
-    my_server = NostrWeb(file_root='%s/PycharmProjects/nostrpy/web/static/' % Path.home(),
-                         event_store=event_store,
-                         profile_store=profile_store,
-                         client=my_client)
-
-    my_client.start()
-
-    # example clean exit... need to look into more though
-    import signal
-    import sys
-    def sigint_handler(signal, frame):
-        my_client.end()
-        my_server.stop()
-        sys.exit(0)
-
-    signal.signal(signal.SIGINT, sigint_handler)
-    # my_server.start(host='localhost')
-
-    # set up the session middleware
-    session_opts = {
-        'session.type': 'file',
-        'session.cookie_expires': 300,
-        'session.data_dir': './data',
-        'session.auto': True
-    }
-    my_server.app = beaker.middleware.SessionMiddleware(my_server.app, session_opts)
-
-    my_server.start(host='192.168.0.14')
-
-if __name__ == '__main__':
-    logging.getLogger().setLevel(logging.DEBUG)
-    nostr_web()
-
-
-    # from nostr.ident.persist import SQLiteProfileStore
-    #
-    # db_file = '%s/.nostrpy/nostr-client.db' % Path.home()
-    # my_profile_store = SQLiteProfileStore(db_file)
-    # my_event_store = SQLiteEventStore(db_file)
-    # my_profile_store.import_contacts_from_events(my_event_store)

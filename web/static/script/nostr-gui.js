@@ -329,7 +329,12 @@ APP.nostr.gui.post_modal = function(){
                 'on_ok' : function(){
                     let n_tags = type==='reply' ? add_reply_tags(event) : [],
                         content = post_text_area.val()
-                        hash_tags = content.match(/\#\w*/g);
+                        hash_tags = content.match(/\#\w*/g),
+                        evt = {
+                            'pub_k' : user.get_profile().pub_k,
+                            'content': content,
+                            'tags' : n_tags
+                        };
 
                     // add hashtags
                     if(hash_tags!==null){
@@ -343,14 +348,20 @@ APP.nostr.gui.post_modal = function(){
                     }
 
                     APP.remote.post_event({
+                        'event' : evt,
+                        'success' : function(data){
 
+                            // notify anyone interested
+                            APP.nostr.data.event.fire_event('post-success', {
+                                'event': evt,
+                                'type': type
+                            });
 
-                        'event' : {
-                            'pub_k' : user.get_profile().pub_k,
-                            'content': content,
-                            'tags' : n_tags
                         }
                     });
+
+
+
                 },
                 'on_show' : function(){
                     post_text_area.focus();
@@ -490,20 +501,30 @@ APP.nostr.gui.tabs = function(){
 
         }
 
+
+        /*
+            TODO: ident is always the tab index at the moment,
+             by id/title might be useful in the future
+        */
         function get_tab(ident){
             let ret = {},
-                tab_render_obj;
-            if(typeof(ident)=='number'){
-                tab_render_obj = _render_obj.tabs[ident];
-            }
+                tab_obj = _render_obj.tabs[ident];
 
-            // TODO: by title
-
-            // now copy relavent bits
-            ret['content-con'] = tab_render_obj['tab_content_con'];
+            // now copy relevant bits
+            ret['content-con'] = tab_obj['tab_content_con'];
 
             return ret;
         }
+
+        function set_tab(ident){
+            let tab_obj = _render_obj.tabs[ident],
+                tab_a = $('a[href="#'+ tab_obj['tab-ref'] +'"]');
+
+            tab_a.tab('show');
+            _cur_index = ident;
+
+        }
+
 
         function init(){
             create_render_obj();
@@ -522,7 +543,11 @@ APP.nostr.gui.tabs = function(){
             },
             'get_selected_index' : function(){
                 return _cur_index;
+            },
+            'set_selected_tab' : function(index){
+                set_tab(index);
             }
+
         };
     };
 
@@ -738,7 +763,10 @@ APP.nostr.gui.event_view = function(){
                 'short_key' : APP.nostr.util.short_key(pub_k),
                 'pub_k' : pub_k,
                 'picture' : _gui.get_profile_picture(pub_k),
-                'at_time': dayjs.unix(the_note.created_at).fromNow()
+                'at_time': dayjs.unix(the_note.created_at).fromNow(),
+                'can_reply' : function(){
+                    return APP.nostr.data.user.get_profile().pub_k!==undefined;
+                }
             };
 
 
@@ -849,7 +877,6 @@ APP.nostr.gui.event_view = function(){
             }else{
                 _my_list.set_data(_render_arr);
             }
-
             _my_list.draw();
         };
 
@@ -1019,7 +1046,10 @@ APP.nostr.gui.event_view = function(){
             'profiles_loaded' : function(){
                 _create_contents();
             },
-            'add' : add_note
+            'add' : add_note,
+            'draw' : function(){
+                _my_list.draw();
+            }
         };
     };
 
@@ -1382,6 +1412,152 @@ APP.nostr.gui.event_detail = function(){
     };
 }();
 
+APP.nostr.gui.profile_edit = function(){
+
+    function create(args){
+        let con = args.con,
+            pub_k = args.pub_k,
+            pic_con,
+            edit_con,
+            save_but,
+            publish_but,
+            img_tmpl = [
+                '<img style="margin-left: auto;margin-right: auto;display:block;" src="{{picture}}" class="profile-pic-large"  />'
+            ].join(''),
+            input_tmpl = [
+                '<form>',
+                    '<div class="form-group">',
+                        '<label for="picture-url">picture url</label>',
+                        '<input type="text" class="form-control" id="picture-url" aria-describedby="picture url" placeholder="enter picture url" value="{{picture}}" >',
+                    '</div>',
+                    '<div class="form-group">',
+                        '<label for="pname">name</label>',
+                        '<input type="text" class="form-control" id="pname" aria-describedby="alternative display for public key" placeholder="alternative display for public key" value={{name}}>',
+                    '</div>',
+                    '<div class="form-group">',
+                        '<label for="about">about</label>',
+                        '<textarea class="form-control" id="about" aria-describedby="descriptive text for this profile" ',
+                        'placeholder="enter description for profile" rows=4 style="height:96px" maxlength=150>',
+                        '{{about}}</textarea>',
+                    '</div>',
+                '</form>'
+            ].join(''),
+            // the profile obj
+            profile,
+            // profile original data as we want it
+            o_profile,
+            // o_profile as str to check changes
+            o_str,
+            // same with users edits applied
+            e_profile;
+
+        con.html(Mustache.render(APP.nostr.gui.templates.get('screen-profile-struct'),{
+            'pub_k' : pub_k
+        }));
+        pic_con = $('#picture-con');
+        edit_con = $('#edit-con');
+        save_but = $('#save-button');
+        publish_but = $('#publish-button');
+
+        function init(){
+            profile = APP.nostr.data.profiles.lookup(pub_k);
+            o_profile = {
+                'pub_k' : pub_k,
+                'name' : profile.attrs.name === undefined ? '' : profile.attrs.name,
+                'about' : profile.attrs.about === undefined ? '' : profile.attrs.about,
+                'picture' : profile.attrs.picture === undefined ? '' : profile.attrs.picture
+            };
+            o_str = JSON.stringify(o_profile);
+            e_profile = $.extend({}, o_profile);
+            draw();
+        }
+
+        function render_img(){
+            // TODO: make some basic check that this str is actually something we can use as a picture
+            if(e_profile.picture===''){
+                pic_con.html('no picture set');
+            }else{
+                pic_con.html(Mustache.render(img_tmpl,e_profile));
+            }
+        }
+
+        function draw(){
+            let enable_media = APP.nostr.data.user.enable_media(),
+                picture = profile.attrs.picture;
+
+            render_img();
+            edit_con.html(Mustache.render(input_tmpl, e_profile));
+
+
+            // add events
+            $(":input").on('change', function(e){
+                let id = e.target.id;
+
+                if(id==='picture-url'){
+                    e_profile.picture = e.target.value;
+                    render_img();
+                }else if(id==='pname'){
+                    e_profile.name = e.target.value
+                }else if(id==='about'){
+                    e_profile.about = e.target.value
+                }
+
+
+                // save button only visible when something has changed,
+                // we allow the publish button at any time
+                // (e.g. user just wants to make sure thier profile is on all relays they're attached to
+                // but they're not actually changing)
+                if(o_str!==JSON.stringify(e_profile)){
+                    save_but.show();
+                }else{
+                    save_but.hide();
+                }
+            });
+
+            function do_update(is_publish){
+                let save = o_str!==JSON.stringify(e_profile);
+
+                alert(save)
+
+                APP.remote.update_profile({
+                    'profile' : e_profile,
+                    'save' : save,
+                    'publish' : is_publish,
+                    'success' : function(data){
+                        if(data.save===true){
+                            alert('notify save');
+                        }
+
+                    }
+                });
+            }
+
+            save_but.on('click', function(){
+                do_update(false);
+            });
+
+            publish_but.on('click', function(){
+                do_update(true);
+            });
+
+
+        }
+
+
+        if(APP.nostr.data.profiles.is_loaded()){
+            init();
+        }else{
+            APP.nostr.data.event.add_listener('profiles-loaded', init);
+        }
+
+
+    }
+
+    return {
+        'create' : create
+    }
+}();
+
 APP.nostr.gui.profile_list = function (){
         // lib shortcut
     let _gui = APP.nostr.gui,
@@ -1577,7 +1753,8 @@ APP.nostr.gui.profile_select_modal = function(){
                         'picture-selected' : current_profile.pub_k===c_p.pub_k ? 'profile-picture-area-selected' : '',
                         'profile_name' : c_p.profile_name,
                         'name' : c_p.attrs.name,
-                        'picture' : img_src
+                        'picture' : img_src,
+                        'can_edit' : true
                     };
 
                     to_add.profile_name = c_p.profile_name;
@@ -1593,16 +1770,32 @@ APP.nostr.gui.profile_select_modal = function(){
             'data' : render_obj,
             'row_tmpl': row_tmpl,
             'click' : function(id){
-                let pub_k = id.replace(_uid+'-', ''),
-                    p = _profiles.lookup(pub_k);
+                id = id.replace(_uid+'-', '');
+                let parts = id.split('-'),
+                    pub_k = parts[0],
+                    p = _profiles.lookup(pub_k),
+                    cmd = '';
 
-                // should be the lurker profile
-                if(p===undefined){
-                    p = {}
-                };
+                // get cmd if any
+                if(parts.length>1){
+                    cmd = parts.slice(1).join('-');
+                }
 
-                APP.nostr.data.user.set_profile(p);
-                APP.nostr.gui.modal.hide();
+                // just selected profile
+                if(cmd===''){
+                    // should be the lurker profile
+                    if(p===undefined){
+                        p = {}
+                    };
+
+                    APP.nostr.data.user.set_profile(p);
+                    APP.nostr.gui.modal.hide();
+
+                // go to edit page for this profile
+                }else if(cmd==='profile-edit'){
+                    window.location='/html/edit_profile?pub_k='+pub_k;
+                }
+
             }
         });
         list.draw();
@@ -1643,6 +1836,21 @@ APP.nostr.gui.relay_view_modal = function(){
         }
     });
 
+    function get_last_connect_str(r_status){
+        let ret = 'never ';
+
+        if(r_status.last_connect !== null){
+            ret = dayjs.unix(r_status.last_connect).fromNow();
+            if(ret==='now'){
+                ret = 'recently';
+            }else{
+                ret += ' ago';
+            }
+
+        }
+        return ret;
+    }
+
     function draw_relays(){
         if(_relay_status===undefined){
             return;
@@ -1663,18 +1871,12 @@ APP.nostr.gui.relay_view_modal = function(){
 
         for(relay in _relay_status.relays){
             r_status = _relay_status.relays[relay];
-            last_con_str = dayjs.unix(r_status.last_connect).fromNow();
-            if(last_con_str==='now'){
-                last_con_str = 'recently';
-            }else{
-                last_con_str += ' ago';
-            }
 
             render_obj_arr.push({
                 'url' : relay,
                 'connected' : r_status.connected,
                 'last_err' : r_status.last_err,
-                'last_connect' : last_con_str
+                'last_connect' : get_last_connect_str(r_status)
             })
         }
 

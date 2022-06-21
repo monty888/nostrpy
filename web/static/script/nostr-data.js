@@ -184,6 +184,8 @@ APP.nostr.data.profiles = function(){
                 console.log(e);
             }
         });
+
+        APP.nostr.data.event.fire_event('profiles-loaded',{});
     }
 
     function init(args){

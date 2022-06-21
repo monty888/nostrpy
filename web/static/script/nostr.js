@@ -42,10 +42,10 @@ APP.nostr = {
             */
             'media_lookup': function media_lookup(ref_str){
                 let media_types = {
-                    'jpg': 'image',
-                    'gif': 'image',
-                    'png': 'image',
-                    'mp4': 'video'
+                        'jpg': 'image',
+                        'gif': 'image',
+                        'png': 'image',
+                        'mp4': 'video'
                     },
                     parts = ref_str.toLowerCase().split('.'),
                     ext = parts[parts.length-1],
