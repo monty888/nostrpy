@@ -213,7 +213,8 @@ class Profile:
     def as_dict(self):
         ret = {
             'pub_k': self.public_key,
-            'attrs': self.attrs
+            'attrs': self.attrs,
+            'can_sign' : self.private_key is not None
         }
 
         if self.profile_name:
@@ -279,6 +280,19 @@ class ProfileList:
             our_p.attrs = profile.attrs
             our_p.update_at = profile.update_at
 
+            # this only happens for our local updates, not those that happen because of type 0 meta events
+            if profile.profile_name:
+                # profile name changed, delete old lookup
+                if our_p.profile_name and our_p.profile_name in self._pname_lookup:
+                    del self._pname_lookup[our_p.profile_name]
+                our_p.profile_name = profile.profile_name
+                self._pname_lookup[our_p.profile_name] = our_p
+
+            # priv key added, its not possible to change a priv k
+            # at least it shouldn't be
+            if profile.private_key:
+                our_p.private_key = profile.private_key
+
     # TODO: remove this and see if it breaks anyhting...
     def as_arr(self):
         ret = []
@@ -334,13 +348,19 @@ class ProfileList:
                 break
         return ret
 
-    def get_profile(self, profile_key, create_type=None, create_profile_name='adhoc_profile') -> Profile:
+    def get_profile(self, profile_key,
+                    create_type=None,
+                    create_profile_name='adhoc_profile') -> Profile:
         """
         :param profile_key: either priv_key, profile_name or pub_key
         :param create_type: None, 'private' or 'public' if we don't find then an empty profile will be created
                             with profile_key as either public/private ot not if None. This is enough for use in many
                             cases.
         :return: Hopefully found Profile, or if create_type then stub Profile assuming key looked correct else None
+
+        FIXME... as we don't specify key type if there ever ended up bing profile with pub key same as priv key
+        it'd never get found using this code....
+
         """
 
         ret = None
@@ -493,6 +513,16 @@ class ProfileEventHandler:
         self._store = profile_store
         self._profiles = self._store.select()
         self._on_update = on_update
+
+    # update locally rather than via meta 0 event
+    # only used to link prov_k or add/change profile name
+    def do_update_local(self, p: Profile):
+        if self._profiles.lookup_pub_key(p.public_key):
+            self._profiles.update(p)
+            self._store.update_profile_local(p)
+        else:
+            self._profiles.add(p)
+            self._store.add(p)
 
     def do_event(self, sub_id, evt: Event, relay):
         c_profile: Profile

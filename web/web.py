@@ -202,7 +202,9 @@ class NostrWeb(StaticServer):
                 try:
                     return method()
                 except NostrWebException as ne:
-                    return ne.args[0]
+                    return {
+                        'error' : ne.args[0]
+                    }
             return _wrapped
 
         # this is used if method didn't raise nostrexception, do something better in static server
@@ -214,10 +216,12 @@ class NostrWeb(StaticServer):
         }
 
         self._app.route('/', callback=_get_err_wrapped(self._home_route))
-        self._app.route('/profile', callback=self._profile)
+        self._app.route('/profile', callback=_get_err_wrapped(self._profile))
         self._app.route('/profiles', callback=self._profiles_list)
         self._app.route('/local_profiles', callback=_get_err_wrapped(self._local_profiles))
         self._app.route('/update_profile', method='POST', callback=_get_err_wrapped(self._do_profile_update))
+        self._app.route('/export_profile', method='POST', callback=_get_err_wrapped(self._export_profile))
+        self._app.route('/link_profile', method='POST', callback=_get_err_wrapped(self._link_profile))
 
         # self._app.route('/set_profile', method='POST', callback=_get_err_wrapped(self._set_profile))
         # self._app.route('/current_profile', callback=_get_err_wrapped(self._get_profile))
@@ -240,11 +244,11 @@ class NostrWeb(StaticServer):
 
         return static_file(filename='home.html', root=self._file_root+'/html/')
 
-    def _check_pub_key(self, pub_k):
-        if not pub_k:
-            raise Exception('pub_k is required')
-        if not Keys.is_key(pub_k):
-            raise Exception('value - %s doesn\'t look like a valid nostr pub key' % pub_k)
+    def _check_key(self, key, key_name='pub_k'):
+        if not key:
+            raise NostrWebException('%s is required' % key_name)
+        if not Keys.is_key(key):
+            raise NostrWebException('value - %s doesn\'t look like a valid nostr %s' % (key, key_name))
 
     def _get_all_contacts_profile(self, pub_k):
         ret = set([])
@@ -258,7 +262,7 @@ class NostrWeb(StaticServer):
         the_profile: Profile
         c_contact: Contact
 
-        self._check_pub_key(pub_k)
+        self._check_key(pub_k)
         the_profile = self._profile_handler.profiles.get_profile(pub_k)
         if the_profile is None:
             raise Exception('no profile found for pub_k - %s' % pub_k)
@@ -313,14 +317,22 @@ class NostrWeb(StaticServer):
     def _profile(self):
         the_profile: Profile
         pub_k = request.query.pub_k
+        priv_k = request.query.priv_k
         include_contacts: str = request.query.include_contacts
         include_followers: str = request.query.include_followers
 
+        # only used when checking priv_k, we just create a profile with the priv_k and
+        # then turn that into pub_k. any supplied pub_k is ignored
+        if priv_k:
+            self._check_key(priv_k,key_name='priv_k')
+            the_profile = Profile(priv_k=priv_k)
+            pub_k = the_profile.public_key
+
         # will throw if we don't think valid pub_k
-        self._check_pub_key(pub_k)
+        self._check_key(pub_k)
         the_profile = self._profile_handler.profiles.get_profile(pub_k)
         if the_profile is None:
-            raise Exception('no profile found for pub_k - %s' % pub_k)
+            raise NostrWebException('no profile found for pub_k - %s' % pub_k)
 
         ret = the_profile.as_dict()
 
@@ -336,6 +348,53 @@ class NostrWeb(StaticServer):
             ret['followed_by'] = [c.owner_public_key for c in the_profile.followed_by]
 
         return ret
+
+    def _link_profile(self):
+        pub_k = request.query.pub_k
+        priv_k = request.query.priv_k
+
+        # make sure both keys are valid
+        self._check_key(priv_k, key_name='priv_k')
+        self._check_key(pub_k)
+
+        the_profile = Profile(priv_k=priv_k)
+        if the_profile.public_key != pub_k:
+            raise NostrWebException('priv_k: %s doesn\'t match supplied pub_k: %s' % (priv_k, pub_k))
+
+        the_profile = self._profile_handler.profiles.get_profile(pub_k)
+        if the_profile is None:
+            raise NostrWebException('no profile found for pub_k - %s' % pub_k)
+
+        the_profile.private_key = priv_k
+        self._profile_handler.do_update_local(the_profile)
+
+        return {
+            'success': 'profile linked'
+        }
+
+
+    def _export_profile(self):
+        """
+            because we don't currently have any auth for the server don't want to allow show priv_key
+            instead this method that'll save profile_info to csv for given profile_name
+        """
+        for_name = request.query.for_profile
+        out_file = '%s/%s.csv' % (Path.home(), for_name)
+
+        if for_name == '':
+            raise NostrWebException('for_profile is expected')
+
+        the_profile = self._profile_handler.profiles.lookup_profilename(for_name)
+        if the_profile is None:
+            raise NostrWebException('unable to find profile: %s' % for_name)
+
+        self._profile_store.export_file(out_file, [for_name])
+
+        return {
+            'success': True,
+            'output': out_file
+        }
+
 
     def _local_profiles(self):
         """
@@ -357,7 +416,7 @@ class NostrWeb(StaticServer):
         pub_k = request.forms['pub_k']
         msg_text = request.forms['text']
 
-        self._check_pub_key(pub_k)
+        self._check_key(pub_k)
         the_profile = self._profile_handler.profiles.get_profile(pub_k)
         if the_profile is None:
             raise Exception('no profile found for pub_k - %s' % pub_k)
@@ -379,7 +438,7 @@ class NostrWeb(StaticServer):
         content = event['content']
         tags = event['tags']
 
-        self._check_pub_key(pub_k)
+        self._check_key(pub_k)
         the_profile = self._profile_handler.profiles.get_profile(pub_k)
         if the_profile is None:
             raise Exception('no profile found for pub_k - %s' % pub_k)
@@ -400,6 +459,22 @@ class NostrWeb(StaticServer):
         """
             update and or save a profile
         """
+
+        def create_new():
+            n_p = Profile(priv_k=Keys.get_new_key_pair()['priv_k'],
+                          profile_name=profile_name)
+
+            self._profile_handler.do_update_local(n_p)
+
+            return n_p.public_key
+
+        def link_existing():
+            self._check_key(private_k, 'private_key')
+            n_p = Profile(priv_k=private_k,
+                          profile_name=profile_name)
+            self._profile_handler.do_update_local(n_p)
+            return n_p.public_key
+
         profile = json.loads(request.forms['profile'])
         pub_k = profile['pub_k']
         picture = profile['picture']
@@ -407,8 +482,21 @@ class NostrWeb(StaticServer):
         about = profile['about']
         save = request.forms['save'] == 'true'
         publish = request.forms['publish'] == 'true'
+        private_k = profile['private_key']
+        profile_name = profile['profile_name']
+        mode = request.forms['mode']
 
-        self._check_pub_key(pub_k)
+        print('>>>>>>>>',mode)
+        # sometimes we're creating new profiles adding priv_k to
+        # link to existing
+        if mode == 'create':
+            pub_k = create_new()
+        elif mode == 'link':
+            pub_k = link_existing()
+
+        # edit a profile we already have or just created linked above
+
+        self._check_key(pub_k)
         the_profile = self._profile_handler.profiles.get_profile(pub_k)
         if the_profile is None:
             raise Exception('no profile found for pub_k - %s' % pub_k)
@@ -419,15 +507,25 @@ class NostrWeb(StaticServer):
 
         # ok all looks good lets do this
         ret = {}
-        the_profile.name = name
-        the_profile.set_attr('about', about)
-        the_profile.set_attr('picture', picture)
+        update_profile = Profile(priv_k=the_profile.public_key,
+                                 pub_k=the_profile.public_key,
+                                 attrs={
+                                    'picture' : picture,
+                                    'name': name,
+                                    'about': about
+                                 },
+                                 profile_name=profile_name,
+                                 update_at=datetime.now())
+
         if save is True:
-            the_profile.update_at = datetime.now()
-            self._profile_store.update(the_profile)
+            # this will do the update for profile name
+            self._profile_handler.do_update_local(update_profile)
             ret['save'] = True
 
         if publish:
+            evt = update_profile.get_meta_event()
+            evt.sign(update_profile.private_key)
+            self._client.publish(evt)
             ret['publish'] = True
 
         return ret
@@ -624,7 +722,7 @@ class NostrWeb(StaticServer):
         pub_k = request.query.pub_k
 
         # will throw if we don't think valid pub_k
-        self._check_pub_key(pub_k)
+        self._check_key(pub_k)
 
         return {
             'events': self._get_events({
@@ -642,7 +740,7 @@ class NostrWeb(StaticServer):
         pub_k = request.query.pub_k
 
         # will throw if we don't think valid pub_k
-        self._check_pub_key(pub_k)
+        self._check_key(pub_k)
 
         limit = self._get_query_limit()
 

@@ -169,6 +169,7 @@ APP.nostr.gui.modal = function(){
                         '<div class="modal-body" id="nostr-modal-content" >',
                         '</div>',
                         '<div class="modal-footer">',
+                            '<span style="display:none" id="nostr-modal-footer"></span>',
                             '<button id="nostr-modal-ok-button" type="button" class="btn btn-default" data-dismiss="modal">Close</button>',
                         '</div>',
                     '</div>',
@@ -178,7 +179,8 @@ APP.nostr.gui.modal = function(){
         _my_modal,
         _my_title,
         _my_content,
-        _my_ok_button;
+        _my_ok_button,
+        _my_foot_con;
 
     function create(args){
         args = args||{};
@@ -187,7 +189,9 @@ APP.nostr.gui.modal = function(){
             ok_text = args.ok_text || '?no_text?',
             on_ok = args.on_ok,
             on_show = args.on_show,
-            on_hide = args.on_hide;
+            on_hide = args.on_hide,
+            // if set doing own bottom buttons
+            footer_content = args.footer_content;
 
         // make sure we only ever create one
         if(_my_modal===undefined){
@@ -196,6 +200,7 @@ APP.nostr.gui.modal = function(){
             _my_title = $('#nostr-modal-title');
             _my_content = $('#nostr-modal-content');
             _my_ok_button = $('#nostr-modal-ok-button');
+            _my_foot_con = $('#nostr-modal-footer');
 
             // escape to hide
             $(document).on('keydown', function(e){
@@ -226,6 +231,14 @@ APP.nostr.gui.modal = function(){
         _my_title.html(title);
         _my_content.html(content);
         _my_ok_button.html(ok_text);
+        if(footer_content!==undefined){
+            _my_foot_con.html(footer_content);
+            _my_foot_con.css('display','');
+            _my_ok_button.css('display','none');
+        }else{
+            _my_foot_con.css('display','none');
+            _my_ok_button.css('display','');
+        }
 
     }
 
@@ -1070,19 +1083,19 @@ APP.nostr.gui.profile_about = function(){
                     '{{#picture}}',
                         '<img style="display:inline-block;float:left;" id="{{pub_k}}-pp" src="{{picture}}" class="{{profile_pic_class}}" />',
                     '{{/picture}}',
-                    '<p style="text-align: justify; vertical-align:top;word-break: break-all;">',
+                    '<div style="text-align: justify; vertical-align:top;word-break: break-all;">',
                         '{{#name}}',
                             '<span>{{name}}@</span>',
                         '{{/name}}',
                         '<span class="pubkey-text" >{{pub_k}}</span>',
                         '{{#about}}',
-                            '<div>',
+                            '<div style="max-height:48px;overflow:auto;">',
                                 '{{{about}}}',
                             '</div>',
                         '{{/about}}',
                     '<div id="contacts-con" ></div>',
                     '<div id="followers-con" ></div>',
-                    '</p>',
+                    '</div>',
                 //'</span>',
 //                '<span display:inline-block;word-break: break-all;vertical-align:top;" >',
 
@@ -1373,7 +1386,7 @@ APP.nostr.gui.event_detail = function(){
         }
 
         function render_raw(){
-            _my_tabs.get_tab(1)['content-con'].html('<div class="event-detail" >' + APP.nostr.util.html_escape(JSON.stringify(_event))+ '</div>');
+            _my_tabs.get_tab(1)['content-con'].html('<div style="white-space:pre-wrap;max-width:100%" class="event-detail" >' + APP.nostr.util.html_escape(JSON.stringify(_event, null, 2))+ '</div>');
         }
 
 
@@ -1426,108 +1439,212 @@ APP.nostr.gui.profile_edit = function(){
             ].join(''),
             input_tmpl = [
                 '<form>',
+                    // private key, in the normal case this shouldn't be visible, only when linking to an existing profile
+                    // or creating new
+//                    '{{^can_sign}}',
+//                        '{{#pub_k}}',
+//                            '<div class="form-group">',
+//                                '<label for="private-key">private key</label>',
+//                                '<input type="text" class="form-control" id="private-key" aria-describedby="private key" placeholder="{{enter private key}}" value="{{private-key}}" >',
+//                            '</div>',
+//                        '{{/pub_k}}',
+//                    '{{/can_sign}}',
+                    '<div class="form-group">',
+                        '<label for="profile_name">profile name</label>',
+                        '<input {{disabled}} type="text" class="form-control" id="profile-name" aria-describedby="profile name" placeholder="local name for this profile" value="{{profile_name}}" >',
+                    '</div>',
                     '<div class="form-group">',
                         '<label for="picture-url">picture url</label>',
-                        '<input type="text" class="form-control" id="picture-url" aria-describedby="picture url" placeholder="enter picture url" value="{{picture}}" >',
+                        '<input {{disabled}} type="text" class="form-control" id="picture-url" aria-describedby="picture url" placeholder="enter picture url" value="{{picture}}" >',
                     '</div>',
                     '<div class="form-group">',
                         '<label for="pname">name</label>',
-                        '<input type="text" class="form-control" id="pname" aria-describedby="alternative display for public key" placeholder="alternative display for public key" value={{name}}>',
+                        '<input {{disabled}} type="text" class="form-control" id="pname" aria-describedby="alternative display for public key" placeholder="alternative display for public key" value="{{name}}">',
                     '</div>',
                     '<div class="form-group">',
                         '<label for="about">about</label>',
-                        '<textarea class="form-control" id="about" aria-describedby="descriptive text for this profile" ',
+                        '<textarea {{disabled}} class="form-control" id="about" aria-describedby="descriptive text for this profile" ',
                         'placeholder="enter description for profile" rows=4 style="height:96px" maxlength=150>',
                         '{{about}}</textarea>',
                     '</div>',
                 '</form>'
             ].join(''),
-            // the profile obj
-            profile,
             // profile original data as we want it
             o_profile,
+            // same with users edits applied
+            e_profile,
             // o_profile as str to check changes
             o_str,
-            // same with users edits applied
-            e_profile;
-
-        con.html(Mustache.render(APP.nostr.gui.templates.get('screen-profile-struct'),{
-            'pub_k' : pub_k
-        }));
-        pic_con = $('#picture-con');
-        edit_con = $('#edit-con');
-        save_but = $('#save-button');
-        publish_but = $('#publish-button');
+            // obj for render
+            r_obj,
+            mode = 'edit';
 
         function init(){
-            profile = APP.nostr.data.profiles.lookup(pub_k);
+            o_profile = APP.nostr.data.profiles.lookup(pub_k);
+            if(o_profile===undefined){
+                o_profile = {
+                    'pub_k' : /[0-9A-Fa-f]{64}/g.test(pub_k) ? pub_k : '',
+                    'attrs' : {},
+                    'can_sign' : false
+                };
+            }
+
+            if(!o_profile.can_sign){
+                if(o_profile.pub_k===''){
+                    mode = 'create'
+                }else{
+                    mode = 'view';
+                }
+            }
+            console.log(o_profile);
+            // make the profile easier to use
             o_profile = {
-                'pub_k' : pub_k,
-                'name' : profile.attrs.name === undefined ? '' : profile.attrs.name,
-                'about' : profile.attrs.about === undefined ? '' : profile.attrs.about,
-                'picture' : profile.attrs.picture === undefined ? '' : profile.attrs.picture
+                'pub_k' : o_profile.pub_k,
+                'name' : o_profile.attrs.name === undefined ? '' : o_profile.attrs.name,
+                'about' : o_profile.attrs.about === undefined ? '' : o_profile.attrs.about,
+                'picture' : o_profile.attrs.picture === undefined ? '' : o_profile.attrs.picture,
+                'profile_name': o_profile.profile_name === undefined ? '' : o_profile.profile_name,
+                // only needs to be set when linking to existing profile we donbt have priv_k for
+                'private_key' : '',
+                'can_sign' : o_profile.can_sign
             };
+
+
             o_str = JSON.stringify(o_profile);
             e_profile = $.extend({}, o_profile);
+
+            // basic screen render, shows profile we're editing and what mode we're in
+            con.html(Mustache.render(APP.nostr.gui.templates.get('screen-profile-struct'),{
+                'mode' : mode,
+                'pub_k' : pub_k,
+                // if not can sign then the shows a button where we can give priv key so that we can edit or link existing
+                'link_existing' : mode==='create',
+                'link_suggest' : mode==='view',
+                'view_priv' : mode==='edit'
+            }));
+            // grab screen widgets
+            pic_con = $('#picture-con');
+            edit_con = $('#edit-con');
+            save_but = $('#save-button');
+            publish_but = $('#publish-button');
+            // action of this button depends on mode
+            key_but = $('#private_key');
+
+            set_r_obj();
             draw();
         }
 
-        function render_img(){
+        function set_r_obj(){
+            r_obj = {
+                'pub_k' : e_profile.pub_k,
+                'short_pub_k': mode==='create' ? 'to be generated' : APP.nostr.util.short_key( e_profile.pub_k),
+                'profile_name' : e_profile.profile_name,
+                'picture' : e_profile.picture,
+                'name' : e_profile.name,
+                'about' : e_profile.about,
+                'disabled' : mode==='view' ? 'disabled' : ''
+            };
+        }
+
+
+        function render_head(){
             // TODO: make some basic check that this str is actually something we can use as a picture
-            if(e_profile.picture===''){
-                pic_con.html('no picture set');
-            }else{
-                pic_con.html(Mustache.render(img_tmpl,e_profile));
-            }
+            console.log(r_obj);
+            pic_con.html(Mustache.render(APP.nostr.gui.templates.get('profile-list'), r_obj));
         }
 
         function draw(){
-            let enable_media = APP.nostr.data.user.enable_media(),
-                picture = profile.attrs.picture;
-
-            render_img();
-            edit_con.html(Mustache.render(input_tmpl, e_profile));
-
+            let enable_media = APP.nostr.data.user.enable_media();
+            edit_con.html(Mustache.render(input_tmpl, r_obj));
+            render_head();
 
             // add events
-            $(":input").on('change', function(e){
-                let id = e.target.id;
+            $(":input").on('keyup', function(e){
+                let id = e.target.id,
+                    val = e.target.value;
 
                 if(id==='picture-url'){
-                    e_profile.picture = e.target.value;
-                    render_img();
+                    if(APP.nostr.util.http_matches(e.target.value)!==null){
+                        e_profile.picture = e.target.value;
+                    }else{
+                        e_profile.picture = o_profile.picture;
+                    }
                 }else if(id==='pname'){
-                    e_profile.name = e.target.value
+                    e_profile.name = val;
                 }else if(id==='about'){
-                    e_profile.about = e.target.value
+                    e_profile.about = val;
+                }else if(id==='private-key'){
+                    // 64 len hex str
+                    if(/[0-9A-Fa-f]{64}/g.test(val)){
+                        e_profile['private_key'] = val;
+                    }else{
+                        e_profile['private_key'] = '';
+                    }
+                }else if(id==='profile-name'){
+                    // anything but empty
+                    if(val.replace(/\s/g,'') !==''){
+                        e_profile['profile_name'] = val;
+                    }else{
+                        e_profile['profile_name'] = '';
+                    }
                 }
 
+                set_r_obj();
+                render_head();
 
                 // save button only visible when something has changed,
                 // we allow the publish button at any time
                 // (e.g. user just wants to make sure thier profile is on all relays they're attached to
                 // but they're not actually changing)
-                if(o_str!==JSON.stringify(e_profile)){
+
+                if((o_str!==JSON.stringify(e_profile) && e_profile.can_sign===true) ||
+                    (e_profile.profile_name!=='' && e_profile.private_key!=='') ||
+                    (e_profile.profile_name!=='' && e_profile.pub_k==='') ){
                     save_but.show();
                 }else{
                     save_but.hide();
                 }
             });
 
+            key_but.on('click', function(){
+                if(mode==='view'){
+                    APP.nostr.gui.request_private_key_modal.show(o_profile);
+                }else if(mode==='create'){
+                    APP.nostr.gui.request_private_key_modal.show();
+                }else if(mode==='edit'){
+                    APP.remote.export_profile({
+                        'for_profile' : o_profile.profile_name,
+                        'success' : function(data){
+                            if(data.error!==undefined){
+                                APP.nostr.gui.notification({
+                                    'text' : data.error,
+                                    'type' : 'warning'
+                                });
+                            }else{
+                                APP.nostr.gui.notification({
+                                    'text' : '[' + o_profile.profile_name + '] successfully exported to '+ data.output
+                                });
+                            }
+                        }
+                    })
+                }
+
+            });
+
             function do_update(is_publish){
                 let save = o_str!==JSON.stringify(e_profile);
-
-                alert(save)
 
                 APP.remote.update_profile({
                     'profile' : e_profile,
                     'save' : save,
+                    'mode' : mode,
                     'publish' : is_publish,
                     'success' : function(data){
                         if(data.save===true){
                             alert('notify save');
-                        }
 
+
+                        }
                     }
                 });
             }
@@ -1911,6 +2028,119 @@ APP.nostr.gui.relay_view_modal = function(){
         'show' : show
     }
 }();
+
+APP.nostr.gui.request_private_key_modal = function(){
+    let _uid = APP.nostr.gui.uid(),
+        _gui = APP.nostr.gui
+
+    function show(link_profile){
+        const content = [
+        '{{> profile}}',
+        '<div class="form-group">',
+            '<label for="private-key">private key</label>',
+            '<input class="form-control" id="private-key" aria-describedby="private key" placeholder="enter private key" value="" >',
+            '<div id="pk_modal_error_con"></div>',
+        '</div>'
+        ].join('');
+
+        link_profile = link_profile || {};
+
+        let priv_in,
+            last_val,
+            error_con,
+            uid = APP.nostr.gui.uid(),
+            link_given_profile =function(key){
+                APP.remote.link_profile({
+                    'priv_k' : key,
+                    'pub_k' : link_profile.pub_k,
+                    'success' : function(data){
+                        if(data.error!==undefined){
+                            error_con.html(data.error);
+                        }else{
+                            APP.nostr.gui.modal.hide();
+                            APP.nostr.gui.notification({
+                                'text' : APP.nostr.util.short_key(link_profile.pub_k)+' linked successfully!!!'
+                            });
+                        }
+                    }
+                });
+            },
+            link_priv_key_profile = function(key){
+                APP.remote.load_profile({
+                    'priv_k' : key,
+                    'success' : function(data){
+                        if(data.error!==undefined){
+                            error_con.html(data.error);
+                        }else{
+                            data.picture = data.attrs.picture;
+                            data.name = data.attrs.name;
+                            data.about = data.attrs.about;
+                            $('#'+uid+'-'+'pk-modal-profile').html(Mustache.render(APP.nostr.gui.templates.get('profile-list'),data));
+                        }
+                    }
+                })
+            }
+
+        // set the modal as we want it
+        let render_obj = $.extend({
+                'uid' : uid,
+            },link_profile);
+        if(render_obj.pub_k===undefined){
+            render_obj.pub_k = 'pk-modal-profile'
+        }
+
+        APP.nostr.gui.modal.create({
+            'title' : 'enter private key to link',
+            'content' : Mustache.render(content,render_obj,{
+                'profile' : APP.nostr.gui.templates.get('profile-list')
+            }),
+            'footer_content' : ''
+        });
+
+
+
+
+
+
+
+
+        // show it
+        APP.nostr.gui.modal.show();
+
+        // grab el
+        priv_in = $('#private-key');
+        error_con = $('#pk_modal_error_con');
+
+        priv_in.on('keyup', function(e){
+            let val = e.target.value,
+                p;
+
+            if(val!==last_val){
+                if(/[0-9A-Fa-f]{64}/g.test(val)){
+                    if(link_profile.pub_k!==undefined){
+                        link_given_profile(val)
+                    }else{
+                        // no particular profile to link to, will look up the priv_k and show the user what
+                        // we get for them to ok on
+                        link_priv_key_profile(val)
+                    }
+                }
+            }
+
+
+            last_val = val
+        });
+
+    }
+
+
+
+    return {
+        'show' : show
+    }
+}();
+
+
 
 /*
     using https://robohash.org/ so we can provide unique profile pictures even where user hasn't set one

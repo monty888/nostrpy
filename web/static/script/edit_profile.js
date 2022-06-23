@@ -16,10 +16,6 @@
 
     // start when everything is ready
     $(document).ready(function() {
-        if(_pub_k===''){
-            alert('no pub_k!!!');
-            return;
-        }
 
         // main page struc
         $('#main_container').html(APP.nostr.gui.templates.get('screen'));
@@ -31,9 +27,6 @@
         // init the profiles data
         APP.nostr.data.profiles.init({
             'on_load' : function(){
-
-
-
 
             }
         });

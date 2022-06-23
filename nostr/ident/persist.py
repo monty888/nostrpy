@@ -136,10 +136,9 @@ class ProfileStoreInterface(ABC):
                         util_funcs.date_as_ticks(c_p.update_at)
                     ])
 
-        if to_output:
-            DataSet([
-                'priv_k', 'pub_k', 'profile_name', 'attrs', 'updated_at'
-            ], to_output).save_csv(filename)
+        DataSet([
+            'priv_k', 'pub_k', 'profile_name', 'attrs', 'updated_at'
+        ], to_output).save_csv(filename)
 
     def import_file(self,
                     filename,

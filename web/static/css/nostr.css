@@ -69,6 +69,7 @@ img{
 .post-content{
     min-height:60px;
     width:100%;
+    min-width: 0;
     max-width:100%;
     display:table-cell;
     /* overflow-wrap:break-word; would be better but doesn;t seem to work in table cell*/

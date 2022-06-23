@@ -115,7 +115,7 @@ APP.nostr = {
                         el.fadeOut(function(){
                             el.remove();
                         });
-                    },1000);
+                    },5000);
                 }
                 // first notification
                 if(_notifications_con===undefined){
@@ -174,11 +174,11 @@ APP.nostr = {
         },
         'html_escape': function (in_str, ignore){
             let _replacements = [
-                ['&','&amp'],
-                ['<','&lt;'],
-                ['>','&gt;'],
-                ['"','&quot;'],
-                ["'",'&#39;']
+                [/\&/g,'&amp'],
+                [/\</g,'&lt;'],
+                [/\>/g,'&gt;'],
+                [/\\"/g,'&quot;'],
+                [/\\'/g,'&#39;']
             ];
             _replacements.forEach(function(c_rep,i){
                 let val = c_rep[0],

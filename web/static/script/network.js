@@ -11,6 +11,8 @@ APP.remote = function(){
         _all_profiles = '/profiles',
         _local_profiles_url = '/local_profiles',
         _update_profile_url = '/update_profile',
+        _export_profile_url = '/export_profile',
+        _link_profile_url = '/link_profile',
 //        _set_profile_url = '/set_profile',
 //        _current_profile_url = '/current_profile',
         // details on a single profile
@@ -159,10 +161,19 @@ APP.remote = function(){
         'load_profile' : function(args){
             args['url'] = _profile_url;
             args['params'] = {
-                'pub_k' : args['pub_k'],
                 'include_followers': args.include_followers!==undefined ? args.include_followers : false,
                 'include_contacts': args.include_contacts!==undefined ? args.include_contacts : false
             };
+
+            if(args.pub_k!==undefined){
+                args.params['pub_k'] = args['pub_k'];
+            }
+
+            if(args.priv_k!==undefined){
+                args.params['priv_k'] = args['priv_k'];
+            }
+
+            console.log(args)
             do_query(args);
         },
         'local_profiles' : function(args){
@@ -220,13 +231,34 @@ APP.remote = function(){
         'update_profile' : function(args){
             // default is to just save locally
             let save = args.save!==undefined ? args.save : true,
-                publish = args.publish!==undefined ? args.publish : false;
+                publish = args.publish!==undefined ? args.publish : false,
+                mode = args.mode!==undefined ? args.mode : 'edit';
 
             args['url'] = _update_profile_url;
             args['method'] = 'POST';
-            args['data'] = 'profile=' + JSON.stringify(args.profile)+ '&save='+save+'&publish='+publish;
+            args['data'] = 'profile=' + JSON.stringify(args.profile)+ '&save='+save+'&publish='+publish+'&mode='+mode
+            do_query(args);
+        },
+        'export_profile' : function(args){
+            // default is to just save locally
+            args['params'] = {
+                'for_profile' : args.for_profile
+            };
+            args['url'] = _export_profile_url;
+            args['method'] = 'POST';
+            do_query(args);
+
+        },
+        'link_profile' : function(args){
+            args['url'] = _link_profile_url;
+            args['method'] = 'POST';
+            args['params'] = {
+                'pub_k' : args.pub_k,
+                'priv_k' : args.priv_k
+            };
             do_query(args);
         }
+
 
     }
 }();
