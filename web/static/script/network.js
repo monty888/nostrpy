@@ -226,7 +226,7 @@ APP.remote = function(){
 
             args['url'] = _events_by_filter_url;
             args['method'] = 'POST';
-            args['data'] = 'filter=' + JSON.stringify(filter);
+            args['data'] = 'filter=' + filter.as_str();
             do_query(args);
         },
         'text_events_search' : function(args){

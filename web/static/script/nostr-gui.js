@@ -505,7 +505,7 @@ APP.nostr.gui.event_view = function(){
             // not that currently only applied on add, the list you create with is assumed to already be filtered
             // like nostr filter but minimal impl just for what we need
             // TODO: Fix this make filter obj?
-            _sub_filter = args.filter,
+            _sub_filter = args.filter!==undefined ? args.filter : APP.nostr.data.filter.create([]),
             // track which event details are expanded
             _expand_state = {},
             // underlying APP.nostr.gui.list
@@ -513,17 +513,7 @@ APP.nostr.gui.event_view = function(){
             // interval timer for updating times
             _time_interval;
 
-        // TODO: fix this, filter stuff to change
-        if(_sub_filter===undefined){
-            _sub_filter = {
-                'kinds' : new Set([1])
-            }
-        }else{
-            if(_sub_filter.kinds!==undefined && typeof(_sub_filter.kinds.has)!=='function'){
-                _sub_filter = $.extend({}, _sub_filter);
-                _sub_filter.kinds = new Set(_sub_filter.kinds);
-            }
-        }
+
 
         function uevent_id(event_id){
             return _uid+'-'+event_id;
@@ -772,6 +762,15 @@ APP.nostr.gui.event_view = function(){
             _create_contents();
         };
 
+        /*
+            note filter probably doesn't work quite as you'd expect...Its only applied
+            in add_note to see if new events should be shown... We expect all the data we get at
+            create to be ok for display (-- though it'd be easy to run through filter too)
+        */
+        function set_filter(filter){
+            _sub_filter = filter;
+        }
+
         function _time_update(){
             // think we've been killed ..?
             if(_render_arr===undefined){
@@ -790,25 +789,10 @@ APP.nostr.gui.event_view = function(){
             });
         }
 
-        /*
-            minimal filter implementation, only testing note of correct kind and authorship
-            for a single filter {}
-        */
-        function _test_filter(evt){
-            let ret = true;
-            if((_sub_filter.kinds!==undefined) && (!_sub_filter.kinds.has(evt.kind))){
-                return false;
-            }
-            if((_sub_filter.authors!==undefined) && (!_sub_filter.authors.has(evt.pubkey))){
-                return false;
-            }
-            return ret;
-        };
-
         function add_note(evt){
             // does the event pass our filter and also just double check we don't already have it
             // the server should be trying not to send us duplicates anyhow
-            if(_test_filter(evt) && _event_map[evt.id]===undefined){
+            if(_sub_filter.test(evt) && _event_map[evt.id]===undefined){
 //                let add_content = _note_content(evt);
                 // just insert the new event
                 _notes_arr.unshift(evt);
@@ -836,6 +820,7 @@ APP.nostr.gui.event_view = function(){
         // methods for event_view obj
         return {
             'set_notes' : set_notes,
+            'set_filter' : set_filter,
             // TODO - eventually this won't be required
             'profiles_loaded' : function(){
                 _create_contents();
@@ -1340,7 +1325,6 @@ APP.nostr.gui.profile_edit = function(){
 
         function render_head(){
             // TODO: make some basic check that this str is actually something we can use as a picture
-            console.log(r_obj);
             pic_con.html(Mustache.render(APP.nostr.gui.templates.get('profile-list'), r_obj));
         }
 
@@ -1820,6 +1804,8 @@ APP.nostr.gui.post_modal = function(){
         let gui = APP.nostr.gui,
             user = APP.nostr.data.user,
             type = args.type!==undefined ? args.type : 'post',
+            // in case of reply this is ignored and the kind is taken from the event we're replying to
+            kind = args.kind || 1,
             event = args.event !==undefined ? args.event : {
                 'id' : '?',
                 'content' : 'something has gone wrong!!',
@@ -1851,17 +1837,19 @@ APP.nostr.gui.post_modal = function(){
                 'on_ok' : function(){
                     let n_tags = type==='reply' ? add_reply_tags(event) : [],
                         content = post_text_area.val()
-                        hash_tags = content.match(/\#\w*/g),
+                        hash_tags = (content).match(/(^|\s)\#\w*[\S|$]/g),
                         evt = {
                             'pub_k' : user.get_profile().pub_k,
                             'content': content,
-                            'tags' : n_tags
+                            'tags' : n_tags,
+                            'kind' : type==='reply' ? event.kind : kind
                         };
-
                     // add hashtags
                     if(hash_tags!==null){
+                        // fixes the matches we got... theres probably a better group based way to do this
+                        // but this is simple
                         hash_tags.forEach(function(c_tag){
-                            n_tags.push(['hashtag',c_tag.replace('#','')]);
+                            n_tags.push(['hashtag',c_tag.substring(c_tag.indexOf('#')+1)]);
                         });
                     }
 

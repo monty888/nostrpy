@@ -13,27 +13,18 @@
         // for now we're using a standard event view, maybe in future
         // compress down into unique users
         _my_event_view,
-        _current_profile = APP.nostr.data.user.get_profile();
+        _current_profile = APP.nostr.data.user.get_profile(),
+        _my_filter;
 
     function load_notes(){
-        let filter = [
-            {
-                'kinds' :[4],
-                'authors' : [_current_profile.pub_k]
-            },
-            {
-                'kinds': [4],
-                '#p' : [_current_profile.pub_k]
-            }
-        ];
 
         APP.remote.load_events({
-            'filter' : filter,
+            'filter' : _my_filter,
             'success': function(data){
                 if(data['error']!==undefined){
                     alert(data['error']);
                 }else{
-                    _my_event_view.set_notes(data['events'], filter);
+                    _my_event_view.set_notes(data['events']);
                 }
             }
         });
@@ -48,11 +39,23 @@
         // main container where we'll draw out the events
         _main_con = $('#main-con');
         _main_con.css('overflow-y','auto');
+
+
+        _my_filter = APP.nostr.data.filter.create([
+            {
+                'kinds' :[4],
+                'authors' : [_current_profile.pub_k]
+            },
+            {
+                'kinds': [4],
+                '#p' : [_current_profile.pub_k]
+            }
+        ]);
         _my_event_view = APP.nostr.gui.event_view.create({
-            'con' : _main_con
+            'con' : _main_con,
+            'filter' : _my_filter
         });
 
-        // start client for future notes....
         load_notes();
         // init the profiles data
         APP.nostr.data.profiles.init({
@@ -82,7 +85,7 @@
             }
         });
 
-
+        // start client for future notes....
         APP.nostr_client.create();
 
     });

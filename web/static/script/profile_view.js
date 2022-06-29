@@ -21,13 +21,13 @@
         _my_tab,
         // only events with current profiles pub_k
         _post_view,
-        _post_filter = [{
+        _post_filter = APP.nostr.data.filter.create([{
             'kinds': [1],
             'authors': [_pub_k]
-        }],
+        }]),
         // events with profile pub_k or pub_k in p tag of event
         _reply_view,
-        _reply_filter = [
+        _reply_filter = APP.nostr.data.filter.create([
             {
                 'kinds': [1],
                 'authors': [_pub_k]
@@ -36,7 +36,7 @@
                 'kinds': [1],
                 '#p' : [_pub_k]
             }
-        ],
+        ]),
         _current_profile = APP.nostr.data.user.get_profile();
 
     function init_view(con, filter){

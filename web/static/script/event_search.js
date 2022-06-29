@@ -57,8 +57,7 @@
         _search_in.focus();
         _list_con = $('#list-con');
         _my_event_view = APP.nostr.gui.event_view.create({
-            'con' : _list_con,
-            'enable_media': _enable_media
+            'con' : _list_con
         });
 
         // start client for future notes....

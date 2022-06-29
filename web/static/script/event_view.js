@@ -16,38 +16,38 @@
         // main container where we'll draw out the events
         _main_con,
         _my_event_view,
-        _current_profile = APP.nostr.data.user.get_profile();
+        _current_profile = APP.nostr.data.user.get_profile(),
+        _my_filter;
 
-    function load_notes(){
+    function create_filter(){
         let filter = [
             {
-//                'kinds' :[1],
                 'ids' : [_event_id]
             },
             {
-//                'kinds' :[1],
                 '#e' : [_event_id]
             }
         ];
 
         if(_root_id!==null){
             filter.push({
-//                'kinds' :[1],
                 'ids' : [_root_id]
             });
             filter.push({
-//                'kinds' :[1],
                 '#e' : [_root_id]
             });
         }
+        _my_filter = APP.nostr.data.filter.create(filter);
+    }
 
+    function load_notes(){
         APP.remote.load_events({
-            'filter' : filter,
+            'filter' : _my_filter,
             'success': function(data){
                 if(data['error']!==undefined){
                     alert(data['error']);
                 }else{
-                    _my_event_view.set_notes(data['events'], filter);
+                    _my_event_view.set_notes(data['events']);
                 }
             }
         });
@@ -59,6 +59,7 @@
             alert('no event id!!!');
             return;
         }
+        create_filter();
 
         // main page struc
         $('#main_container').html(APP.nostr.gui.templates.get('screen'));
@@ -67,7 +68,8 @@
         _main_con = $('#main-con');
         _main_con.css('overflow-y','auto');
         _my_event_view = APP.nostr.gui.event_view.create({
-            'con' : _main_con
+            'con' : _main_con,
+            'filter' : _my_filter
         });
 
         // start client for future notes....

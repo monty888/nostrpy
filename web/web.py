@@ -414,31 +414,33 @@ class NostrWeb(StaticServer):
     def session(self):
         return request.environ.get('beaker.session')
 
-    def _do_post(self):
-        pub_k = request.forms['pub_k']
-        msg_text = request.forms['text']
-
-        self._check_key(pub_k)
-        the_profile = self._profile_handler.profiles.get_profile(pub_k)
-        if the_profile is None:
-            raise Exception('no profile found for pub_k - %s' % pub_k)
-        if the_profile.private_key is None:
-            raise Exception('don\'t have private key for pub_k - %s' % pub_k)
-
-        evt = Event(kind=Event.KIND_TEXT_NOTE,
-                    content=msg_text,
-                    pub_key=pub_k)
-        evt.sign(the_profile.private_key)
-
-        self._client.publish(evt)
-
-        return evt.event_data()
+    # def _do_post(self):
+    #     pub_k = request.forms['pub_k']
+    #     msg_text = request.forms['text']
+    #
+    #     self._check_key(pub_k)
+    #     the_profile = self._profile_handler.profiles.get_profile(pub_k)
+    #     if the_profile is None:
+    #         raise Exception('no profile found for pub_k - %s' % pub_k)
+    #     if the_profile.private_key is None:
+    #         raise Exception('don\'t have private key for pub_k - %s' % pub_k)
+    #
+    #
+    #     evt = Event(kind=Event.KIND_TEXT_NOTE,
+    #                 content=msg_text,
+    #                 pub_key=pub_k)
+    #     evt.sign(the_profile.private_key)
+    #
+    #     self._client.publish(evt)
+    #
+    #     return evt.event_data()
 
     def _do_post(self):
         event = json.loads(request.forms['event'])
         pub_k = event['pub_k']
         content = event['content']
         tags = event['tags']
+        kind = event['kind']
 
         self._check_key(pub_k)
         the_profile = self._profile_handler.profiles.get_profile(pub_k)
@@ -447,12 +449,20 @@ class NostrWeb(StaticServer):
         if the_profile.private_key is None:
             raise Exception('don\'t have private key for pub_k - %s' % pub_k)
 
-        evt = Event(kind=Event.KIND_TEXT_NOTE,
+
+        evt = Event(kind=kind,
                     content=content,
                     pub_key=pub_k,
                     tags=tags)
-        evt.sign(the_profile.private_key)
 
+        if kind == Event.KIND_ENCRYPT:
+            to = evt.p_tags
+            if len(to) == 0:
+                raise NostrWebException('no to pub_k in tags for encrypted post?!')
+            evt.content = evt.encrypt_content(the_profile.private_key, to[0])
+
+
+        evt.sign(the_profile.private_key)
         self._client.publish(evt)
 
         return evt.event_data()
@@ -797,8 +807,36 @@ class NostrWeb(StaticServer):
 
     def do_event(self, sub_id, evt: Event, relay):
         if self._dedup.accept_event(evt):
-            # will update are profiles if meta/contact type data
+            # will update our profiles if meta/contact type data
             self._profile_handler.do_event(sub_id, evt, relay)
+
+            if evt.kind == Event.KIND_ENCRYPT:
+                p_tags = evt.p_tags
+                if p_tags:
+                    send: Profile = self._profile_handler.profiles.lookup_pub_key(evt.pub_key)
+                    rec: Profile = self._profile_handler.profiles.lookup_pub_key(p_tags[0])
+
+                    # NOTE this means if we can we always send the events out decrypted....
+                    # OK cause we assume all profiles are the same person anyway
+                    # but it does mean that if your in one profile you still see decrypts
+                    # of other profiles....
+                    # will fix this when re introduce session. I assume the session
+                    # applies to the WS also....
+                    if send and rec:
+                        decrypted = 'problemo'
+                        try:
+                            if send.private_key:
+                                decrypted = evt.decrypted_content(priv_key=send.private_key,
+                                                                  pub_key=rec.public_key)
+                            elif rec.private_key:
+                                decrypted = evt.decrypted_content(priv_key=rec.private_key,
+                                                                  pub_key=send.public_key)
+
+                        except:
+                            pass
+                        evt.content = decrypted
+
+
 
             # push the event to our web sockets, only those events that have a time
             # otherwise client will get flooded with events if server is being started and there

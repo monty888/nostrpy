@@ -38,6 +38,104 @@ APP.nostr.data.state = function(){
     }
 }();
 
+APP.nostr.data.filter = function(){
+
+    function create(filter){
+        let _my_filter = [],
+            // filters currently immuntable so we'll work this out when we create too
+            _as_str;
+
+        // make so we have arr of filters
+        if(typeof(filter.forEach)==='function'){
+            filter.forEach(function(c_filter){
+                _my_filter.push($.extend({},c_filter));
+            });
+
+        }else{
+            _my_filter.push($.extend({},filter));
+        }
+
+        // str version
+        _as_str = JSON.stringify(_my_filter);
+
+        // changes for quicker testing and consistancy
+        _my_filter.forEach(function(c_filter){
+            ['kinds','#p','authors','#e','ids'].forEach(function(c_f){
+                if(c_filter[c_f]!==undefined){
+                    c_filter[c_f] = new Set(c_filter[c_f]);
+                }
+            });
+
+        });
+
+        function as_str(){
+            return _as_str;
+        }
+
+        function test(evt){
+            let c_filter,
+                is_match,
+                c_f;
+
+            function check_tags(the_set, tname){
+                let c_tag,
+                    ret = false;
+                for(let i=0;i<evt.tags.length;i++){
+                    c_tag = evt.tags[i];
+                    if(c_tag.length>=1 && c_tag[0]===tname){
+                        if(the_set.has(c_tag[1])){
+                            ret = true;
+                            break;
+                        }
+                    }
+                }
+                return ret;
+            }
+
+            for(let i=0;i<_my_filter.length;i++){
+                c_filter = _my_filter[i];
+                is_match = true;
+                // check kind
+                if(c_filter.kinds!==undefined){
+                    is_match = is_match && c_filter.kinds.has(evt.kind);
+                }
+                // check author who created event
+                if(c_filter.authors!==undefined){
+                    is_match = is_match && c_filter.authors.has(evt.pubkey);
+                }
+                // event_ids
+                if(c_filter.ids!==undefined){
+                    is_match = is_match && c_filter.ids.has(evt.id);
+                }
+
+                if(c_filter['#p']!==undefined){
+                    is_match = is_match && check_tags(c_filter['#p'], 'p');
+                }
+
+                if(c_filter['#e']!==undefined){
+                    is_match = is_match && check_tags(c_filter['#e'], 'e');
+                }
+
+                if(is_match){
+                    break;
+                }
+            }
+
+            return is_match;
+        }
+
+        return {
+            'as_str': as_str,
+            'test': test
+        }
+    }
+
+    return {
+        'create' : create
+    }
+
+}();
+
 APP.nostr.data.event = function(){
     let _listener = {};
 

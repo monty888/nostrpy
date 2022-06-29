@@ -11,21 +11,20 @@
         _views = {},
         _current_profile,
         _main_con,
-        _global_filter = {
-            'kinds': [1]
-        },
+        _global_filter = APP.nostr.data.filter.create({
+            'kinds' : [1]
+        }),
         _my_tabs;
 
     function home_view(){
         // kill old views if any
         _views = {};
 
-        let feed_filter = {},
-            post_filter = [{
+        let post_filter = APP.nostr.data.filter.create([{
                 'kinds': [1],
                 'authors': [_current_profile.pub_k]
-            }],
-            reply_filter = [
+            }]),
+            reply_filter = APP.nostr.data.filter.create([
                 {
                     'kinds': [1],
                     'authors': [_current_profile.pub_k]
@@ -34,7 +33,7 @@
                     'kinds': [1],
                     '#p' : [_current_profile.pub_k]
                 }
-            ],
+            ]),
             // the tabs also the data needed to load
             tabs_objs = [
                 {
@@ -51,7 +50,8 @@
                         APP.remote.load_notes_from_profile({
                             'pub_k' : _current_profile.pub_k,
                             'success': function(data){
-                                feed_filter = data['filter'];
+                                // nasty, but we don't know the filter till we loaded the data
+                                _views[1].set_filter(APP.nostr.data.filter.create(data['filter']));
                                 success(data);
                             }
                         })
