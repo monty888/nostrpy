@@ -520,6 +520,7 @@ class ProfileEventHandler:
         if self._profiles.lookup_pub_key(p.public_key):
             self._profiles.update(p)
             self._store.update_profile_local(p)
+            self._store.update(p)
         else:
             self._profiles.add(p)
             self._store.add(p)

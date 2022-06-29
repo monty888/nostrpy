@@ -16,24 +16,9 @@
         // profiles helper
         _profiles = APP.nostr.data.profiles,
         // tab for contacts/follow/search/+ rendered here
-        _contacts_con = $('#contact-tabs'),
-        _my_tab = APP.nostr.gui.tabs.create({
-            'con' : _contacts_con,
-            'default_content' : 'loading...',
-            'on_tab_change': function(i){
-                set_list_filter();
-            },
-            'tabs' : [
-                {
-                    'title': 'follows',
-                    'active': _view_type!=='followers'
-                },
-                {
-                    'title': 'followers',
-                    'active': _view_type==='followers'
-                }
-            ]
-        }),
+        _contacts_con,
+        _my_tab,
+        _main_con,
         // the search input
         _search_in,
         // delay action using timer
@@ -47,7 +32,6 @@
         _my_head = APP.nostr.gui.profile_about.create({
             'con': _profile_con,
             'pub_k': _pub_k,
-            'enable_media': _enable_media,
             'show_follows': false
         });
 
@@ -69,6 +53,28 @@
             }
     }
 
+    function create_tabs(){
+        _contacts_con = $('#contact-tabs');
+        _my_tab = APP.nostr.gui.tabs.create({
+            'con' : _contacts_con,
+            'default_content' : 'loading...',
+            'on_tab_change': function(i){
+                set_list_filter();
+            },
+            'tabs' : [
+                {
+                    'title': 'follows',
+                    'active': _view_type!=='followers'
+                },
+                {
+                    'title': 'followers',
+                    'active': _view_type==='followers'
+                }
+            ]
+        });
+    }
+
+
     // start when everything is ready
     $(document).ready(function() {
         if(_pub_k===null){
@@ -77,6 +83,16 @@
         }
         // default to view contacts if no viewtype given
         _view_type = _view_type===undefined ? 'contacts' : _view_type;
+
+        // main page struc
+        $('#main_container').html(APP.nostr.gui.templates.get('screen'));
+        APP.nostr.gui.header.create({});
+        // get the main con and render page specific scafold
+        _main_con = $('#main-con');
+        _main_con.html(APP.nostr.gui.templates.get('screen-contact-view'));
+
+        // create follow/ers tabs
+        create_tabs();
 
         // init the profiles data
         _profiles.init({
@@ -138,6 +154,9 @@
                 $('#full_search_but').on('click', function(){
                     location.href = '/html/profile_search.html';
                 });
+
+                // for relay updates, note this screen is testing events as they come in
+                APP.nostr_client.create();
 
 
             }

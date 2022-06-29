@@ -31,7 +31,6 @@ APP.nostr.gui.header = function(){
                 _relay_but.css('background-color', 'red');
             }
 
-
         });
     }
 
@@ -56,20 +55,41 @@ APP.nostr.gui.header = function(){
         }
     }
 
+    function render_head(){
+        // the intial draw with state we have on page load
+        let state = {
+            'message_style': function(){
+                return _current_profile.pub_k!==undefined ? 'style="display:default;"' : 'style="display:none;"';
+            },
+            'relay_style': function(){
+                let relay_status = APP.nostr.data.state.get('relay_status', {
+                    'def' : '{}'
+                });
+
+                relay_state = JSON.parse(relay_status);
+                return relay_state.connected===true ? 'background-color:green;' : 'background-color:red;'
+            }
+
+        };
+
+        _con.html(Mustache.render(APP.nostr.gui.templates.get('head'),state));
+    }
+
     function create(args){
         args = args || {};
         _con = args.con || $('#header-con');
+        _current_profile = APP.nostr.data.user.get_profile();
         _enable_media = APP.nostr.data.user.enable_media(),
-        // this is just a str
-        _con.html(APP.nostr.gui.templates.get('head'));
+        // draw the header bar
+        render_head();
         // grab buttons
         _profile_but = $('#profile-but');
         _home_but = $('#home-but');
         _event_search_but = $('#event-search-but');
         _profile_search_but = $('#profile-search-but');
+        _message_but = $('#message-but');
         _relay_but = $('#relay-but');
 
-        _current_profile = APP.nostr.data.user.get_profile();
         set_profile_button();
         watch_profile();
         watch_relay();
@@ -82,6 +102,12 @@ APP.nostr.gui.header = function(){
         _home_but.on('click', function(){
             if(window.location.pathname!=='/'){
                 window.location='/';
+            }
+        });
+
+        _message_but.on('click', function(){
+            if(window.location.pathname!=='/html/messages.html'){
+                window.location='/html/messages.html';
             }
         });
 
@@ -150,251 +176,6 @@ APP.nostr.gui.post_button = function(){
 
     return {
         'create' : create
-    }
-}();
-
-/*
-    modal, we only ever create one of this and just fill the content differently
-    used to make posts, maybe set options?
-*/
-APP.nostr.gui.modal = function(){
-    let _modal_html = [
-            '<div style="color:black;height:100%" id="nostr-modal" class="modal fade" role="dialog">',
-                '<div class="modal-dialog">',
-                    '<div class="modal-content">',
-                        '<div class="modal-header">',
-                            '<button type="button" class="close" data-dismiss="modal" style="opacity:1;color:white;" >&times;</button>',
-                            '<h4 class="modal-title" id="nostr-modal-title"></h4>',
-                        '</div>',
-                        '<div class="modal-body" id="nostr-modal-content" >',
-                        '</div>',
-                        '<div class="modal-footer">',
-                            '<span style="display:none" id="nostr-modal-footer"></span>',
-                            '<button id="nostr-modal-ok-button" type="button" class="btn btn-default" data-dismiss="modal">Close</button>',
-                        '</div>',
-                    '</div>',
-                '</div>',
-            '</div>'
-        ].join(''),
-        _my_modal,
-        _my_title,
-        _my_content,
-        _my_ok_button,
-        _my_foot_con;
-
-    function create(args){
-        args = args||{};
-        let title = args.title || '?no title?';
-            content = args.content || '',
-            ok_text = args.ok_text || '?no_text?',
-            on_ok = args.on_ok,
-            on_show = args.on_show,
-            on_hide = args.on_hide,
-            // if set doing own bottom buttons
-            footer_content = args.footer_content;
-
-        // make sure we only ever create one
-        if(_my_modal===undefined){
-            $(document.body).prepend(_modal_html);
-            _my_modal = $('#nostr-modal');
-            _my_title = $('#nostr-modal-title');
-            _my_content = $('#nostr-modal-content');
-            _my_ok_button = $('#nostr-modal-ok-button');
-            _my_foot_con = $('#nostr-modal-footer');
-
-            // escape to hide
-            $(document).on('keydown', function(e){
-                if(e.key==='Escape' && _my_modal.hasClass('in')){
-                    hide();
-                }
-            });
-
-            _my_modal.on('shown.bs.modal', function () {
-                if(typeof(on_show)==='function'){
-                    on_show();
-                }
-            });
-
-            _my_modal.on('hidden.bs.modal', function () {
-                if(typeof(on_hide)==='function'){
-                    on_hide();
-                }
-            });
-
-            _my_ok_button.on('click', function(){
-                if(typeof(on_ok)==='function'){
-                    on_ok();
-                }
-            });
-
-        }
-        _my_title.html(title);
-        _my_content.html(content);
-        _my_ok_button.html(ok_text);
-        if(footer_content!==undefined){
-            _my_foot_con.html(footer_content);
-            _my_foot_con.css('display','');
-            _my_ok_button.css('display','none');
-        }else{
-            _my_foot_con.css('display','none');
-            _my_ok_button.css('display','');
-        }
-
-    }
-
-    function show(){
-        // create must have been called before calling show
-        _my_modal.modal();
-    }
-
-    function hide(){
-        _my_modal.modal('hide');
-    }
-
-    function set_content(content){
-        _my_content.html(content);
-    }
-
-    return {
-        'create' : create,
-        'show' : show,
-        'hide' : hide,
-        'set_content' : set_content
-//        'is_showing' : function(){
-//            return _my_modal!==undefined && _my_modal.hasClass('in');
-//        }
-    };
-}();
-
-APP.nostr.gui.post_modal = function(){
-
-    // TODO as https://github.com/nostr-protocol/nips/blob/master/10.md
-    // add reply and root markers, we need a preferred relay first though
-    // as it's not optional
-    function add_reply_tags(o_event){
-        let ret = [],
-            to_pub_key = o_event.pubkey;
-            to_evt_id = o_event.id,
-            add_pub = true;
-            add_evt = true;
-        // copy all tags, don't thinnk it matters much but also check that
-        // we're not going to dupl the p or e tags that we are going to add
-        o_event.tags.forEach(function(c_tag,i){
-            // tags from the original event that are kept
-            const keep = new Set(['p','e']);
-
-            // if it has a val and is a tag that we keep then add
-            if(keep.has(c_tag[0]) && c_tag[1]!==undefined && c_tag[1]!==null && c_tag[1]!==''){
-                ret.push(c_tag);
-                // don't think its a problem but won't duplicate anyhow
-                if((c_tag[0]==='p' && c_tag[1]===to_pub_key)){
-                    add_pub = false;
-                }
-                if((c_tag[0]==='e' && c_tag[1]===to_evt_id)){
-                    add_evt = false;
-                }
-            }
-        });
-
-        if(add_pub){
-            ret.push(['p', to_pub_key]);
-        }
-        if(add_evt){
-            ret.push(['e', to_evt_id]);
-        }
-
-        return ret;
-    }
-
-    function show(args){
-        args =args || {};
-        let gui = APP.nostr.gui,
-            user = APP.nostr.data.user,
-            type = args.type!==undefined ? args.type : 'post',
-            event = args.event !==undefined ? args.event : {
-                'id' : '?',
-                'content' : 'something has gone wrong!!',
-                'tags' :[]
-            },
-            title = 'make post',
-            post_text_area,
-            render_obj= {},
-            uid = gui.uid();
-
-            if(type==='reply'){
-                title = 'reply to event <span class="pubkey-text" >'+APP.nostr.util.short_key(event.id)+'<span/>';
-                // because we're going to give another id just so we don't get mutiple els with same id in dom
-                render_obj['event'] = jQuery.extend({}, event);
-                render_obj['event'].uid = uid;
-                render_obj['picture'] = gui.get_profile_picture(event.pubkey);
-                render_obj['content'] = gui.get_note_content_for_render(event);
-
-            }
-
-            APP.nostr.gui.modal.create({
-                'title' : title,
-                'content' : Mustache.render(gui.templates.get('modal-note-post'),render_obj, {
-                    'event' : gui.templates.get('event'),
-                    'profile' : gui.templates.get('event-profile'),
-                    'content' : gui.templates.get('event-content'),
-                }),
-                'ok_text' : 'send',
-                'on_ok' : function(){
-                    let n_tags = type==='reply' ? add_reply_tags(event) : [],
-                        content = post_text_area.val()
-                        hash_tags = content.match(/\#\w*/g),
-                        evt = {
-                            'pub_k' : user.get_profile().pub_k,
-                            'content': content,
-                            'tags' : n_tags
-                        };
-
-                    // add hashtags
-                    if(hash_tags!==null){
-                        hash_tags.forEach(function(c_tag){
-                            n_tags.push(['hashtag',c_tag.replace('#','')]);
-                        });
-                    }
-
-                    if(user.is_add_client_tag()===true){
-                        n_tags.push(['client', user.get_client()]);
-                    }
-
-                    APP.remote.post_event({
-                        'event' : evt,
-                        'success' : function(data){
-
-                            // notify anyone interested
-                            APP.nostr.data.event.fire_event('post-success', {
-                                'event': evt,
-                                'type': type
-                            });
-
-                        }
-                    });
-
-
-
-                },
-                'on_show' : function(){
-                    post_text_area.focus();
-                }
-            });
-
-        post_text_area = $('#nostr-post-text');
-        // nothing is clickable!
-        if(type==='reply'){
-            $('#'+uid+'-'+render_obj.event.event_id+'-pp').css('cursor','default');
-            $('#'+uid+'-'+render_obj.event.event_id-'content').css('cursor','default !important');
-        }
-
-
-        APP.nostr.gui.modal.show();
-
-    }
-
-    return {
-        'show': show
     }
 }();
 
@@ -1477,42 +1258,16 @@ APP.nostr.gui.profile_edit = function(){
             o_str,
             // obj for render
             r_obj,
-            mode = 'edit';
+            mode;
 
         function init(){
-            o_profile = APP.nostr.data.profiles.lookup(pub_k);
-            if(o_profile===undefined){
-                o_profile = {
-                    'pub_k' : /[0-9A-Fa-f]{64}/g.test(pub_k) ? pub_k : '',
-                    'attrs' : {},
-                    'can_sign' : false
-                };
-            }
+            // initial page show
+            let the_profile = APP.nostr.data.profiles.lookup(pub_k)
+            set_state(the_profile)
+            init_page();
+        }
 
-            if(!o_profile.can_sign){
-                if(o_profile.pub_k===''){
-                    mode = 'create'
-                }else{
-                    mode = 'view';
-                }
-            }
-            console.log(o_profile);
-            // make the profile easier to use
-            o_profile = {
-                'pub_k' : o_profile.pub_k,
-                'name' : o_profile.attrs.name === undefined ? '' : o_profile.attrs.name,
-                'about' : o_profile.attrs.about === undefined ? '' : o_profile.attrs.about,
-                'picture' : o_profile.attrs.picture === undefined ? '' : o_profile.attrs.picture,
-                'profile_name': o_profile.profile_name === undefined ? '' : o_profile.profile_name,
-                // only needs to be set when linking to existing profile we donbt have priv_k for
-                'private_key' : '',
-                'can_sign' : o_profile.can_sign
-            };
-
-
-            o_str = JSON.stringify(o_profile);
-            e_profile = $.extend({}, o_profile);
-
+        function init_page(){
             // basic screen render, shows profile we're editing and what mode we're in
             con.html(Mustache.render(APP.nostr.gui.templates.get('screen-profile-struct'),{
                 'mode' : mode,
@@ -1534,6 +1289,43 @@ APP.nostr.gui.profile_edit = function(){
             draw();
         }
 
+
+       function set_state(profile){
+            o_profile = profile;
+            if(o_profile===undefined){
+                o_profile = {
+                    'pub_k' : /[0-9A-Fa-f]{64}/g.test(pub_k) ? pub_k : '',
+                    'attrs' : {},
+                    'can_sign' : false
+                };
+            }
+
+            mode = 'edit';
+            if(!o_profile.can_sign){
+                if(o_profile.pub_k===''){
+                    mode = 'create'
+                }else{
+                    mode = 'view';
+                }
+            };
+
+            // make the profile easier to use
+            o_profile = {
+                'pub_k' : o_profile.pub_k,
+                'name' : o_profile.attrs.name === undefined ? '' : o_profile.attrs.name,
+                'about' : o_profile.attrs.about === undefined ? '' : o_profile.attrs.about,
+                'picture' : o_profile.attrs.picture === undefined ? '' : o_profile.attrs.picture,
+                'profile_name': o_profile.profile_name === undefined ? '' : o_profile.profile_name,
+                // only needs to be set when linking to existing profile we donbt have priv_k for
+                'private_key' : '',
+                'can_sign' : o_profile.can_sign
+            };
+
+            o_str = JSON.stringify(o_profile);
+            e_profile = $.extend({}, o_profile);
+
+        }
+
         function set_r_obj(){
             r_obj = {
                 'pub_k' : e_profile.pub_k,
@@ -1545,7 +1337,6 @@ APP.nostr.gui.profile_edit = function(){
                 'disabled' : mode==='view' ? 'disabled' : ''
             };
         }
-
 
         function render_head(){
             // TODO: make some basic check that this str is actually something we can use as a picture
@@ -1606,11 +1397,24 @@ APP.nostr.gui.profile_edit = function(){
                 }
             });
 
+            function link_done(data){
+                if(data.success===true){
+                    set_state(data.profile)
+                    init_page();
+                    APP.nostr.data.event.fire_event('local_profile_update',{});
+                }
+            }
+
             key_but.on('click', function(){
                 if(mode==='view'){
-                    APP.nostr.gui.request_private_key_modal.show(o_profile);
+                    APP.nostr.gui.request_private_key_modal.show({
+                        'link_profile': o_profile,
+                        'on_link' : link_done
+                    });
                 }else if(mode==='create'){
-                    APP.nostr.gui.request_private_key_modal.show();
+                    APP.nostr.gui.request_private_key_modal.show({
+                        'on_link' : link_done
+                    });
                 }else if(mode==='edit'){
                     APP.remote.export_profile({
                         'for_profile' : o_profile.profile_name,
@@ -1640,9 +1444,19 @@ APP.nostr.gui.profile_edit = function(){
                     'mode' : mode,
                     'publish' : is_publish,
                     'success' : function(data){
-                        if(data.save===true){
-                            alert('notify save');
-
+                        let msg_txt = 'profile saved';
+                        if(data.save===true || data.publish===true){
+                            // a publish we'll always result in a save, though if nothing has chanegd it won't be direct
+                            // it'll be from seeing the meta event update
+                            if(data.publish===true){
+                                msg_txt+=' and published';
+                            }
+                            APP.nostr.gui.notification({
+                                'text' : msg_txt
+                            });
+                            APP.nostr.data.event.fire_event('local_profile_update',{});
+                            set_state(data.profile)
+                            init_page();
 
                         }
                     }
@@ -1723,9 +1537,7 @@ APP.nostr.gui.profile_list = function (){
             got_data();
         }
 
-
         // methods
-
         function got_data(){
             // prep the intial render obj
             _my_list = APP.nostr.gui.list.create({
@@ -1829,63 +1641,340 @@ APP.nostr.gui.profile_list = function (){
     }
 }();
 
-APP.nostr.gui.profile_select_modal = function(){
-    let _uid = APP.nostr.gui.uid(),
-        // short cut ot profiles helper
-        _profiles = APP.nostr.data.profiles;
+/*
+    modal, we only ever create one of this and just fill the content differently
+    used to make posts, maybe set options?
+*/
+APP.nostr.gui.modal = function(){
+    let _modal_html = [
+            '<div style="color:black;height:100%" id="nostr-modal" class="modal fade" role="dialog">',
+                '<div class="modal-dialog">',
+                    '<div class="modal-content">',
+                        '<div class="modal-header">',
+                            '<button type="button" class="close" data-dismiss="modal" style="opacity:1;color:white;" >&times;</button>',
+                            '<h4 class="modal-title" id="nostr-modal-title"></h4>',
+                        '</div>',
+                        '<div class="modal-body" id="nostr-modal-content" >',
+                        '</div>',
+                        '<div class="modal-footer">',
+                            '<span style="display:none" id="nostr-modal-footer"></span>',
+                            '<button id="nostr-modal-ok-button" type="button" class="btn btn-default" data-dismiss="modal">Close</button>',
+                        '</div>',
+                    '</div>',
+                '</div>',
+            '</div>'
+        ].join(''),
+        _my_modal,
+        _my_title,
+        _my_content,
+        _my_ok_button,
+        _my_foot_con;
 
-    function draw_profiles(profiles){
-        // just incase it didn't get inted yet
-        _profiles.init();
+    function create(args){
+        args = args||{};
+        let title = args.title || '?no title?';
+            content = args.content || '',
+            ok_text = args.ok_text || '?no_text?',
+            on_ok = args.on_ok,
+            ok_hide = args.ok_hide===undefined ? false : args.ok_hide;
+            on_show = args.on_show,
+            on_hide = args.on_hide,
+            // if set doing own bottom buttons
+            footer_content = args.footer_content,
+            was_ok = false;
 
-        let row_tmpl = APP.nostr.gui.templates.get('profile-list'),
-            list,
-            current_profile = APP.nostr.data.user.get_profile(),
-            render_obj = [{
-                // the no profile profile.. just browse
-                'uid' : _uid,
-                'profile_name' : 'lurker',
-                'detail-selected' : current_profile.pub_k===undefined ? 'profile-detail-area-selected' : '',
-                'picture-selected' : current_profile.pub_k===undefined ? 'profile-picture-area-selected' : '',
-                'about' : 'browse without using a profile'
-            }],
-            create_render_obj = function(){
-                profiles.forEach(function(c_p,i){
-                    let img_src;
+        // make sure we only ever create one
+        if(_my_modal===undefined){
+            $(document.body).prepend(_modal_html);
+            _my_modal = $('#nostr-modal');
+            _my_title = $('#nostr-modal-title');
+            _my_content = $('#nostr-modal-content');
+            _my_ok_button = $('#nostr-modal-ok-button');
+            _my_foot_con = $('#nostr-modal-footer');
 
-                    // a profile doesn't necessarily exist
-                    if(c_p && c_p.attrs.picture!==undefined && true){
-                        img_src = c_p.attrs.picture;
-                    }else{
-                        img_src = APP.nostr.gui.robo_images.get_url({
-                            'text' : c_p.pub_k
+            // escape to hide
+            $(document).on('keydown', function(e){
+                if(e.key==='Escape' && _my_modal.hasClass('in')){
+                    hide();
+                }
+            });
+
+            _my_modal.on('shown.bs.modal', function () {
+                if(typeof(on_show)==='function'){
+                    on_show();
+                }
+            });
+
+            _my_modal.on('hidden.bs.modal', function () {
+                if(typeof(on_hide)==='function'){
+                    on_hide();
+                }
+            });
+
+            _my_ok_button.on('click', function(){
+                was_ok = true;
+                if(typeof(on_ok)==='function'){
+                    on_ok();
+                }
+            });
+
+        }
+        _my_title.html(title);
+        _my_content.html(content);
+        _my_ok_button.html(ok_text);
+        if(footer_content!==undefined){
+            _my_foot_con.html(footer_content);
+            _my_foot_con.css('display','');
+            hide_ok();
+        }else{
+            _my_foot_con.css('display','none');
+            show_ok();
+        }
+
+        if(ok_hide){
+            hide_ok();
+        }
+
+    }
+
+    function show(){
+        // create must have been called before calling show
+        _my_modal.modal();
+    }
+
+    function hide(){
+        _my_modal.modal('hide');
+    }
+
+    function set_content(content){
+        _my_content.html(content);
+    }
+
+    function show_ok(){
+        _my_ok_button.css('display','');
+    }
+
+    function hide_ok(){
+        _my_ok_button.css('display','none');
+    }
+
+    return {
+        'create' : create,
+        'show' : show,
+        'hide' : hide,
+        'set_content' : set_content,
+        'show_ok' : show_ok,
+        'hide_ok' : hide_ok,
+        'was_ok' : function(){
+            return was_ok;
+        }
+
+//        'is_showing' : function(){
+//            return _my_modal!==undefined && _my_modal.hasClass('in');
+//        }
+    };
+}();
+
+APP.nostr.gui.post_modal = function(){
+
+    // TODO as https://github.com/nostr-protocol/nips/blob/master/10.md
+    // add reply and root markers, we need a preferred relay first though
+    // as it's not optional
+    function add_reply_tags(o_event){
+        let ret = [],
+            to_pub_key = o_event.pubkey;
+            to_evt_id = o_event.id,
+            add_pub = true;
+            add_evt = true;
+        // copy all tags, don't thinnk it matters much but also check that
+        // we're not going to dupl the p or e tags that we are going to add
+        o_event.tags.forEach(function(c_tag,i){
+            // tags from the original event that are kept
+            const keep = new Set(['p','e']);
+
+            // if it has a val and is a tag that we keep then add
+            if(keep.has(c_tag[0]) && c_tag[1]!==undefined && c_tag[1]!==null && c_tag[1]!==''){
+                ret.push(c_tag);
+                // don't think its a problem but won't duplicate anyhow
+                if((c_tag[0]==='p' && c_tag[1]===to_pub_key)){
+                    add_pub = false;
+                }
+                if((c_tag[0]==='e' && c_tag[1]===to_evt_id)){
+                    add_evt = false;
+                }
+            }
+        });
+
+        if(add_pub){
+            ret.push(['p', to_pub_key]);
+        }
+        if(add_evt){
+            ret.push(['e', to_evt_id]);
+        }
+
+        return ret;
+    }
+
+    function show(args){
+        args =args || {};
+        let gui = APP.nostr.gui,
+            user = APP.nostr.data.user,
+            type = args.type!==undefined ? args.type : 'post',
+            event = args.event !==undefined ? args.event : {
+                'id' : '?',
+                'content' : 'something has gone wrong!!',
+                'tags' :[]
+            },
+            title = 'make post',
+            post_text_area,
+            render_obj= {},
+            uid = gui.uid();
+
+            if(type==='reply'){
+                title = 'reply to event <span class="pubkey-text" >'+APP.nostr.util.short_key(event.id)+'<span/>';
+                // because we're going to give another id just so we don't get mutiple els with same id in dom
+                render_obj['event'] = jQuery.extend({}, event);
+                render_obj['event'].uid = uid;
+                render_obj['picture'] = gui.get_profile_picture(event.pubkey);
+                render_obj['content'] = gui.get_note_content_for_render(event);
+
+            }
+
+            APP.nostr.gui.modal.create({
+                'title' : title,
+                'content' : Mustache.render(gui.templates.get('modal-note-post'),render_obj, {
+                    'event' : gui.templates.get('event'),
+                    'profile' : gui.templates.get('event-profile'),
+                    'content' : gui.templates.get('event-content'),
+                }),
+                'ok_text' : 'send',
+                'on_ok' : function(){
+                    let n_tags = type==='reply' ? add_reply_tags(event) : [],
+                        content = post_text_area.val()
+                        hash_tags = content.match(/\#\w*/g),
+                        evt = {
+                            'pub_k' : user.get_profile().pub_k,
+                            'content': content,
+                            'tags' : n_tags
+                        };
+
+                    // add hashtags
+                    if(hash_tags!==null){
+                        hash_tags.forEach(function(c_tag){
+                            n_tags.push(['hashtag',c_tag.replace('#','')]);
                         });
                     }
 
-                    let to_add = {
-                        'uid' : _uid,
-                        'short_pub_k' : APP.nostr.util.short_key(c_p.pub_k),
-                        'pub_k' : c_p.pub_k,
-                        'detail-selected' : current_profile.pub_k===c_p.pub_k ? 'profile-detail-area-selected' : '',
-                        'picture-selected' : current_profile.pub_k===c_p.pub_k ? 'profile-picture-area-selected' : '',
-                        'profile_name' : c_p.profile_name,
-                        'name' : c_p.attrs.name,
-                        'picture' : img_src,
-                        'can_edit' : true
-                    };
+                    if(user.is_add_client_tag()===true){
+                        n_tags.push(['client', user.get_client()]);
+                    }
 
-                    to_add.profile_name = c_p.profile_name;
-                    render_obj.push(to_add);
-                });
-            };
+                    APP.remote.post_event({
+                        'event' : evt,
+                        'success' : function(data){
 
-        create_render_obj();
+                            // notify anyone interested
+                            APP.nostr.data.event.fire_event('post-success', {
+                                'event': evt,
+                                'type': type
+                            });
+
+                        }
+                    });
+
+
+
+                },
+                'on_show' : function(){
+                    post_text_area.focus();
+                }
+            });
+
+        post_text_area = $('#nostr-post-text');
+        // nothing is clickable!
+        if(type==='reply'){
+            $('#'+uid+'-'+render_obj.event.event_id+'-pp').css('cursor','default');
+            $('#'+uid+'-'+render_obj.event.event_id-'content').css('cursor','default !important');
+        }
+
+
+        APP.nostr.gui.modal.show();
+
+    }
+
+    return {
+        'show': show
+    }
+}();
+
+APP.nostr.gui.profile_select_modal = function(){
+    let _uid = APP.nostr.gui.uid(),
+        // short cut ot profiles helper
+        _profiles = APP.nostr.data.profiles,
+        _user_profiles,
+        _list,
+        _list_data = [],
+        _row_tmpl,
+        _current_profile,
+        _selected_profile;
+
+    function draw_profiles(profiles){
+        _user_profiles = profiles;
+        // just incase it didn't get inted yet
+        _profiles.init();
+        _row_tmpl = APP.nostr.gui.templates.get('profile-list');
+        _selected_profile = _current_profile = APP.nostr.data.user.get_profile();
         APP.nostr.gui.modal.set_content('<div id="'+_uid+'"></div>');
 
-        list = APP.nostr.gui.list.create({
+        create_list_data();
+        create_list();
+        _list.draw();
+    }
+
+    function create_list_data(){
+        _list_data = [{
+            // the no profile profile.. just browse
+            'uid' : _uid,
+            'profile_name' : 'lurker',
+            'detail-selected' : _selected_profile.pub_k===undefined ? 'profile-detail-area-selected' : '',
+            'picture-selected' : _selected_profile.pub_k===undefined ? 'profile-picture-area-selected' : '',
+            'about' : 'browse without using a profile'
+        }];
+
+        _user_profiles.forEach(function(c_p,i){
+            let img_src;
+
+            // a profile doesn't necessarily exist
+            if(c_p && c_p.attrs.picture!==undefined && true){
+                img_src = c_p.attrs.picture;
+            }else{
+                img_src = APP.nostr.gui.robo_images.get_url({
+                    'text' : c_p.pub_k
+                });
+            }
+
+            let to_add = {
+                'uid' : _uid,
+                'short_pub_k' : APP.nostr.util.short_key(c_p.pub_k),
+                'pub_k' : c_p.pub_k,
+                'detail-selected' : _selected_profile.pub_k===c_p.pub_k ? 'profile-detail-area-selected' : '',
+                'picture-selected' : _selected_profile.pub_k===c_p.pub_k ? 'profile-picture-area-selected' : '',
+                'profile_name' : c_p.profile_name,
+                'name' : c_p.attrs.name,
+                'picture' : img_src,
+                'can_edit' : true
+            };
+
+            to_add.profile_name = c_p.profile_name;
+            _list_data.push(to_add);
+        });
+    };
+
+    function create_list(){
+        _list = APP.nostr.gui.list.create({
             'con' : $('#'+_uid),
-            'data' : render_obj,
-            'row_tmpl': row_tmpl,
+            'data' : _list_data,
+            'row_tmpl': _row_tmpl,
             'click' : function(id){
                 id = id.replace(_uid+'-', '');
                 let parts = id.split('-'),
@@ -1900,13 +1989,15 @@ APP.nostr.gui.profile_select_modal = function(){
 
                 // just selected profile
                 if(cmd===''){
-                    // should be the lurker profile
                     if(p===undefined){
-                        p = {}
-                    };
+                        p = {};
+                    }
 
-                    APP.nostr.data.user.set_profile(p);
-                    APP.nostr.gui.modal.hide();
+                    _selected_profile = p;
+                    create_list_data();
+                    _list.set_data(_list_data);
+                    _list.draw();
+
 
                 // go to edit page for this profile
                 }else if(cmd==='profile-edit'){
@@ -1915,15 +2006,31 @@ APP.nostr.gui.profile_select_modal = function(){
 
             }
         });
-        list.draw();
     }
 
     function show(){
+        let footer_html = [
+            '<button id="nostr-profile_select-new-button" type="button" class="btn btn-default" >new</button>',
+            '<button id="nostr-profile_select-ok-button" type="button" class="btn btn-default" data-dismiss="modal">ok</button>'
+        ].join('');
+
         // set the modal as we want it
         APP.nostr.gui.modal.create({
             'title' : 'choose profile',
             'content' : 'loading...',
-            'ok_text' : 'ok'
+            'footer_content' : footer_html
+        });
+
+        $('#nostr-profile_select-new-button').on('click', function(){
+            window.location = '/html/edit_profile';
+        });
+
+        $('#nostr-profile_select-ok-button').on('click', function(){
+            if(_current_profile.pub_k!==_selected_profile){
+                APP.nostr.data.user.set_profile(_selected_profile);
+                window.location = '/';
+            }
+            APP.nostr.gui.modal.hide();
         });
 
         // show it
@@ -2030,37 +2137,46 @@ APP.nostr.gui.relay_view_modal = function(){
 }();
 
 APP.nostr.gui.request_private_key_modal = function(){
+    /* modal to link a private key either to a given prexisiting pub_k (it'll only allow matches to that)
+        or any priv_k where it'll look up the profile and the user can ok if they want to link
+    */
     let _uid = APP.nostr.gui.uid(),
-        _gui = APP.nostr.gui
+        _gui = APP.nostr.gui;
 
-    function show(link_profile){
+    function show(args){
         const content = [
         '{{> profile}}',
         '<div class="form-group">',
             '<label for="private-key">private key</label>',
-            '<input class="form-control" id="private-key" aria-describedby="private key" placeholder="enter private key" value="" >',
+            '<input type="password" autocomplete="off" class="form-control" id="private-key" aria-describedby="private key" placeholder="enter private key" value="" >',
             '<div id="pk_modal_error_con"></div>',
         '</div>'
         ].join('');
 
-        link_profile = link_profile || {};
+
+        let link_profile = args.link_profile || {},
+            user_link_profile = null,
+            on_link = args.on_link;
 
         let priv_in,
             last_val,
             error_con,
             uid = APP.nostr.gui.uid(),
-            link_given_profile =function(key){
+            link_given_profile =function(priv_k, pub_k){
                 APP.remote.link_profile({
-                    'priv_k' : key,
-                    'pub_k' : link_profile.pub_k,
+                    'priv_k' : priv_k,
+                    'pub_k' : pub_k,
                     'success' : function(data){
                         if(data.error!==undefined){
                             error_con.html(data.error);
                         }else{
                             APP.nostr.gui.modal.hide();
                             APP.nostr.gui.notification({
-                                'text' : APP.nostr.util.short_key(link_profile.pub_k)+' linked successfully!!!'
+                                'text' : APP.nostr.util.short_key(pub_k)+' linked successfully!!!'
                             });
+                            if(typeof(on_link)==='function'){
+                                on_link(data);
+                            }
                         }
                     }
                 });
@@ -2070,16 +2186,22 @@ APP.nostr.gui.request_private_key_modal = function(){
                     'priv_k' : key,
                     'success' : function(data){
                         if(data.error!==undefined){
+                            user_link_profile = null;
                             error_con.html(data.error);
+                            APP.nostr.gui.modal.hide_ok();
                         }else{
+                            error_con.html('');
+                            user_link_profile = data;
                             data.picture = data.attrs.picture;
                             data.name = data.attrs.name;
                             data.about = data.attrs.about;
+                            data.priv_k = key;
                             $('#'+uid+'-'+'pk-modal-profile').html(Mustache.render(APP.nostr.gui.templates.get('profile-list'),data));
+                            APP.nostr.gui.modal.show_ok();
                         }
                     }
                 })
-            }
+            };
 
         // set the modal as we want it
         let render_obj = $.extend({
@@ -2094,14 +2216,14 @@ APP.nostr.gui.request_private_key_modal = function(){
             'content' : Mustache.render(content,render_obj,{
                 'profile' : APP.nostr.gui.templates.get('profile-list')
             }),
-            'footer_content' : ''
+            'on_hide' : function(){
+                if(user_link_profile!==null && APP.nostr.gui.modal.was_ok()){
+                    link_given_profile(user_link_profile.priv_k, user_link_profile.pub_k);
+                }
+            },
+            'ok_hide': true,
+            'ok_text' : 'ok'
         });
-
-
-
-
-
-
 
 
         // show it
@@ -2118,11 +2240,16 @@ APP.nostr.gui.request_private_key_modal = function(){
             if(val!==last_val){
                 if(/[0-9A-Fa-f]{64}/g.test(val)){
                     if(link_profile.pub_k!==undefined){
-                        link_given_profile(val)
+                        link_given_profile(val, link_profile.pub_k)
                     }else{
                         // no particular profile to link to, will look up the priv_k and show the user what
                         // we get for them to ok on
                         link_priv_key_profile(val)
+                    }
+                }else{
+                    if(link_profile.pub_k===undefined){
+                        user_link_profile = null;
+                        APP.nostr.gui.modal.hide_ok();
                     }
                 }
             }

@@ -1,3 +1,43 @@
+APP.nostr.data.state = function(){
+    /* some basic state, done via cookies currently but expect we'll at some point move to session/local storage
+        some would probably be better on the server and also possible indexdb
+
+    */
+    function set_cookie(cName, cValue, expDays) {
+            let date = new Date();
+            date.setTime(date.getTime() + (expDays * 24 * 60 * 60 * 1000));
+            const expires = "expires=" + date.toUTCString();
+            document.cookie = cName + "=" + cValue + "; " + expires + "; path=/";
+    }
+
+    function get_cookie(cName, def) {
+          const name = cName + "=";
+          const cDecoded = decodeURIComponent(document.cookie); //to be careful
+          const cArr = cDecoded .split('; ');
+          let ret;
+
+          cArr.forEach(function(val){
+            if (val.indexOf(name) === 0) ret = val.substring(name.length);
+          })
+          if(ret===undefined){
+            ret = def===undefined ? null : def;
+          }
+          return ret;
+    }
+
+    return {
+        'put': function(name, value, args){
+            args = args || {};
+            set_cookie(name, value);
+        },
+        'get': function(name, args){
+            args = args || {};
+            let def = args.def;
+            return get_cookie(name, def);
+        }
+    }
+}();
+
 APP.nostr.data.event = function(){
     let _listener = {};
 
@@ -38,31 +78,11 @@ APP.nostr.data.event = function(){
 APP.nostr.data.user = function(){
     const CLIENT = 'nostrpy-web';
 
-    function set_cookie(cName, cValue, expDays) {
-            let date = new Date();
-            date.setTime(date.getTime() + (expDays * 24 * 60 * 60 * 1000));
-            const expires = "expires=" + date.toUTCString();
-            document.cookie = cName + "=" + cValue + "; " + expires + "; path=/";
-    }
-
-    function get_cookie(cName, def) {
-          const name = cName + "=";
-          const cDecoded = decodeURIComponent(document.cookie); //to be careful
-          const cArr = cDecoded .split('; ');
-          let ret;
-
-          cArr.forEach(function(val){
-            if (val.indexOf(name) === 0) ret = val.substring(name.length);
-          })
-          if(ret===undefined){
-            ret = def===undefined ? null : def;
-          }
-          return ret;
-    }
-
     return {
         'get_profile' : function(){
-            let ret = get_cookie('profile', {});
+            let ret = APP.nostr.data.state.get('profile', {
+                'def' : {}
+            });
             if(typeof(ret)==='string'){
                 try{
                     ret = JSON.parse(ret)
@@ -72,9 +92,9 @@ APP.nostr.data.user = function(){
             }
             return ret;
         },
-        'set_profile' : function(profile){
-            set_cookie('profile', JSON.stringify(profile));
-            APP.nostr.data.event.fire_event('profile_set', profile);
+        'set_profile' : function(p){
+            APP.nostr.data.state.put('profile', JSON.stringify(p));
+            APP.nostr.data.event.fire_event('profile_set', p);
 
 //            APP.remote.set_profile({
 //                'key' : key,
@@ -87,21 +107,45 @@ APP.nostr.data.user = function(){
 //                }
 //            });
         },
+        // to replace get/set
+        'profile': function(p){
+            let ret = p;
+            if(p!==undefined){
+                APP.nostr.data.state.put('profile', JSON.stringify(p));
+                APP.nostr.data.event.fire_event('profile_set', p);
+            }else{
+                ret = APP.nostr.data.state.get('profile', {
+                    'def' : {}
+                });
+                if(typeof(ret)==='string'){
+                    try{
+                        ret = JSON.parse(ret)
+                    }catch(e){
+                        ret = {};
+                    }
+                }
+            }
+            return ret;
+        },
         'get_client' : function(){
             return CLIENT;
         },
         'is_add_client_tag' : function(){
-            return get_cookie('add_client_tag', true);
+            return APP.nostr.data.state.get('add_client_tag', {
+                'def': true
+            });
         },
         'set_add_client_tag' : function(val){
-            set_cookie('add_client_tag', val);
+            APP.nostr.data.state.put('add_client_tag', val);
         },
         'enable_media' : function(val){
             let ret = val;
             if(val!==undefined){
-                set_cookie('enable_media', val);
+                APP.nostr.data.state.set('enable_media', val);
             }else{
-                ret = get_cookie('enable_media', true);
+                ret = APP.nostr.data.state.get('enable_media', {
+                    'def' : true
+                });
             }
             return ret
         }
@@ -227,4 +271,51 @@ APP.nostr.data.profiles = function(){
         }
 
     };
+}();
+
+/*
+    same thing but this is only for local profiles,
+    ie the ones that we can use to mkae posts, edit their meta etc.
+    done without the load code from above...probably need to add it...but work out what the fuck thats
+    doing first because I thought the network code was stopping mutiple requests to the same resource...
+*/
+APP.nostr.data.local_profiles = function(){
+        // as loaded
+    let _profiles_arr,
+        // set true when initial load is done
+    _is_loaded = false,
+        // has loaded started
+    _load_started = false;
+
+    function init(args){
+        let o_success = args.success;
+        _load_started = true;
+        args.success = function(data){
+            _is_loaded = true;
+            _profiles_arr = data['profiles'];
+            if(typeof(o_success)==='function'){
+                o_success(_profiles_arr)
+            }
+        }
+        args.cache = false;
+
+        if(_is_loaded){
+            o_success(_profiles_arr);
+        }else{
+            APP.remote.local_profiles(args);
+        }
+    };
+
+    APP.nostr.data.event.add_listener('local_profile_update',function(of_type, data){
+        _is_loaded = false;
+    });
+
+
+    return {
+        'init' : init,
+        'profiles' : function(){
+            return _profiles_arr;
+        }
+    }
+
 }();

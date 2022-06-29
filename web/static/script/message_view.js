@@ -8,38 +8,24 @@
     let _client,
         // url params
         _params = new URLSearchParams(window.location.search),
-        // event we want to look at
-        _event_id = _params.get('id'),
-        // where we clicked to this page and the root wasn't visible we add it so
-        // hopefully to put the post in somesort of context
-        _root_id = _params.get('root'),
         // main container where we'll draw out the events
         _main_con,
+        // for now we're using a standard event view, maybe in future
+        // compress down into unique users
         _my_event_view,
         _current_profile = APP.nostr.data.user.get_profile();
 
     function load_notes(){
         let filter = [
             {
-//                'kinds' :[1],
-                'ids' : [_event_id]
+                'kinds' :[4],
+                'authors' : [_current_profile.pub_k]
             },
             {
-//                'kinds' :[1],
-                '#e' : [_event_id]
+                'kinds': [4],
+                '#p' : [_current_profile.pub_k]
             }
         ];
-
-        if(_root_id!==null){
-            filter.push({
-//                'kinds' :[1],
-                'ids' : [_root_id]
-            });
-            filter.push({
-//                'kinds' :[1],
-                '#e' : [_root_id]
-            });
-        }
 
         APP.remote.load_events({
             'filter' : filter,
@@ -55,10 +41,6 @@
 
     // start when everything is ready
     $(document).ready(function() {
-        if(_event_id===''){
-            alert('no event id!!!');
-            return;
-        }
 
         // main page struc
         $('#main_container').html(APP.nostr.gui.templates.get('screen'));
@@ -84,10 +66,7 @@
         // our own listeners
         // profile has changed
         APP.nostr.data.event.add_listener('profile_set',function(of_type, data){
-            if(data.pub_k !== _current_profile.pub_k){
-                _current_profile = data;
-                _my_event_view.draw();
-            }
+            // it'll go to home now anyhow
         });
 
         // so we see new events
@@ -95,7 +74,7 @@
             _my_event_view.add(event);
         });
 
-        // any post/ reply we'll go to the home page
+        // any post
         APP.nostr.data.event.add_listener('post-success', function(type, event){
             // its just a post better go back to the reply screen
             if(event.type!=='reply'){

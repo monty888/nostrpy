@@ -1,22 +1,21 @@
 <!DOCTYPE html>
 <!--
-    page that will just show nostr text events for a given profile, updating as new text notes come in
+    page that will show NIP4 direct messages for current profile
 -->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Contacts</title>
-
+    <title>Event view</title>
      <!-- Bootstrap core CSS -->
     <link href="/css/bootstrap.css" rel="stylesheet">
     <link href="/css/nostr.css" rel="stylesheet">
 </head>
 <body style="height:100vh;">
 
-    <div class="container" style="height:100%;" id="main_container">
+<div class="container" style="height:100%;" id="main_container">
 
-    </div>
+</div>
 
     <!-- load js -->
     <script src="/script/jquery-3.5.1.js"></script>
@@ -24,6 +23,7 @@
     <!-- not currently using -->
     <!--<script src="/script/popper.min.js"></script>-->
     <script src="/script/bootstrap.js"></script>
+    <script src="/script/jquery.dataTables.min.js"></script>
     <script src="/script/dayjs.min.js"></script>
     <script src="/script/relativeTime.js"></script>
     <script src="/script/updateLocale.js"></script>
@@ -33,7 +33,7 @@
     <script src="/script/nostr-data.js"></script>
     <script src="/script/nostr-gui.js"></script>
     <script src="/script/nostr-templates.js"></script>
-    <script src="/script/contact_view.js"></script>
+    <script src="/script/message_view.js"></script>
 
 </body>
 

@@ -45,7 +45,9 @@ APP.nostr = {
                         'jpg': 'image',
                         'gif': 'image',
                         'png': 'image',
-                        'mp4': 'video'
+                        'mp4': 'video',
+                        'webm' : 'video',
+                        'mkv' : 'video'
                     },
                     parts = ref_str.toLowerCase().split('.'),
                     ext = parts[parts.length-1],
@@ -209,7 +211,7 @@ APP.nostr = {
             });
         },
         'http_matches' : function(txt){
-            const http_regex = /(https?\:\/\/[\w\.\/\-\%\?\=\~\+\@\&\;\#]*)/g
+            const http_regex = /(https?\:\/\/[\w\.\/\-\%\?\=\~\+\@\&\;\#\:]*)/g
             return txt.match(http_regex);
         },
         'copy_clipboard' : function copy_clipboard(value, success_text, fail_text){
@@ -336,44 +338,3 @@ dayjs.updateLocale('en', {
     yy: '%dy'
   }
 });
-
-/*
-    same thing but this os only for local profiles,
-    ie the ones that we can use to mkae posts, edit their meta etc.
-    done without the load code from above...probably need to add it...but work out what the fuck thats
-    doing first because I thought the network code was stopping mutiple requests to the same resource...
-*/
-APP.nostr.data.local_profiles = function(){
-        // as loaded
-    let _profiles_arr,
-        // set true when initial load is done
-    _is_loaded = false,
-        // has loaded started
-    _load_started = false;
-
-    function init(args){
-        let o_success = args.success;
-        _load_started = true;
-        args.success = function(data){
-            _is_loaded = true;
-            _profiles_arr = data['profiles'];
-            if(typeof(o_success)==='function'){
-                o_success(_profiles_arr)
-            }
-        }
-
-        if(_is_loaded){
-            o_success(_profiles_arr);
-        }else{
-            APP.remote.local_profiles(args);
-        }
-    };
-
-    return {
-        'init' : init,
-        'profiles' : function(){
-            return _profiles_arr;
-        }
-    }
-
-}();

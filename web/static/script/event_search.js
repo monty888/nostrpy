@@ -47,9 +47,7 @@
     $(document).ready(function() {
         // main page struc
         $('#main_container').html(APP.nostr.gui.templates.get('screen'));
-        APP.nostr.gui.header.create({
-            'enable_media': _enable_media
-        });
+        APP.nostr.gui.header.create({});
         // add specifc page scafold
         _main_con = $('#main-con');
         _main_con.html(APP.nostr.gui.templates.get('screen-events-search'));

@@ -63,14 +63,18 @@ APP.remote = function(){
             key = args.key!==undefined ? args.key : call_args.method.toLowerCase()==='get' ? call_args.url : data,
             // by default gets are cached, not posts unless cache is set true
             cache = args.cache===undefined ? call_args.method.toLowerCase()==='get' : args.cache,
-            the_cache;
+            the_cache,
+            force_new = args.force_new===undefined ? false : args.force_new;
 
         if(data!==undefined){
             call_args['data'] = data;
         }
 
         if(cache){
-            the_cache = _loading_cache[key];
+            if(force_new!==true){
+                the_cache = _loading_cache[key];
+            }
+
             // just add to the queue and return
             if(the_cache!==undefined){
                 // load started but not returned, queue
@@ -177,6 +181,7 @@ APP.remote = function(){
             do_query(args);
         },
         'local_profiles' : function(args){
+            console.log(_loading_cache[_local_profiles_url]);
             args['url'] = _local_profiles_url;
             do_query(args);
         },
@@ -210,6 +215,15 @@ APP.remote = function(){
         },
         'load_events' : function(args){
             let filter = args.filter===undefined ? {'kinds':[1]} : args.filter;
+
+            // if current profile is set then pass pub_k
+            let cp = APP.nostr.data.user.profile();
+            if(cp.pub_k!==undefined){
+                args['params'] = {
+                    'pub_k' : cp.pub_k
+                };
+            };
+
             args['url'] = _events_by_filter_url;
             args['method'] = 'POST';
             args['data'] = 'filter=' + JSON.stringify(filter);
@@ -258,7 +272,6 @@ APP.remote = function(){
             };
             do_query(args);
         }
-
 
     }
 }();
@@ -310,7 +323,8 @@ APP.nostr_client = function(){
     function start_client(){
         // just make the status into a string so we can compare, we only want to fire status event if we think things
         // changed
-        let _relay_status;
+        let _relay_status = APP.nostr.data.state.get('relay_status_str');
+
         function make_status_str(status){
             let ret = status.connected+';';
             // using a pool, we probably always would
@@ -332,6 +346,8 @@ APP.nostr_client = function(){
                     if(_relay_status!==n_relay_status){
                         APP.nostr.data.event.fire_event(data[0], data[1]);
                         _relay_status = n_relay_status;
+                        APP.nostr.data.state.put('relay_status_str', n_relay_status);
+                        APP.nostr.data.state.put('relay_status', JSON.stringify(data[1]));
                     }
 
                     // relay modal uses this, it fires for every status we get so we can update times

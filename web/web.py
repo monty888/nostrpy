@@ -153,7 +153,8 @@ class StaticServer:
         self._server.serve_forever()
 
     def stop(self):
-        self._server.stop()
+        if self._server:
+            self._server.stop()
 
     @property
     def app(self):
@@ -230,7 +231,7 @@ class NostrWeb(StaticServer):
         # self._app.route('/contact_list',callback=self._contact_list)
         self._app.route('/events', method='POST', callback=_get_err_wrapped(self._events_route))
         self._app.route('/events_text_search', callback=_get_err_wrapped(self._events_text_search_route))
-        self._app.route('/text_events', callback=self._text_events_route)
+        # self._app.route('/text_events', callback=self._text_events_route)
         self._app.route('/text_events_for_profile', callback=self._text_events_for_profile)
 
         # self._app.route('/post_text', method='POST', callback=_get_err_wrapped(self._do_post))
@@ -369,7 +370,8 @@ class NostrWeb(StaticServer):
         self._profile_handler.do_update_local(the_profile)
 
         return {
-            'success': 'profile linked'
+            'success': True,
+            'profile': the_profile.as_dict()
         }
 
 
@@ -507,7 +509,7 @@ class NostrWeb(StaticServer):
 
         # ok all looks good lets do this
         ret = {}
-        update_profile = Profile(priv_k=the_profile.public_key,
+        update_profile = Profile(priv_k=the_profile.private_key,
                                  pub_k=the_profile.public_key,
                                  attrs={
                                     'picture' : picture,
@@ -517,16 +519,20 @@ class NostrWeb(StaticServer):
                                  profile_name=profile_name,
                                  update_at=datetime.now())
 
+
         if save is True:
             # this will do the update for profile name
             self._profile_handler.do_update_local(update_profile)
             ret['save'] = True
 
-        if publish:
+
+        if publish is True:
             evt = update_profile.get_meta_event()
             evt.sign(update_profile.private_key)
             self._client.publish(evt)
             ret['publish'] = True
+
+        ret['profile'] = update_profile.as_dict()
 
         return ret
 
@@ -606,12 +612,29 @@ class NostrWeb(StaticServer):
     #         'contacts': 'TODO'
     #     }
 
-    def _get_events(self, filter):
+    def _get_events(self, filter,
+                    decrypt_profile: Profile = None):
         events = self._event_store.get_filter(filter)
         c_evt: Event
         ret = []
         for c_evt in events:
-            ret.append(c_evt.event_data())
+            to_add = c_evt.event_data()
+            if c_evt.kind == Event.KIND_ENCRYPT and decrypt_profile and decrypt_profile.private_key:
+                decrypted = 'problemo'
+                try:
+                    use_pub = c_evt.pub_key
+                    if c_evt.pub_key == decrypt_profile.public_key:
+                        use_pub = c_evt.p_tags[0]
+
+                    decrypted = c_evt.decrypted_content(priv_key=decrypt_profile.private_key,
+                                                        pub_key=use_pub)
+                except:
+                    pass
+                to_add['content'] = decrypted
+
+
+            ret.append(to_add)
+
         return ret
 
     def _events_route(self):
@@ -639,9 +662,13 @@ class NostrWeb(StaticServer):
             if 'limit' not in filter[0] or filter[0]['limit']>limit:
                 filter[0]['limit'] = limit
 
+        pub_k = request.query.pub_k
+        decrypt_profile: Profile = None
+        if pub_k != '':
+            decrypt_profile = self._profile_handler.profiles.get_profile(pub_k)
 
         return {
-            'events': self._get_events(filter)
+            'events': self._get_events(filter, decrypt_profile=decrypt_profile)
         }
 
     def _events_text_search_route(self):

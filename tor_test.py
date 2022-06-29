@@ -25,6 +25,7 @@ def tor_test():
 
         print(" * Creating our hidden service in %s" % hidden_service_dir)
         result = controller.create_hidden_service(hidden_service_dir, 80, target_port=5000)
+        print(result)
 
         # The hostname is only available when we can read the hidden service
         # directory. This requires us to be running with the same user as tor.

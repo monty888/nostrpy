@@ -42,6 +42,10 @@ APP.nostr.gui.templates = function(){
             '</div>',
             '<div id="list-con" style="overflow-y:auto;height: calc(100% - 40px);"></div>'
         ],
+        'screen-contact-view' : [
+            '<div id="about-con"></div>',
+            '<div id="contact-tabs" style="height:100%" ></div>'
+        ],
         'screen-profile-struct' : [
             '<div style="background-color:#221124;height:100%; min-height:400px;" >',
                 '<span class="pubkey-text">{{mode}} {{pub_k}}</span>',
@@ -85,7 +89,12 @@ APP.nostr.gui.templates = function(){
                         '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#app"/>',
                     '</svg>',
                 '</div>',
-                '<div id="relay-but" class="header-button" style="float:right;">',
+                '<div id="message-but" class="header-button" {{{message_style}}}>',
+                    '<svg class="bi" style="height:100%;width:100%;padding-left:10%;padding-right:10%;">',
+                        '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#envelope-fill"/>',
+                    '</svg>',
+                '</div>',
+                '<div id="relay-but" class="header-button" style="float:right;{{relay_style}}">',
                     '<svg class="bi" style="height:100%;width:100%;padding-left:10%;padding-right:10%;">',
                         '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#diagram-3"/>',
                     '</svg>',
@@ -186,7 +195,7 @@ APP.nostr.gui.templates = function(){
                                 '{{/about}}',
                                 '{{#can_edit}}',
                                     '<span id="{{uid}}-{{pub_k}}-profile-edit" style="float:right;" >',
-                                        '<svg class="bi-large" >',
+                                        '<svg class="bi" >',
                                             '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#pencil-square"/>',
                                         '</svg>',
                                     '</span>',
