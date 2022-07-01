@@ -16,24 +16,28 @@
         // main container where we'll draw out the events
         _main_con,
         _my_event_view,
-        _current_profile = APP.nostr.data.user.get_profile(),
+        _current_profile = APP.nostr.data.user.profile(),
         _my_filter;
 
     function create_filter(){
         let filter = [
             {
+                'kinds' : [1,4],
                 'ids' : [_event_id]
             },
             {
+                'kinds' : [1,4],
                 '#e' : [_event_id]
             }
         ];
 
         if(_root_id!==null){
             filter.push({
+                'kinds' : [1,4],
                 'ids' : [_root_id]
             });
             filter.push({
+                'kinds' : [1,4],
                 '#e' : [_root_id]
             });
         }

@@ -17,7 +17,6 @@ from nostr.ident.persist import SQLiteProfileStore, ProfileStoreInterface
 from nostr.ident.profile import ProfileEventHandler
 from nostr.util import util_funcs
 from web.web import NostrWeb
-import beaker.middleware
 
 # TODO: also postgres
 # defaults here if no config given???
@@ -201,15 +200,6 @@ def run_web(clients,
 
     hook_signals()
 
-    # set up the session middleware, we're not using this at the moment but expect we will
-    # session_opts = {
-    #     'session.type': 'file',
-    #     'session.cookie_expires': 300,
-    #     'session.data_dir': './data',
-    #     'session.auto': True
-    # }
-    # my_server.app = beaker.middleware.SessionMiddleware(my_server.app, session_opts)
-
     try:
         my_server.start(host='192.168.0.14')
     except OSError as oe:
@@ -260,6 +250,7 @@ def run():
         usage()
 
     if db_type == 'sqlite':
+        util_funcs.create_sqlite_store(db_file)
         event_store = ClientSQLiteEventStore(db_file,
                                              full_text=full_text)
         profile_store = SQLiteProfileStore(db_file)

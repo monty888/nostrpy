@@ -123,6 +123,13 @@ class ClientEventStoreInterface(EventStoreInterface):
         :return: all evts in store that passed the filter
         """
 
+    @abstractmethod
+    def event_relay(self, event_id: str) -> [str]:
+        """
+        :param event_id: nostr event_id
+        :return: [str] relay_urls
+        """
+
 
 class MemoryEventStore(EventStoreInterface):
     """
@@ -203,6 +210,10 @@ class ClientMemoryEventStore(MemoryEventStore, ClientEventStoreInterface):
                     ret = evt.created_at_ticks
 
         return ret
+
+    # TODO
+    # def event_relay(self, event_id: str) -> [str]:
+    #     pass
 
 
 class SQLEventStore(EventStoreInterface):
@@ -678,6 +689,17 @@ class ClientSQLEventStore(SQLEventStore, ClientEventStoreInterface):
                                  args=[evt.id, relay_url])
         except IntegrityError as ie:
             self._db.execute_sql('insert into event_relay values ((select id from events where event_id=?), ?)', args=[evt.id, relay_url])
+
+    def event_relay(self, event_id: str) -> [str]:
+        sql = """
+        select relay_url from event_relay er
+            inner join events e on e.id = er.id 
+            where e.event_id=%s
+            order by relay_url
+        """ % self._db.placeholder
+
+        return self._db.select_sql(sql=sql,
+                                   args=[event_id]).as_arr()
 
 
 class ClientSQLiteEventStore(SQLiteEventStore, ClientSQLEventStore,  ClientEventStoreInterface):

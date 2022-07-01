@@ -13,12 +13,14 @@ APP.remote = function(){
         _update_profile_url = '/update_profile',
         _export_profile_url = '/export_profile',
         _link_profile_url = '/link_profile',
-//        _set_profile_url = '/set_profile',
+        _set_profile_url = '/set_profile',
 //        _current_profile_url = '/current_profile',
         // details on a single profile
         _profile_url = '/profile',
         _post_text_url = '/post_text',
         _post_event_url = '/post_event',
+        _relay_info_url = '/relays',
+        _event_relay_url = '/event_relay',
 
         // to stop making duplicate calls we key here only one call per key will be made
         // either supply a key field else the call_args string is used
@@ -189,8 +191,9 @@ APP.remote = function(){
             args['url'] = _set_profile_url;
             args['method'] = 'POST';
             args['params'] = {
-                // either pub key or profile name
-                'profile' : args['key']
+                // either pub key or profile name, if undefined then it's no profile
+                // (the lurker)
+                'profile' : args['key']!==undefined ? args['key'] : ''
             };
             do_query(args);
         },
@@ -215,15 +218,6 @@ APP.remote = function(){
         },
         'load_events' : function(args){
             let filter = args.filter===undefined ? {'kinds':[1]} : args.filter;
-
-            // if current profile is set then pass pub_k
-            let cp = APP.nostr.data.user.profile();
-            if(cp.pub_k!==undefined){
-                args['params'] = {
-                    'pub_k' : cp.pub_k
-                };
-            };
-
             args['url'] = _events_by_filter_url;
             args['method'] = 'POST';
             args['data'] = 'filter=' + filter.as_str();
@@ -269,6 +263,17 @@ APP.remote = function(){
             args['params'] = {
                 'pub_k' : args.pub_k,
                 'priv_k' : args.priv_k
+            };
+            do_query(args);
+        },
+        'relay_info' : function(args){
+            args['url'] = _relay_info_url;
+            do_query(args);
+        },
+        'event_relay' : function(args){
+            args['url'] = _event_relay_url;
+            args['params'] = {
+                'event_id' : args.event_id
             };
             do_query(args);
         }
@@ -321,38 +326,24 @@ APP.nostr_client = function(){
     };
 
     function start_client(){
-        // just make the status into a string so we can compare, we only want to fire status event if we think things
-        // changed
-        let _relay_status = APP.nostr.data.state.get('relay_status_str');
 
-        function make_status_str(status){
-            let ret = status.connected+';';
-            // using a pool, we probably always would
-            if(status.relays!==undefined){
-                for(let c_relay in status.relays){
-                    ret+=c_relay+'-'+status.relays[c_relay].connected+';'
-                }
-            }
-            return ret;
-        }
+//        function make_status_str(status){
+//            let ret = status.connected+';';
+//            // using a pool, we probably always would
+//            if(status.relays!==undefined){
+//                for(let c_relay in status.relays){
+//                    ret+=c_relay+'-'+status.relays[c_relay].connected+';'
+//                }
+//            }
+//            return ret;
+//        }
 
         _create_ws({
             'on_data' : function(data){
                 let n_relay_status;
                 if(data[0]==='relay_status'){
-                    n_relay_status = make_status_str(data[1]);
-
-                    // normally use this one that only gets fired on meaningful change
-                    if(_relay_status!==n_relay_status){
-                        APP.nostr.data.event.fire_event(data[0], data[1]);
-                        _relay_status = n_relay_status;
-                        APP.nostr.data.state.put('relay_status_str', n_relay_status);
-                        APP.nostr.data.state.put('relay_status', JSON.stringify(data[1]));
-                    }
-
                     // relay modal uses this, it fires for every status we get so we can update times
-                    APP.nostr.data.event.fire_event('new_relay_status', data[1]);
-
+                    APP.nostr.data.event.fire_event('relay_status', data[1]);
                 // assumed event
                 }else{
                     console.log('new event!!!');

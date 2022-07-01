@@ -6,8 +6,6 @@
 !function(){
         // websocket to recieve event updates
     let _client,
-        // inline media where we can, where false just the link is inserted
-        _enable_media = true,
         _views = {},
         _current_profile,
         _main_con,
@@ -54,7 +52,7 @@
                                 _views[1].set_filter(APP.nostr.data.filter.create(data['filter']));
                                 success(data);
                             }
-                        })
+                        });
                     }
                 },
                 {
@@ -136,7 +134,7 @@
 //        _main_con.css('height','100%');
 
 //        _main_con.css('max-height','100%');
-        _current_profile = APP.nostr.data.user.get_profile();
+        _current_profile = APP.nostr.data.user.profile();
 
         function render_screen(){
             if(_current_profile.pub_k!==undefined){
@@ -156,6 +154,10 @@
                 _current_profile = data;
                 render_screen();
             }
+        });
+
+        APP.nostr.data.event.add_listener('home',function(of_type, data){
+            _my_tabs.set_selected_tab(1);
         });
 
         // saw a new events

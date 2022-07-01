@@ -29,7 +29,7 @@ from nostr.encrypt import Keys
 from nostr.client.client import ClientPool, Client
 from nostr.client.event_handlers import DeduplicateAcceptor
 from nostr.util import util_funcs
-
+import beaker.middleware
 
 class DateTimeEncoder(JSONEncoder):
     """
@@ -149,6 +149,7 @@ class StaticServer:
 
     def start(self, host='localhost', port=8080):
         logging.debug('started web server at %s port=%s' % (host, port))
+
         self._server = WSGIServer((host, port), self._app, handler_class=WebSocketHandler)
         self._server.serve_forever()
 
@@ -196,6 +197,15 @@ class NostrWeb(StaticServer):
 
         self._started_at = util_funcs.date_as_ticks(datetime.now())
 
+        # session tracking
+        session_opts = {
+            'session.type': 'file',
+            'session.cookie_expires': 60*60*24*365,
+            'session.data_dir': './data',
+            'session.auto': True
+        }
+        self._app = beaker.middleware.SessionMiddleware(self._app, session_opts)
+
     def _add_routes(self):
         # methods wrapped so that if they raise NostrException it'll be returned as json {error: text}
         def _get_err_wrapped(method):
@@ -224,15 +234,16 @@ class NostrWeb(StaticServer):
         self._app.route('/export_profile', method='POST', callback=_get_err_wrapped(self._export_profile))
         self._app.route('/link_profile', method='POST', callback=_get_err_wrapped(self._link_profile))
 
-        # self._app.route('/set_profile', method='POST', callback=_get_err_wrapped(self._set_profile))
-        # self._app.route('/current_profile', callback=_get_err_wrapped(self._get_profile))
-        # self._app.route('/state/js', callback=_get_err_wrapped(self._state))
+        self._app.route('/set_profile', method='POST', callback=_get_err_wrapped(self._set_profile))
+        self._app.route('/current_profile', callback=_get_err_wrapped(self._get_profile))
+        self._app.route('/state/js', callback=_get_err_wrapped(self._state))
 
         # self._app.route('/contact_list',callback=self._contact_list)
         self._app.route('/events', method='POST', callback=_get_err_wrapped(self._events_route))
         self._app.route('/events_text_search', callback=_get_err_wrapped(self._events_text_search_route))
         # self._app.route('/text_events', callback=self._text_events_route)
         self._app.route('/text_events_for_profile', callback=self._text_events_for_profile)
+        self._app.route('/event_relay', callback=_get_err_wrapped(self._event_relay_route))
 
         # self._app.route('/post_text', method='POST', callback=_get_err_wrapped(self._do_post))
         self._app.route('/post_event', method='POST', callback=_get_err_wrapped(self._do_post))
@@ -240,6 +251,16 @@ class NostrWeb(StaticServer):
         self._app.route('/relays', callback=_get_err_wrapped(self._relay_status))
 
         self._app.route('/websocket', callback=self._handle_websocket)
+        self._app.route('/count', callback=self._count)
+
+
+    def _count(self):
+        if 'count' not in self.session:
+            self.session['count'] = 0
+
+        self.session['count'] += 1
+        return str(self.session['count'])
+
 
     def _home_route(self):
 
@@ -437,18 +458,16 @@ class NostrWeb(StaticServer):
 
     def _do_post(self):
         event = json.loads(request.forms['event'])
-        pub_k = event['pub_k']
         content = event['content']
         tags = event['tags']
         kind = event['kind']
 
-        self._check_key(pub_k)
-        the_profile = self._profile_handler.profiles.get_profile(pub_k)
-        if the_profile is None:
-            raise Exception('no profile found for pub_k - %s' % pub_k)
-        if the_profile.private_key is None:
-            raise Exception('don\'t have private key for pub_k - %s' % pub_k)
+        current_profile = self.current_profile(with_private_key=True)
+        if 'private_key' not in current_profile:
+            raise NostrWebException('Need to be using a profile with private_key to make posts')
 
+        private_k = current_profile['private_key']
+        pub_k = current_profile['pub_k']
 
         evt = Event(kind=kind,
                     content=content,
@@ -456,13 +475,19 @@ class NostrWeb(StaticServer):
                     tags=tags)
 
         if kind == Event.KIND_ENCRYPT:
-            to = evt.p_tags
-            if len(to) == 0:
+            to_pub = None
+            for c_p in evt.p_tags:
+                if c_p != pub_k:
+                    to_pub = c_p
+                    break
+
+            if to_pub is None:
                 raise NostrWebException('no to pub_k in tags for encrypted post?!')
-            evt.content = evt.encrypt_content(the_profile.private_key, to[0])
 
 
-        evt.sign(the_profile.private_key)
+            evt.content = evt.encrypt_content(private_k, to_pub)
+
+        evt.sign(private_k)
         self._client.publish(evt)
 
         return evt.event_data()
@@ -498,7 +523,6 @@ class NostrWeb(StaticServer):
         profile_name = profile['profile_name']
         mode = request.forms['mode']
 
-        print('>>>>>>>>',mode)
         # sometimes we're creating new profiles adding priv_k to
         # link to existing
         if mode == 'create':
@@ -529,12 +553,10 @@ class NostrWeb(StaticServer):
                                  profile_name=profile_name,
                                  update_at=datetime.now())
 
-
         if save is True:
             # this will do the update for profile name
             self._profile_handler.do_update_local(update_profile)
             ret['save'] = True
-
 
         if publish is True:
             evt = update_profile.get_meta_event()
@@ -546,65 +568,69 @@ class NostrWeb(StaticServer):
 
         return ret
 
-    # def _set_profile(self):
-    #     """
-    #     set the profile that will be used when perfoming any action,
-    #         TODO: on some pages it will also change what the users sees and how its displayed
-    #          note currently there is no authentication it assumed that if you can see the web server then it safe
-    #          it could be served over tor and use their basic auth now I think...
-    #          or we can add some sort of basic auth (if available over web you'd want to serve over SSL...)
-    #     :return: profile if it was found
-    #     """
-    #     p_name = request.query.profile
-    #
-    #     if p_name == '':
-    #         raise Exception('profile not supplied')
-    #
-    #     profiles = self._profile_store.select({
-    #         'private_key': p_name,
-    #         'public_key': p_name,
-    #         'profile_name': p_name
-    #     }, profile_type=ProfileType.LOCAL)
-    #
-    #     if not len(profiles):
-    #         raise Exception('no profile found for key: %s' % p_name)
-    #
-    #     c_p = profiles[0]
-    #     self.session['profile'] = c_p.as_dict()
-    #     self.session.save()
-    #
-    #     return c_p.as_dict()
+    def _set_profile(self):
+        """
+        set the profile that will be used when perfoming any action,
+            TODO: on some pages it will also change what the users sees and how its displayed
+             note currently there is no authentication it assumed that if you can see the web server then it safe
+             it could be served over tor and use their basic auth now I think...
+             or we can add some sort of basic auth (if available over web you'd want to serve over SSL...)
+        :return: profile if it was found
+        """
+        p_name = request.query.profile
+        # if no profile then assumed set to lurker profile
+        c_p = {}
+        if p_name=='':
+            c_p = {}
+        else:
+            profiles = self._profile_store.select({
+                'private_key': p_name,
+                'public_key': p_name,
+                'profile_name': p_name
+            }, profile_type=ProfileType.LOCAL)
 
-    # def _get_profile(self):
-    #     """
-    #     :return: current profile or {} if not set
-    #     """
-    #     ret = {}
-    #     if 'profile' in self.session:
-    #         ret = self.session['profile']
-    #
-    #     return ret
+            if not len(profiles):
+                raise Exception('no profile found for key: %s' % p_name)
 
-    # def _state(self):
-    #     """
-    #     special route to return a js file that reflects some state on the server
-    #     currently this is only current profile but probbaly include othere settings
-    #     it should mainly things that we hold in the session var
-    #     don't do too much here, for most things its better to make requests as needed
-    #     :return:
-    #     """
-    #
-    #     c_profile = {}
-    #     if 'profile' in self.session:
-    #         c_profile = self.session['profile']
-    #
-    #     ret = """
-    #         APP.nostr.data.state = {
-    #             'current_user' : %s
-    #         };
-    #     """ % c_profile
-    #
-    #     return ret
+            c_p = profiles[0].as_dict(with_private_key=True)
+        self.session['profile'] = c_p
+        self.session.save()
+
+        return c_p
+
+    def _get_profile(self):
+        """
+        :return: current profile or {} if not set
+        """
+        return self.current_profile()
+
+    def current_profile(self, with_private_key=False):
+        ret = {}
+        if 'profile' in self.session:
+            ret = self.session['profile'].copy()
+            if 'private_key' in ret and with_private_key is False:
+                del ret['private_key']
+        return ret
+
+    def _state(self):
+        """
+        special route to return a js file that reflects some state on the server
+        currently this is only current profile but probbaly include othere settings
+        it should mainly things that we hold in the session var
+        don't do too much here, for most things its better to make requests as needed
+        :return:
+        """
+
+
+        ret = """
+            APP.nostr.data.server_state = {
+                'current_user' : %s,
+                'relay_status' : %s
+            };
+        """ % (json.dumps(self.current_profile()),
+               DateTimeEncoder().encode(self._client.status))
+
+        return ret
 
 
     # def _contact_list(self):
@@ -622,26 +648,34 @@ class NostrWeb(StaticServer):
     #         'contacts': 'TODO'
     #     }
 
-    def _get_events(self, filter,
-                    decrypt_profile: Profile = None):
+    def _decrypt_event_content_as_user(self, evt) -> str:
+        current_user = self.current_profile(with_private_key=True)
+        ret = 'unable to decrypt...'
+        if evt.kind == Event.KIND_ENCRYPT and 'private_key' in current_user:
+
+            try:
+                use_pub = evt.pub_key
+                if evt.pub_key == current_user['pub_k']:
+                    for c_p in evt.p_tags:
+                        if c_p != current_user['pub_k']:
+                            use_pub = c_p
+                            break
+                ret = evt.decrypted_content(priv_key=current_user['private_key'],
+                                            pub_key=use_pub)
+            except Exception as e:
+                pass
+
+        return ret
+
+    def _get_events(self, filter):
         events = self._event_store.get_filter(filter)
         c_evt: Event
         ret = []
+
         for c_evt in events:
             to_add = c_evt.event_data()
-            if c_evt.kind == Event.KIND_ENCRYPT and decrypt_profile and decrypt_profile.private_key:
-                decrypted = 'problemo'
-                try:
-                    use_pub = c_evt.pub_key
-                    if c_evt.pub_key == decrypt_profile.public_key:
-                        use_pub = c_evt.p_tags[0]
-
-                    decrypted = c_evt.decrypted_content(priv_key=decrypt_profile.private_key,
-                                                        pub_key=use_pub)
-                except:
-                    pass
-                to_add['content'] = decrypted
-
+            if c_evt.kind == Event.KIND_ENCRYPT:
+                to_add['content'] = self._decrypt_event_content_as_user(c_evt)
 
             ret.append(to_add)
 
@@ -672,13 +706,8 @@ class NostrWeb(StaticServer):
             if 'limit' not in filter[0] or filter[0]['limit']>limit:
                 filter[0]['limit'] = limit
 
-        pub_k = request.query.pub_k
-        decrypt_profile: Profile = None
-        if pub_k != '':
-            decrypt_profile = self._profile_handler.profiles.get_profile(pub_k)
-
         return {
-            'events': self._get_events(filter, decrypt_profile=decrypt_profile)
+            'events': self._get_events(filter)
         }
 
     def _events_text_search_route(self):
@@ -769,6 +798,22 @@ class NostrWeb(StaticServer):
             })
         }
 
+    def _event_relay_route(self):
+        event_id = request.query.event_id
+        if event_id == '':
+            raise NostrWebException('event_id required')
+
+        # looks like event id?
+        if not Event.is_event_id(event_id):
+            raise NostrWebException('%s doesn\'t look like a valid nostr event' % event_id)
+
+
+        # ok take a look which relays we saw at, TODO add date to event_relay
+
+        return {
+            'relays': self._event_store.event_relay(event_id)
+        }
+
     def _text_events_for_profile(self):
         """
         get texts notes for pub_k or those we have as contacts
@@ -810,33 +855,41 @@ class NostrWeb(StaticServer):
             # will update our profiles if meta/contact type data
             self._profile_handler.do_event(sub_id, evt, relay)
 
+
+
             if evt.kind == Event.KIND_ENCRYPT:
-                p_tags = evt.p_tags
-                if p_tags:
-                    send: Profile = self._profile_handler.profiles.lookup_pub_key(evt.pub_key)
-                    rec: Profile = self._profile_handler.profiles.lookup_pub_key(p_tags[0])
+                decrypted = 'unable to decrypt...'
+                try:
+                    """
+                        would prefer to use _decrypt_event_content_as_user here but we have a problem that we don't have
+                        a request so we can't get the current user...
+                        This means we'll decrypted anything we can we the profiles we have which may not be the profile the user 
+                        is currently using... Obvs this isn't great, possibly we can get the session user from the ws when we send data?
+                        It doesn't really matter at teh moment as front end will only show events for current view but most 
+                        importantly we're only really worried about a single user and all this profiles are theres so they could 
+                        just switch profile and see the text we decrypt anyhow
 
-                    # NOTE this means if we can we always send the events out decrypted....
-                    # OK cause we assume all profiles are the same person anyway
-                    # but it does mean that if your in one profile you still see decrypts
-                    # of other profiles....
-                    # will fix this when re introduce session. I assume the session
-                    # applies to the WS also....
+                    """
+                    p_tags = evt.p_tags
+                    if p_tags:
+                        send: Profile = self._profile_handler.profiles.lookup_pub_key(evt.pub_key)
+                        to_p = p_tags[0]
+                        if to_p == send.public_key:
+                            to_p = p_tags[1]
+
+                        rec: Profile = self._profile_handler.profiles.lookup_pub_key(to_p)
+
                     if send and rec:
-                        decrypted = 'problemo'
-                        try:
-                            if send.private_key:
-                                decrypted = evt.decrypted_content(priv_key=send.private_key,
-                                                                  pub_key=rec.public_key)
-                            elif rec.private_key:
-                                decrypted = evt.decrypted_content(priv_key=rec.private_key,
-                                                                  pub_key=send.public_key)
+                        if send.private_key:
+                            decrypted = evt.decrypted_content(priv_key=send.private_key,
+                                                              pub_key=rec.public_key)
+                        elif rec.private_key:
+                            decrypted = evt.decrypted_content(priv_key=rec.private_key,
+                                                              pub_key=send.public_key)
 
-                        except:
-                            pass
-                        evt.content = decrypted
-
-
+                except:
+                    pass
+                evt.content = decrypted
 
             # push the event to our web sockets, only those events that have a time
             # otherwise client will get flooded with events if server is being started and there

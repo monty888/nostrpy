@@ -22,7 +22,7 @@ from nostr.util import util_funcs
 
 # TODO: also postgres
 WORK_DIR = '/home/%s/.nostrpy/' % Path.home().name
-DB = SQLiteDatabase('%s/nostr-client.db' % WORK_DIR)
+DB = SQLiteDatabase('%s/nostr-client-test.db' % WORK_DIR)
 EVENT_STORE = ClientSQLEventStore(DB)
 # EVENT_STORE = TransientEventStore()
 PROFILE_STORE = SQLProfileStore(DB)

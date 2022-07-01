@@ -13,7 +13,7 @@
         // for now we're using a standard event view, maybe in future
         // compress down into unique users
         _my_event_view,
-        _current_profile = APP.nostr.data.user.get_profile(),
+        _current_profile = APP.nostr.data.user.profile(),
         _my_filter;
 
     function load_notes(){

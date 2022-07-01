@@ -43,6 +43,7 @@ APP.nostr = {
             'media_lookup': function media_lookup(ref_str){
                 let media_types = {
                         'jpg': 'image',
+                        'jpeg' : 'image',
                         'gif': 'image',
                         'png': 'image',
                         'mp4': 'video',
@@ -151,9 +152,8 @@ APP.nostr = {
                     }
                 return ret;
             },
-            'get_note_content_for_render' : function(evt){
-                let enable_media = APP.nostr.data.user.enable_media(),
-                    content = evt.content;
+            'get_note_content_for_render' : function(evt, enable_media){
+                let content = evt.content;
 
                 // make safe
                 content = APP.nostr.util.html_escape(content);

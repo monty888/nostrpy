@@ -1,39 +1,41 @@
 APP.nostr.data.state = function(){
-    /* some basic state, done via cookies currently but expect we'll at some point move to session/local storage
-        some would probably be better on the server and also possible indexdb
-
-    */
-    function set_cookie(cName, cValue, expDays) {
-            let date = new Date();
-            date.setTime(date.getTime() + (expDays * 24 * 60 * 60 * 1000));
-            const expires = "expires=" + date.toUTCString();
-            document.cookie = cName + "=" + cValue + "; " + expires + "; path=/";
-    }
-
-    function get_cookie(cName, def) {
-          const name = cName + "=";
-          const cDecoded = decodeURIComponent(document.cookie); //to be careful
-          const cArr = cDecoded .split('; ');
-          let ret;
-
-          cArr.forEach(function(val){
-            if (val.indexOf(name) === 0) ret = val.substring(name.length);
-          })
-          if(ret===undefined){
-            ret = def===undefined ? null : def;
-          }
-          return ret;
-    }
+    // todo
 
     return {
         'put': function(name, value, args){
             args = args || {};
-            set_cookie(name, value);
+            sessionStorage.setItem(name, value);
         },
         'get': function(name, args){
             args = args || {};
-            let def = args.def;
-            return get_cookie(name, def);
+            let def = args.def,
+            ret = sessionStorage.getItem(name);
+            if(ret===null){
+                ret = def;
+            }
+            return ret;
+        }
+    }
+}();
+
+APP.nostr.data.relay_status = function(){
+    let _state;
+
+    function init(){
+        _state = APP.nostr.data.server_state.relay_status;
+        // watch for changes, to start watching for changes you need to make a get request...
+        APP.nostr.data.event.add_listener('relay_status', function(type, data){
+            _state = data[1];
+        });
+    };
+
+    return {
+        'get' : function(){
+            // intial state from server, rendered into state/js file
+            if(_state===undefined){
+                init();
+            };
+            return _state;
         }
     }
 }();
@@ -176,54 +178,79 @@ APP.nostr.data.event = function(){
 APP.nostr.data.user = function(){
     const CLIENT = 'nostrpy-web';
 
-    return {
-        'get_profile' : function(){
-            let ret = APP.nostr.data.state.get('profile', {
-                'def' : {}
-            });
-            if(typeof(ret)==='string'){
-                try{
-                    ret = JSON.parse(ret)
-                }catch(e){
-                    ret = {};
-                }
-            }
-            return ret;
-        },
-        'set_profile' : function(p){
-            APP.nostr.data.state.put('profile', JSON.stringify(p));
-            APP.nostr.data.event.fire_event('profile_set', p);
+    let _user;
 
-//            APP.remote.set_profile({
-//                'key' : key,
-//                'success' : function(data){
-//                    _current_profile = data;
-//                    if(typeof(callback)==='function'){
-//                        return data;
-//                    }
-//                    APP.nostr.data.event.fire_event('profile_set', data);
-//                }
+    function init(){
+        _user = APP.nostr.data.server_state.current_user;
+    };
+
+    return {
+//        'get_profile' : function(){
+//            let ret = APP.nostr.data.state.get('profile', {
+//                'def' : {}
 //            });
-        },
-        // to replace get/set
-        'profile': function(p){
-            let ret = p;
-            if(p!==undefined){
-                APP.nostr.data.state.put('profile', JSON.stringify(p));
-                APP.nostr.data.event.fire_event('profile_set', p);
-            }else{
-                ret = APP.nostr.data.state.get('profile', {
-                    'def' : {}
-                });
-                if(typeof(ret)==='string'){
-                    try{
-                        ret = JSON.parse(ret)
-                    }catch(e){
-                        ret = {};
+//            if(typeof(ret)==='string'){
+//                try{
+//                    ret = JSON.parse(ret)
+//                }catch(e){
+//                    ret = {};
+//                }
+//            }
+//            return ret;
+//        },
+//        'set_profile' : function(p){
+//            APP.nostr.data.state.put('profile', JSON.stringify(p));
+//            APP.nostr.data.event.fire_event('profile_set', p);
+//
+////            APP.remote.set_profile({
+////                'key' : key,
+////                'success' : function(data){
+////                    _current_profile = data;
+////                    if(typeof(callback)==='function'){
+////                        return data;
+////                    }
+////                    APP.nostr.data.event.fire_event('profile_set', data);
+////                }
+////            });
+//        },
+//        // to replace get/set
+//        'profile': function(p){
+//            let ret = p;
+//            if(p!==undefined){
+//                APP.nostr.data.state.put('profile', JSON.stringify(p));
+//                APP.nostr.data.event.fire_event('profile_set', p);
+//            }else{
+//                ret = APP.nostr.data.state.get('profile', {
+//                    'def' : {}
+//                });
+//                if(typeof(ret)==='string'){
+//                    try{
+//                        ret = JSON.parse(ret)
+//                    }catch(e){
+//                        ret = {};
+//                    }
+//                }
+//            }
+//            return ret;
+//        },
+        'profile': function(user){
+            // intial state from server, rendered into state/js file
+            if(_user===undefined){
+                init();
+            };
+            // setting a new user
+            if(user!==undefined && user.pub_k!==_user.pub_k){
+                APP.remote.set_profile({
+                    'key' : user.pub_k,
+                    'success' : function(data){
+                        // obvs we should look at data first really!!...
+                        _user = data;
+                        APP.nostr.data.event.fire_event('profile_set', _user);
                     }
-                }
+                });
             }
-            return ret;
+
+            return _user;
         },
         'get_client' : function(){
             return CLIENT;

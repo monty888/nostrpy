@@ -210,12 +210,14 @@ class Profile:
 
         return ret
 
-    def as_dict(self):
+    def as_dict(self, with_private_key=False):
         ret = {
             'pub_k': self.public_key,
             'attrs': self.attrs,
-            'can_sign' : self.private_key is not None
+            'can_sign': self.private_key is not None
         }
+        if with_private_key:
+            ret['private_key'] = self.private_key
 
         if self.profile_name:
             ret['profile_name'] = self.profile_name

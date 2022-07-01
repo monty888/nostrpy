@@ -37,7 +37,10 @@
                 '#p' : [_pub_k]
             }
         ]),
-        _current_profile = APP.nostr.data.user.get_profile();
+        // as the user we're looking at sees things
+        _feed_view,
+        _feed_filter,
+        _current_profile = APP.nostr.data.user.profile();
 
     function init_view(con, filter){
         return APP.nostr.gui.event_view.create({
@@ -117,7 +120,7 @@
                             _post_view.set_notes(data['events']);
                         }, _post_filter);
                     }
-                }else if(i==1){
+                }else if(i===1){
                     if(_reply_view===undefined){
                         _reply_view = init_view(con, _reply_filter);
                         do_load(function(data){
@@ -125,6 +128,17 @@
                         }, _reply_filter);
 
                     };
+                // feed tab
+                }else if(i===2){
+                    _feed_view = init_view(con);
+                    APP.remote.load_notes_from_profile({
+                        'pub_k' : _pub_k,
+                        'success': function(data){
+                            // nasty, but we don't know the filter till we loaded the data
+                            _feed_view.set_filter(APP.nostr.data.filter.create(data['filter']));
+                            _feed_view.set_notes(data['events']);
+                        }
+                    });
                 }
             },
             'tabs' : [
@@ -133,6 +147,9 @@
                 },
                 {
                     'title': 'posts & replies'
+                },
+                {
+                    'title': 'feed'
                 }
             ]
         })

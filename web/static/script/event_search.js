@@ -25,7 +25,7 @@
         // timer before we add current val to history
         _history_timer,
         _my_event_view,
-        _current_profile = APP.nostr.data.user.get_profile();
+        _current_profile = APP.nostr.data.user.profile();
 
     function load_notes(on_done){
 

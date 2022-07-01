@@ -244,13 +244,19 @@ class Client:
 
     def _on_close(self, ws, close_status_code, close_msg):
         logging.debug('Client::_on_close %s' % self._url)
+        if self._on_status:
+            self._on_status(self.status)
 
     def _on_open(self, ws):
         logging.debug('Client::_on_open %s' % self._url)
         self._reset_status()
         if self._on_connect:
             self._on_connect(self)
+        if self._on_status:
+            self._on_status(self.status)
 
+    def _did_comm(self, ws):
+        print('ping or pong')
 
     def start(self):
         # should probably check self._run and error if already true
@@ -262,7 +268,9 @@ class Client:
                                               on_open=self._on_open,
                                               on_message=self._on_message,
                                               on_error=self._on_error,
-                                              on_close=self._on_close)
+                                              on_close=self._on_close,
+                                              on_ping=self._did_comm,
+                                              on_pong=self._did_comm)
             self._ws.run_forever()  # Set dispatcher to automatic reconnection
 
         def monitor_thread():
@@ -275,7 +283,7 @@ class Client:
                 time.sleep(1)
 
         def my_thread():
-            Thread(target=monitor_thread).start()
+            # Thread(target=monitor_thread).start()
 
             while self._run:
                 try:

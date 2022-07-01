@@ -22,8 +22,8 @@ class Event:
     KIND_ENCRYPT = 4
     KIND_DELETE = 5
 
-    @classmethod
-    def create_from_JSON(cls, evt_json):
+    @staticmethod
+    def create_from_JSON(evt_json):
         """
         TODO: add option to verify sig/eror if invalid?
         creates an event object from json - at the moment this must be a full event, has id and has been signed,
@@ -40,6 +40,21 @@ class Event:
             pub_key=evt_json['pubkey'],
             created_at=util_funcs.ticks_as_date(evt_json['created_at'])
         )
+
+    @staticmethod
+    def is_event_id(event_id: str):
+        """
+        basic check that given str is a nostr event id
+        """
+        ret = False
+        if len(event_id) == 64:
+            # and also hex, will throw otherwise
+            try:
+                bytearray.fromhex(event_id)
+                ret = True
+            except:
+                pass
+        return ret
 
     def __init__(self, id=None, sig=None, kind=None, content=None, tags=None, pub_key=None, created_at=None):
         self._id = id

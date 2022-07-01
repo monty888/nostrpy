@@ -15,9 +15,12 @@ APP.nostr.gui.header = function(){
     function watch_profile(){
         // look for future updates
         APP.nostr.data.event.add_listener('profile_set',function(of_type, data){
-            if(data.pub_k !== _current_profile.pub_k){
+            if(window.location.pathname!=='/'){
+                window.location='/';
+            }else{
                 _current_profile = data;
                 set_profile_button();
+                set_messages();
             }
         });
     }
@@ -25,15 +28,31 @@ APP.nostr.gui.header = function(){
     function watch_relay(){
         // look for future updates
         APP.nostr.data.event.add_listener('relay_status',function(of_type, data){
-            if(data.connected){
-                _relay_but.css('background-color', 'green');
-            }else{
-                _relay_but.css('background-color', 'red');
-            }
+            _relay_but.css('background-color', relay_color(data));
+//            if(data.connected){
+//                if(data.connect_count===data.relay_count){
+//                    _relay_but.css('background-color', 'green');
+//                }else{
+//                    _relay_but.css('background-color', 'orange');
+//                }
+//            }else{
+//                _relay_but.css('background-color', 'red');
+//            }
 
         });
     }
 
+    function relay_color(state){
+        let ret = 'red';
+        if(state.connected){
+            if(state.connect_count===state.relay_count){
+                ret = 'green';
+            }else{
+                ret = 'orange';
+            }
+        }
+        return ret;
+    }
 
     // actually update the image on the profile button
     function set_profile_button(){
@@ -55,6 +74,15 @@ APP.nostr.gui.header = function(){
         }
     }
 
+    function set_messages(){
+        if(_current_profile.pub_k===undefined){
+            _message_but.css('display','none');
+        }else{
+            _message_but.css('display','');
+        }
+
+    }
+
     function render_head(){
         // the intial draw with state we have on page load
         let state = {
@@ -62,12 +90,8 @@ APP.nostr.gui.header = function(){
                 return _current_profile.pub_k!==undefined ? 'style="display:default;"' : 'style="display:none;"';
             },
             'relay_style': function(){
-                let relay_status = APP.nostr.data.state.get('relay_status', {
-                    'def' : '{}'
-                });
-
-                relay_state = JSON.parse(relay_status);
-                return relay_state.connected===true ? 'background-color:green;' : 'background-color:red;'
+                let relay_status = APP.nostr.data.relay_status.get();
+                return 'background-color:'+relay_color(relay_status);
             }
 
         };
@@ -78,7 +102,7 @@ APP.nostr.gui.header = function(){
     function create(args){
         args = args || {};
         _con = args.con || $('#header-con');
-        _current_profile = APP.nostr.data.user.get_profile();
+        _current_profile = APP.nostr.data.user.profile();
         _enable_media = APP.nostr.data.user.enable_media(),
         // draw the header bar
         render_head();
@@ -102,6 +126,8 @@ APP.nostr.gui.header = function(){
         _home_but.on('click', function(){
             if(window.location.pathname!=='/'){
                 window.location='/';
+            }else{
+                APP.nostr.data.event.fire_event('home', null);
             }
         });
 
@@ -162,7 +188,7 @@ APP.nostr.gui.post_button = function(){
             _post_el.on('click', function(){
                 APP.nostr.gui.post_modal.show();
             });
-            check_show(APP.nostr.data.user.get_profile());
+            check_show(APP.nostr.data.user.profile());
 
             // if profile changes we check that it's a user that can post
             APP.nostr.data.event.add_listener('profile_set',function(of_type, data){
@@ -543,13 +569,13 @@ APP.nostr.gui.event_view = function(){
                 'evt': the_note,
                 'event_id' : the_note.id,
                 'short_event_id' : APP.nostr.util.short_key(the_note.id),
-                'content' : _gui.get_note_content_for_render(the_note),
+                'content' : _gui.get_note_content_for_render(the_note, _enable_media),
                 'short_key' : APP.nostr.util.short_key(pub_k),
                 'pub_k' : pub_k,
                 'picture' : _gui.get_profile_picture(pub_k),
                 'at_time': dayjs.unix(the_note.created_at).fromNow(),
                 'can_reply' : function(){
-                    return APP.nostr.data.user.get_profile().pub_k!==undefined;
+                    return APP.nostr.data.user.profile().pub_k!==undefined;
                 }
             };
 
@@ -638,7 +664,7 @@ APP.nostr.gui.event_view = function(){
                             event_id = parts[0],
                             type = parts[1],
                             evt = _event_map[event_id] !==undefined ? _event_map[event_id].event : null;
-                        console.log(parts);
+
                         if(type==='expand'){
                             _expand_event(evt);
                         }else if(type==='pt' || type==='pp'){
@@ -843,7 +869,7 @@ APP.nostr.gui.profile_about = function(){
         // global profiles obj
         _profiles = APP.nostr.data.profiles,
         _tmpl = [
-                '<div style="padding-top:2px;">',
+                '<div style="height:100%;padding-top:2px;overflow-y:scroll;">',
               //  '<span style="display:table-cell;width:128px; background-color:#111111;padding-right:10px;" >',
                     // TODO: do something if unable to load pic
                     '{{#picture}}',
@@ -854,6 +880,10 @@ APP.nostr.gui.profile_about = function(){
                             '<span>{{name}}@</span>',
                         '{{/name}}',
                         '<span class="pubkey-text" >{{pub_k}}</span>',
+                        // dm icon
+                        '<svg id="{{pub_k}}-dm" class="bi" >',
+                            '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#envelope-fill"/>',
+                        '</svg>',
                         '{{#about}}',
                             '<div style="max-height:48px;overflow:auto;">',
                                 '{{{about}}}',
@@ -977,9 +1007,16 @@ APP.nostr.gui.profile_about = function(){
                 // listen for clicks
                 $(_con).on('click', function(e){
                     let id = APP.nostr.gui.get_clicked_id(e);
-                    if(_click_map[id]!==undefined){
-                        _click_map[id].func(_click_map[id].data);
+                    if(id!==null){
+                        if(id.indexOf('-dm')>=0){
+                            alert('so you think you are a player!!!');
+                        }else if(_click_map[id]!==undefined){
+                            _click_map[id].func(_click_map[id].data);
+                        }
+
+
                     }
+
 //                    else if((id!==null) && (id.indexOf('-cc')>0)){
 ////                        alert('clipboard copy!!!!' + id.replace('-cc',''));
 //                        navigator.clipboard.writeText(id.replace('-cc',''));
@@ -1082,12 +1119,31 @@ APP.nostr.gui.event_detail = function(){
             _uid = APP.nostr.gui.uid(),
             _my_tabs = APP.nostr.gui.tabs.create({
                 'con' : _con,
+                'on_tab_change': function(i, con){
+                    if(i==2){
+                        con.html('loading...');
+                        let tmpl = [
+                            '{{#relays}}',
+                                '<div>{{relay_url}}</div>',
+                            '{{/relays}}'
+                        ].join('');
+                        APP.remote.event_relay({
+                            'event_id' : _event.id,
+                            'success' : function(data){
+                                con.html(Mustache.render(tmpl, data));
+                            }
+                        });
+                    }
+                },
                 'tabs' : [
                     {
                         'title' : 'fields',
                     },
                     {
                         'title' : 'raw'
+                    },
+                    {
+                        'title' : 'relays'
                     }
                 ]
             });
@@ -1155,6 +1211,9 @@ APP.nostr.gui.event_detail = function(){
             _my_tabs.get_tab(1)['content-con'].html('<div style="white-space:pre-wrap;max-width:100%" class="event-detail" >' + APP.nostr.util.html_escape(JSON.stringify(_event, null, 2))+ '</div>');
         }
 
+        function render_relays(){
+
+        }
 
         function draw(){
             if(_render_obj===undefined){
@@ -1814,6 +1873,7 @@ APP.nostr.gui.post_modal = function(){
             title = 'make post',
             post_text_area,
             render_obj= {},
+            enable_media = APP.nostr.data.user.enable_media(),
             uid = gui.uid();
 
             if(type==='reply'){
@@ -1822,7 +1882,7 @@ APP.nostr.gui.post_modal = function(){
                 render_obj['event'] = jQuery.extend({}, event);
                 render_obj['event'].uid = uid;
                 render_obj['picture'] = gui.get_profile_picture(event.pubkey);
-                render_obj['content'] = gui.get_note_content_for_render(event);
+                render_obj['content'] = gui.get_note_content_for_render(event, enable_media);
 
             }
 
@@ -1839,7 +1899,7 @@ APP.nostr.gui.post_modal = function(){
                         content = post_text_area.val()
                         hash_tags = (content).match(/(^|\s)\#\w*[\S|$]/g),
                         evt = {
-                            'pub_k' : user.get_profile().pub_k,
+                            'pub_k' : user.profile().pub_k,
                             'content': content,
                             'tags' : n_tags,
                             'kind' : type==='reply' ? event.kind : kind
@@ -1911,7 +1971,7 @@ APP.nostr.gui.profile_select_modal = function(){
         // just incase it didn't get inted yet
         _profiles.init();
         _row_tmpl = APP.nostr.gui.templates.get('profile-list');
-        _selected_profile = _current_profile = APP.nostr.data.user.get_profile();
+        _selected_profile = _current_profile = APP.nostr.data.user.profile();
         APP.nostr.gui.modal.set_content('<div id="'+_uid+'"></div>');
 
         create_list_data();
@@ -2015,8 +2075,8 @@ APP.nostr.gui.profile_select_modal = function(){
 
         $('#nostr-profile_select-ok-button').on('click', function(){
             if(_current_profile.pub_k!==_selected_profile){
-                APP.nostr.data.user.set_profile(_selected_profile);
-                window.location = '/';
+                APP.nostr.data.user.profile(_selected_profile);
+//                window.location = '/';
             }
             APP.nostr.gui.modal.hide();
         });
@@ -2041,7 +2101,7 @@ APP.nostr.gui.relay_view_modal = function(){
         _gui = APP.nostr.gui,
         _is_showing = false;
 
-    APP.nostr.data.event.add_listener('new_relay_status',function(of_type, data){
+    APP.nostr.data.event.add_listener('relay_status',function(of_type, data){
         _relay_status = data;
         if(_is_showing){
             draw_relays();
@@ -2098,7 +2158,6 @@ APP.nostr.gui.relay_view_modal = function(){
             'row_tmpl' : APP.nostr.gui.templates.get('modal-relay-list-row')
         });
         my_list.draw();
-
     }
 
     function show(){
@@ -2113,10 +2172,15 @@ APP.nostr.gui.relay_view_modal = function(){
         });
         // show it
         _is_showing = true;
+        _relay_status = APP.nostr.data.relay_status.get();
         draw_relays();
+//        APP.remote.relay_info({
+//            'success' : function(data){
+//                _relay_status = JSON.parse(data);
+//                draw_relays();
+//            }
+//        });
         APP.nostr.gui.modal.show();
-
-
     }
 
     return {
