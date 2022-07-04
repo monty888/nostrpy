@@ -73,7 +73,8 @@ def hook_signals():
 
 def run_tor(clients,
             event_store: ClientEventStoreInterface,
-            profile_store: ProfileStoreInterface):
+            profile_store: ProfileStoreInterface,
+            web_dir: str):
     # we'll persist events, not done automatically by nostrweb
     evt_persist = PersistEventHandler(event_store)
 
@@ -104,7 +105,7 @@ def run_tor(clients,
                            on_connect=my_connect,
                            on_status=my_status)
 
-    my_server = NostrWeb(file_root='%s/PycharmProjects/nostrpy/web/static/' % Path.home(),
+    my_server = NostrWeb(file_root='%s/web/static/' % web_dir,
                          event_store=event_store,
                          profile_store=profile_store,
                          client=my_client)
@@ -159,7 +160,8 @@ def run_tor(clients,
 
 def run_web(clients,
             event_store: ClientEventStoreInterface,
-            profile_store: ProfileStoreInterface):
+            profile_store: ProfileStoreInterface,
+            web_dir: str):
 
     # we'll persist events, not done automatically by nostrweb
     evt_persist = PersistEventHandler(event_store)
@@ -191,7 +193,7 @@ def run_web(clients,
                            on_connect=my_connect,
                            on_status=my_status)
 
-    my_server = NostrWeb(file_root='%s/PycharmProjects/nostrpy/web/static/' % Path.home(),
+    my_server = NostrWeb(file_root='%s/web/static/' % web_dir,
                          event_store=event_store,
                          profile_store=profile_store,
                          client=my_client)
@@ -216,19 +218,20 @@ def run():
     db_type = 'sqlite'
     full_text = True
     is_tor = False
+    web_dir = os.getcwd()
 
     # who to attach to
     clients = [
-        # {
-        #     'client': 'wss://nostr-pub.wellorder.net',
-        #     'write': True
-        # },
-        'ws://localhost:8081',
-        'ws://localhost:8082'
-        # {
-        #     'client': 'wss://relay.damus.io',
-        #     'write': True
-        # }
+        {
+            'client': 'wss://nostr-pub.wellorder.net',
+            'write': True
+        },
+        # 'ws://localhost:8081',
+        # 'ws://localhost:8082',
+        {
+            'client': 'wss://relay.damus.io',
+            'write': True
+        }
     ]
 
 
@@ -258,13 +261,14 @@ def run():
     if is_tor:
         run_tor(clients=clients,
                 event_store=event_store,
-                profile_store=profile_store)
+                profile_store=profile_store,
+                web_dir=web_dir)
     else:
         run_web(clients=clients,
                 event_store=event_store,
-                profile_store=profile_store)
+                profile_store=profile_store,
+                web_dir=web_dir)
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
     run()
-
