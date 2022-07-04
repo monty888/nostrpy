@@ -78,13 +78,6 @@
 
         // start client for future notes....
         load_notes();
-        // init the profiles data
-        APP.nostr.data.profiles.init({
-            'on_load' : function(){
-                _my_event_view.profiles_loaded();
-            }
-        });
-
 
         APP.nostr.gui.post_button.create();
         // our own listeners

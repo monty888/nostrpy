@@ -219,16 +219,16 @@ def run():
 
     # who to attach to
     clients = [
-        {
-            'client': 'wss://nostr-pub.wellorder.net',
-            'write': True
-        },
+        # {
+        #     'client': 'wss://nostr-pub.wellorder.net',
+        #     'write': True
+        # },
         'ws://localhost:8081',
-        'ws://localhost:8082',
-        {
-            'client': 'wss://relay.damus.io',
-            'write': True
-        }
+        'ws://localhost:8082'
+        # {
+        #     'client': 'wss://relay.damus.io',
+        #     'write': True
+        # }
     ]
 
 

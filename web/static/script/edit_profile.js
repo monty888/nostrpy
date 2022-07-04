@@ -23,14 +23,6 @@
         // main container where we'll draw out the events
         _main_con = $('#main-con');
 
-
-        // init the profiles data
-        APP.nostr.data.profiles.init({
-            'on_load' : function(){
-
-            }
-        });
-
         APP.nostr.gui.profile_edit.create({
             'con' : _main_con,
             'pub_k': _pub_k

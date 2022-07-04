@@ -4,6 +4,23 @@
 -->
 <html lang="en">
 <head>
+    <script defer src="/script/jquery-3.6.0.min.js"></script>
+    <!-- required for bootstrap dropdown, needs to be before bootstrap js -->
+    <!-- not currently using -->
+    <!--<script src="/script/popper.min.js"></script>-->
+    <script defer src="/script/bootstrap.min.js"></script>
+    <script defer src="/script/dayjs.min.js"></script>
+    <script defer src="/script/relativeTime.js"></script>
+    <script defer src="/script/updateLocale.js"></script>
+    <script defer src="/script/mustache.js"></script>
+    <script defer src="/script/network.js"></script>
+    <script defer src="/script/nostr.js"></script>
+    <script defer src="/script/nostr-data.js"></script>
+    <script defer src="/state/js"></script>
+    <script defer src="/script/nostr-gui.js"></script>
+    <script defer src="/script/nostr-templates.js"></script>
+    <script defer src="/script/event_view.js"></script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Event view</title>
@@ -12,30 +29,8 @@
     <link href="/css/nostr.css" rel="stylesheet">
 </head>
 <body style="height:100vh;">
-
-<div class="container" style="height:100%;" id="main_container">
-
-</div>
-
-    <!-- load js -->
-    <script src="/script/jquery-3.5.1.js"></script>
-    <!-- required for bootstrap dropdown, needs to be before bootstrap js -->
-    <!-- not currently using -->
-    <!--<script src="/script/popper.min.js"></script>-->
-    <script src="/script/bootstrap.js"></script>
-    <script src="/script/jquery.dataTables.min.js"></script>
-    <script src="/script/dayjs.min.js"></script>
-    <script src="/script/relativeTime.js"></script>
-    <script src="/script/updateLocale.js"></script>
-    <script src="/script/mustache.js"></script>
-    <script src="/script/network.js"></script>
-    <script src="/script/nostr.js"></script>
-    <script src="/script/nostr-data.js"></script>
-    <script src="/state/js"></script>
-    <script src="/script/nostr-gui.js"></script>
-    <script src="/script/nostr-templates.js"></script>
-    <script src="/script/event_view.js"></script>
-
+    <div class="container" style="height:100%;" id="main_container">
+    </div>
 </body>
 
 </html>

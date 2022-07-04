@@ -228,7 +228,7 @@ class NostrWeb(StaticServer):
 
         self._app.route('/', callback=_get_err_wrapped(self._home_route))
         self._app.route('/profile', callback=_get_err_wrapped(self._profile))
-        self._app.route('/profiles', callback=self._profiles_list)
+        self._app.route('/profiles', method=['POST', 'GET'], callback=self._profiles_list)
         self._app.route('/local_profiles', callback=_get_err_wrapped(self._local_profiles))
         self._app.route('/update_profile', method='POST', callback=_get_err_wrapped(self._do_profile_update))
         self._app.route('/export_profile', method='POST', callback=_get_err_wrapped(self._export_profile))
@@ -303,6 +303,10 @@ class NostrWeb(StaticServer):
     def _profiles_list(self):
         # , list of pub_ks we want profiles for
         pub_k = request.query.pub_k
+        if request.method == 'POST':
+            if 'pub_k' in request.forms:
+                pub_k = request.forms['pub_k']
+
         all_keys = set([])
         if pub_k:
             all_keys = set(pub_k.split(','))
@@ -329,6 +333,10 @@ class NostrWeb(StaticServer):
                 # pks
                 if the_profile:
                     ret['profiles'].append(the_profile.as_dict())
+                else:
+                    ret['profiles'].append({
+                        'pub_k': c_pub_k
+                    })
 
         # eventually this full list will probably have to go
         else:
@@ -340,8 +348,19 @@ class NostrWeb(StaticServer):
         the_profile: Profile
         pub_k = request.query.pub_k
         priv_k = request.query.priv_k
-        include_contacts: str = request.query.include_contacts
-        include_followers: str = request.query.include_followers
+        include_contacts = request.query.include_contacts.lower() == 'true'
+        include_followers = request.query.include_followers.lower() == 'true'
+        full_profiles = request.query.full_profiles.lower() == 'true'
+
+        def get_profile(key):
+            f_profile = self._profile_handler.profiles.lookup_pub_key(key)
+            if f_profile is not None:
+                f_profile = f_profile.as_dict()
+            else:
+                f_profile= {
+                    'pub_k': key
+                }
+            return f_profile
 
         # only used when checking priv_k, we just create a profile with the priv_k and
         # then turn that into pub_k. any supplied pub_k is ignored
@@ -360,14 +379,21 @@ class NostrWeb(StaticServer):
 
         c: Contact
         # add in contacts if asked for
-        if include_contacts.lower() == 'true':
+        if include_contacts is True:
             the_profile.load_contacts(self._profile_store)
-            ret['contacts'] = [c.contact_public_key for c in the_profile.contacts]
+            if full_profiles:
+                ret['contacts'] = [get_profile(c.contact_public_key) for c in the_profile.contacts]
+            # just keys
+            else:
+                ret['contacts'] = [c.contact_public_key for c in the_profile.contacts]
 
         # add in follows if asked for
-        if include_followers.lower() == 'true':
+        if include_followers is True:
             the_profile.load_followers(self._profile_store)
-            ret['followed_by'] = [c.owner_public_key for c in the_profile.followed_by]
+            if full_profiles:
+                ret['followed_by'] = [get_profile(c.owner_public_key) for c in the_profile.followed_by]
+            else:
+                ret['followed_by'] = [c.owner_public_key for c in the_profile.followed_by]
 
         return ret
 
@@ -459,6 +485,7 @@ class NostrWeb(StaticServer):
     def _do_post(self):
         event = json.loads(request.forms['event'])
         content = event['content']
+
         tags = event['tags']
         kind = event['kind']
 
@@ -483,7 +510,6 @@ class NostrWeb(StaticServer):
 
             if to_pub is None:
                 raise NostrWebException('no to pub_k in tags for encrypted post?!')
-
 
             evt.content = evt.encrypt_content(private_k, to_pub)
 

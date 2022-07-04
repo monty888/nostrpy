@@ -43,8 +43,8 @@ APP.nostr.gui.templates = function(){
             '<div id="list-con" style="overflow-y:auto;height: calc(100% - 40px);"></div>'
         ],
         'screen-contact-view' : [
-            '<div id="about-con"></div>',
-            '<div id="contact-tabs" style="height:100%" ></div>'
+            '<div id="about-con" style="height:64px"></div>',
+            '<div id="contact-tabs" style="height:calc(100% - 64px);" ></div>'
         ],
         'screen-profile-struct' : [
             '<div style="background-color:#221124;height:100%; min-height:400px;" >',

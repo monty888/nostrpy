@@ -156,7 +156,12 @@ APP.remote = function(){
             args['params'] = {};
             // single or , seperated list of pub_ks
             if(args.pub_k!==undefined){
-                args['params']['pub_k'] = args['pub_k']
+                // changed to post to deal with large amounts of followers/contacts
+                // though the get method is still mounted so will work for smaller n of pub_ks
+                // TODO add ti load profile gets full contact info and not just keys...
+//                args['params']['pub_k'] = args['pub_k']
+                args['data'] = 'pub_k='+args['pub_k'];
+                args['method'] = 'POST';
             }
             // all followers contacts for this profile
             if(args.for_profile!==undefined){
@@ -168,7 +173,8 @@ APP.remote = function(){
             args['url'] = _profile_url;
             args['params'] = {
                 'include_followers': args.include_followers!==undefined ? args.include_followers : false,
-                'include_contacts': args.include_contacts!==undefined ? args.include_contacts : false
+                'include_contacts': args.include_contacts!==undefined ? args.include_contacts : false,
+                'full_profiles': args.full_profiles!==undefined ? args.full_profiles : false
             };
 
             if(args.pub_k!==undefined){
@@ -179,11 +185,9 @@ APP.remote = function(){
                 args.params['priv_k'] = args['priv_k'];
             }
 
-            console.log(args)
             do_query(args);
         },
         'local_profiles' : function(args){
-            console.log(_loading_cache[_local_profiles_url]);
             args['url'] = _local_profiles_url;
             do_query(args);
         },
@@ -233,7 +237,10 @@ APP.remote = function(){
         'post_event' : function(args){
             args['url'] = _post_event_url;
             args['method'] = 'POST';
-            args['data'] = 'event=' + JSON.stringify(args.event);
+            let evt = $.extend({}, args.event);
+            evt.content = encodeURIComponent(evt.content);
+            args['data'] = 'event=' + JSON.stringify(evt);
+
             do_query(args);
         },
         'update_profile' : function(args){

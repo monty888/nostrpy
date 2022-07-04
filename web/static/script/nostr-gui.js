@@ -489,9 +489,7 @@ APP.nostr.gui.list = function(){
 
 APP.nostr.gui.event_view = function(){
         // short ref
-    let _gui = APP.nostr.gui,
-        // global profiles obj
-        _profiles = APP.nostr.data.profiles;
+    let _gui = APP.nostr.gui;
 
     function _profile_clicked(pub_k){
         location.href = '/html/profile?pub_k='+pub_k;
@@ -537,9 +535,9 @@ APP.nostr.gui.event_view = function(){
             // underlying APP.nostr.gui.list
             _my_list,
             // interval timer for updating times
-            _time_interval;
-
-
+            _time_interval,
+            // for loading profiles
+            _profiles = APP.nostr.data.profiles;
 
         function uevent_id(event_id){
             return _uid+'-'+event_id;
@@ -572,7 +570,9 @@ APP.nostr.gui.event_view = function(){
                 'content' : _gui.get_note_content_for_render(the_note, _enable_media),
                 'short_key' : APP.nostr.util.short_key(pub_k),
                 'pub_k' : pub_k,
-                'picture' : _gui.get_profile_picture(pub_k),
+                'picture' : APP.nostr.gui.robo_images.get_url({
+                    'text' : the_note.pub_k
+                }),
                 'at_time': dayjs.unix(the_note.created_at).fromNow(),
                 'can_reply' : function(){
                     return APP.nostr.data.user.profile().pub_k!==undefined;
@@ -580,19 +580,13 @@ APP.nostr.gui.event_view = function(){
             };
 
 
-            if(_profiles.is_loaded()){
-                p = _profiles.lookup(name);
-                if(p!==undefined){
-                    attrs = p['attrs'];
-                    if(attrs!==undefined){
-                        if(attrs['name']!==undefined){
-                            to_add['name'] = attrs['name'];
-                        }
-                        to_add.picture = _gui.get_profile_picture(pub_k);
+            p = _profiles.lookup(name);
+            if(p!==null){
+                attrs = p['attrs'];
+                to_add['name'] = attrs['name'];
+                to_add.picture = p.picture;
+            }
 
-                    }
-                }
-            };
             return to_add;
         }
 
@@ -783,10 +777,32 @@ APP.nostr.gui.event_view = function(){
 
         function set_notes(the_notes){
             _notes_arr = the_notes;
-
-            // makes [] that'll be used render display
+            load_profiles();
             _create_contents();
         };
+
+        function load_profiles(){
+            let pub_ks = new Set([]);
+            _notes_arr.forEach(function(c_note){
+                pub_ks.add(c_note.pubkey);
+                // also add all the p tags so we'll be able to replacements if needed
+                c_note.tags.forEach(function(c_tag){
+                    if(c_tag.length>=1 && c_tag[0]=='p'){
+                        pub_ks.add(c_tag[1]);
+                    }
+                });
+
+            });
+
+            _profiles.fetch({
+                'pub_ks': pub_ks,
+                'on_load' : function(){
+                    _create_contents();
+                }
+            });
+
+        };
+
 
         /*
             note filter probably doesn't work quite as you'd expect...Its only applied
@@ -824,7 +840,10 @@ APP.nostr.gui.event_view = function(){
                 _notes_arr.unshift(evt);
                 // this results in a full recheck of order and redraw
                 // probably we could do more efficent but this is simplest and will do for now
-                _create_contents();
+//                _create_contents();
+                // call load profiles cause it'll make sure we have the profile info before
+                // redrawing, ajax call might be made
+                load_profiles();
 
 //                _render_arr.unshift(add_content);
 //
@@ -847,10 +866,6 @@ APP.nostr.gui.event_view = function(){
         return {
             'set_notes' : set_notes,
             'set_filter' : set_filter,
-            // TODO - eventually this won't be required
-            'profiles_loaded' : function(){
-                _create_contents();
-            },
             'add' : add_note,
             'draw' : function(){
                 _my_list.draw();
@@ -866,8 +881,6 @@ APP.nostr.gui.event_view = function(){
 APP.nostr.gui.profile_about = function(){
     // if showing max n of preview followers in head
     const MAX_PREVIEW_PROFILES = 10,
-        // global profiles obj
-        _profiles = APP.nostr.data.profiles,
         _tmpl = [
                 '<div style="height:100%;padding-top:2px;overflow-y:scroll;">',
               //  '<span style="display:table-cell;width:128px; background-color:#111111;padding-right:10px;" >',
@@ -938,7 +951,7 @@ APP.nostr.gui.profile_about = function(){
             // pub_k we for
             _pub_k = args.pub_k,
             // and the profile {} for this pub_k
-            _profile,
+            _profile = args.profile,
             // add this in and when false just render our own random images for profiles rather than going to external link
             // in future we could let the user provide there own images for others profiles
             //_enable_media = true,
@@ -963,10 +976,8 @@ APP.nostr.gui.profile_about = function(){
             },
             attrs,
             _contacts;
-            _profile = _profiles.lookup(_pub_k);
             // fill from the profile if we found it
-            if(_profile!==undefined){
-
+            if(_profile!==null){
                 attrs = _profile['attrs'];
                 render_obj['picture'] =attrs.picture;
                 render_obj['name'] = attrs.name;
@@ -984,7 +995,6 @@ APP.nostr.gui.profile_about = function(){
                     'text' : _pub_k
                 });
             }
-
             _con.html(Mustache.render(_tmpl, render_obj));
             // grab the follow and contact areas
             _contact_con = $('#contacts-con');
@@ -992,24 +1002,27 @@ APP.nostr.gui.profile_about = function(){
 
             // wait for folloer/contact info to be loaded
             if(_show_follow_section){
-                _contacts = _profile.load_contact_info(function(){
-                    render_followers();
-                });
+                render_followers();
+//                _profile.load_contact_info(function(){
+//                    console.log(_profile);
+//                    render_followers();
+//                });
             }
-
-
         };
 
         function render_followers(){
                 render_contact_section('follows', _contact_con, _profile.contacts);
-                render_contact_section('followed by', _follow_con, _profile.followers);
+                render_contact_section('followed by', _follow_con, _profile.followed_by);
 
                 // listen for clicks
                 $(_con).on('click', function(e){
                     let id = APP.nostr.gui.get_clicked_id(e);
                     if(id!==null){
                         if(id.indexOf('-dm')>=0){
-                            alert('so you think you are a player!!!');
+                            APP.nostr.gui.post_modal.show({
+                                'kind' : 4,
+                                'pub_k': id.replace('-dm','')
+                            });
                         }else if(_click_map[id]!==undefined){
                             _click_map[id].func(_click_map[id].data);
                         }
@@ -1024,13 +1037,13 @@ APP.nostr.gui.profile_about = function(){
                 });
         }
 
-        function render_contact_section(label, con, pub_ks){
+        function render_contact_section(label, con, profiles){
             let args = {
                 'label': label,
-                'count': pub_ks.length,
+                'count': profiles.length,
                 'images' : []
             },
-            to_show_max = pub_ks.length,
+            to_show_max = profiles.length,
             c_p,
             img_src,
             id;
@@ -1056,13 +1069,14 @@ APP.nostr.gui.profile_about = function(){
             // add the images
             for(let i=0;i<to_show_max;i++){
                 id = APP.nostr.gui.uid();
-                c_p = _profiles.lookup(pub_ks[i]);
+//                c_p = _profiles.lookup(pub_ks[i]);
+                c_p = profiles[i];
                 // a profile doesn't necessarily exist
-                if(c_p && c_p.attrs.picture!==undefined && _enable_media){
+                if(c_p && c_p.attrs && c_p.attrs.picture!==undefined && _enable_media){
                     img_src = c_p.attrs.picture;
                 }else{
                     img_src = APP.nostr.gui.robo_images.get_url({
-                        'text' : pub_ks[i]
+                        'text' : c_p.pub_k
                     });
                 }
 
@@ -1073,7 +1087,7 @@ APP.nostr.gui.profile_about = function(){
 
                 _click_map[id] = {
                     'func' : _profile_clicked,
-                    'data' : pub_ks[i]
+                    'data' : c_p.pub_k
                 };
             }
 
@@ -1081,11 +1095,28 @@ APP.nostr.gui.profile_about = function(){
             con.html(Mustache.render(_fol_con_sub, args));
         }
 
-
+        function init(){
+            if(_profile===undefined){
+                APP.remote.load_profile({
+                    'pub_k': _pub_k,
+                    'include_followers': _show_follow_section,
+                    'include_contacts': _show_follow_section,
+                    'full_profiles' : _show_follow_section,
+                    'success' : function(data){
+                        _profile = data;
+                        draw();
+                    }
+                });
+            }else{
+                _pub_k = _profile.pub_k;
+                draw();
+            }
+        }
+        init();
 
         // methods for event_view obj
         return {
-            'profiles_loaded' : draw
+//            'profiles_loaded' : draw
         };
     };
 
@@ -1336,7 +1367,7 @@ APP.nostr.gui.profile_edit = function(){
 
        function set_state(profile){
             o_profile = profile;
-            if(o_profile===undefined){
+            if(o_profile===null){
                 o_profile = {
                     'pub_k' : /[0-9A-Fa-f]{64}/g.test(pub_k) ? pub_k : '',
                     'attrs' : {},
@@ -1517,14 +1548,16 @@ APP.nostr.gui.profile_edit = function(){
 
         }
 
-
-        if(APP.nostr.data.profiles.is_loaded()){
-            init();
+        if(pub_k){
+            APP.nostr.data.profiles.fetch({
+                'pub_ks': [pub_k],
+                'on_load' : function(){
+                    init();
+                }
+            });
         }else{
-            APP.nostr.data.event.add_listener('profiles-loaded', init);
+            init();
         }
-
-
     }
 
     return {
@@ -1534,26 +1567,17 @@ APP.nostr.gui.profile_edit = function(){
 
 APP.nostr.gui.profile_list = function (){
         // lib shortcut
-    let _gui = APP.nostr.gui,
-        // short cut ot profiles helper
-        _profiles = APP.nostr.data.profiles;
+    let _gui = APP.nostr.gui;
 
     function create(args){
             // container for list
         let _con = args.con,
             // profiles passed into us
             _view_profiles = args.profiles || [],
-            // if pub key is passed we'll load profiles from either followers/contacts of that profile
-            _pub_k = args.pub_k,
             // inline media where we can, where false just the link is inserted
-            _enable_media = args.enable_media || false,
-            // profile we're viewing
-            _the_profile = _profiles.lookup(_pub_k),
-            // rendering the_profile.followers or contacts ?
-            _view_type = args.view_type==='followers' ? 'followers' : 'contacts',
+            _enable_media = APP.nostr.data.user.enable_media(),
             // data preped for render to con by _create_render_obj
             _render_obj,
-            _do_draw=false,
             // only profiles that pass this filter will be showing
             _filter_text = args.filter || '',
             // so ids will be unique per this list
@@ -1563,25 +1587,8 @@ APP.nostr.gui.profile_list = function (){
             // template to render into
             _row_tmpl = APP.nostr.gui.templates.get('profile-list');
 
-        // handed pub_k rather than profiles directly, attempt to load there followers/contacts
-        // then set _view_profiles dependent on view_type
-        if(_pub_k!==undefined){
-            _the_profile.load_contact_info(function(){
-                try{
-                    // set the view_profiles
-                    _view_profiles = _view_type==='followers' ? _the_profile.followers : _the_profile.contacts;
-                    got_data();
-                }catch(e){
-                    console.log(e);
-                }
-            });
-        }else{
-            // can call straight away
-            got_data();
-        }
-
         // methods
-        function got_data(){
+        function init(){
             // prep the intial render obj
             _my_list = APP.nostr.gui.list.create({
                 'con' : _con,
@@ -1589,23 +1596,16 @@ APP.nostr.gui.profile_list = function (){
                 'row_tmpl': _row_tmpl,
                 'filter' : test_filter,
                 'click' : function(id){
-                    let pubk = id.replace(_uid+'-','');
-                    location.href = '/html/profile?pub_k='+pubk;
+                    let pub_k = id.replace(_uid+'-','');
+                    location.href = '/html/profile?pub_k='+pub_k;
                 }
             });
 
-            // draw was called before we were ready, draw now
-            if(_do_draw){
-                _my_list.draw();
-            }
+            draw();
         }
 
         function draw(){
-            if(_my_list!==undefined){
-                _my_list.draw();
-            }else{
-                _do_draw = true;
-            }
+            _my_list.draw();
         };
 
         /*
@@ -1613,15 +1613,15 @@ APP.nostr.gui.profile_list = function (){
         */
         function create_render_data(){
             let ret = [];
-            _view_profiles.forEach(function(c_key){
-                ret.push(_create_render_profile(c_key));
+            _view_profiles.forEach(function(p){
+                ret.push(_create_render_profile(p));
             });
             return ret;
         }
 
         // create profile render obj to be put in _renderObj['profiles']
-        function _create_render_profile(pub_k){
-            let the_profile = _profiles.lookup(pub_k),
+        function _create_render_profile(the_profile){
+            let pub_k = the_profile.pub_k,
                 render_profile = {
                     // required to make unique ids if page has more than one list showing same items on page
                     'uid' : _uid,
@@ -1630,7 +1630,7 @@ APP.nostr.gui.profile_list = function (){
                 },
                 attrs;
 
-            if(the_profile!==undefined){
+            if(the_profile && the_profile.attrs){
                 attrs = the_profile['attrs'];
                 render_profile['picture'] =attrs.picture;
                 render_profile['name'] = attrs.name;
@@ -1671,6 +1671,13 @@ APP.nostr.gui.profile_list = function (){
         function set_filter(str){
             _filter_text = str;
             _my_list.draw();
+        }
+
+        // prep and draw the list
+        try{
+            init();
+        }catch(e){
+            console.log(e);
         }
 
         return {
@@ -1858,34 +1865,102 @@ APP.nostr.gui.post_modal = function(){
         return ret;
     }
 
+
+
+
     function show(args){
         args =args || {};
         let gui = APP.nostr.gui,
             user = APP.nostr.data.user,
+            profiles,
             type = args.type!==undefined ? args.type : 'post',
             // in case of reply this is ignored and the kind is taken from the event we're replying to
             kind = args.kind || 1,
+            // same as kind
+            pub_k = args.pub_k,
             event = args.event !==undefined ? args.event : {
                 'id' : '?',
                 'content' : 'something has gone wrong!!',
                 'tags' :[]
             },
-            title = 'make post',
             post_text_area,
             render_obj= {},
             enable_media = APP.nostr.data.user.enable_media(),
-            uid = gui.uid();
+            uid = gui.uid(),
+            picture,
+            name;
 
-            if(type==='reply'){
-                title = 'reply to event <span class="pubkey-text" >'+APP.nostr.util.short_key(event.id)+'<span/>';
+            function get_reply_title(){
+                if(event.kind===1){
+                    ret = 'reply to event';
+                }else if(event.kind===4){
+                    ret = 'reply to encrypted event';
+                }
+                return ret + ' <span class="pubkey-text" >'+APP.nostr.util.short_key(event.id)+'<span/>';
+            }
+
+            function get_post_title(){
+                if(kind===1){
+                    ret = 'make post';
+                }else if(kind===4){
+                    ret = 'make encrypted post';
+                }
+                return ret;
+            }
+
+            function get_title(){
+                let ret;
+                if(kind===1){
+                    ret = get_post_title();
+                }else if(kind===4){
+                    ret = get_reply_title();
+                }
+                return ret;
+            }
+
+            function add_post_tags(){
+                let ret = [];
+                if(pub_k){
+                    ret.push(['p',pub_k])
+                }
+                return ret;
+            }
+
+
+
+            function add_profile_render(r_obj, pub_k){
+                let p = APP.nostr.data.profiles.lookup(pub_k);
+                if(p!==null){
+                    picture = p.picture;
+                    name = p.attrs.name;
+                }else{
+                    name = '';
+                    picture = APP.nostr.gui.robo_images.get_url({
+                        'text' : p.pub_k
+                    });
+                }
+                r_obj['short_key'] = APP.nostr.util.short_key(pub_k);
+                r_obj['name'] = name;
+                r_obj['picture'] = picture;
+            }
+
+
+            if(type==='post'){
+                title = get_post_title();
+                if(pub_k!==undefined){
+                    // hacky but required to get render at mo
+                    render_obj['event'] = jQuery.extend({}, event);
+                    add_profile_render(render_obj, pub_k);
+                }
+            } else if(type==='reply'){
+                title = get_reply_title();
                 // because we're going to give another id just so we don't get mutiple els with same id in dom
                 render_obj['event'] = jQuery.extend({}, event);
                 render_obj['event'].uid = uid;
-                render_obj['picture'] = gui.get_profile_picture(event.pubkey);
-                render_obj['content'] = gui.get_note_content_for_render(event, enable_media);
-
+                add_profile_render(render_obj, event.pubkey);
+                render_obj['content'] = gui.get_note_content_for_render(event);
             }
-
+            console.log(render_obj);
             APP.nostr.gui.modal.create({
                 'title' : title,
                 'content' : Mustache.render(gui.templates.get('modal-note-post'),render_obj, {
@@ -1895,7 +1970,7 @@ APP.nostr.gui.post_modal = function(){
                 }),
                 'ok_text' : 'send',
                 'on_ok' : function(){
-                    let n_tags = type==='reply' ? add_reply_tags(event) : [],
+                    let n_tags = type==='reply' ? add_reply_tags(event) : add_post_tags(),
                         content = post_text_area.val()
                         hash_tags = (content).match(/(^|\s)\#\w*[\S|$]/g),
                         evt = {
@@ -1920,7 +1995,6 @@ APP.nostr.gui.post_modal = function(){
                     APP.remote.post_event({
                         'event' : evt,
                         'success' : function(data){
-
                             // notify anyone interested
                             APP.nostr.data.event.fire_event('post-success', {
                                 'event': evt,
@@ -1958,7 +2032,7 @@ APP.nostr.gui.post_modal = function(){
 APP.nostr.gui.profile_select_modal = function(){
     let _uid = APP.nostr.gui.uid(),
         // short cut ot profiles helper
-        _profiles = APP.nostr.data.profiles,
+        _profiles_lookup,
         _user_profiles,
         _list,
         _list_data = [],
@@ -1968,8 +2042,9 @@ APP.nostr.gui.profile_select_modal = function(){
 
     function draw_profiles(profiles){
         _user_profiles = profiles;
+        _profiles_lookup = {};
         // just incase it didn't get inted yet
-        _profiles.init();
+
         _row_tmpl = APP.nostr.gui.templates.get('profile-list');
         _selected_profile = _current_profile = APP.nostr.data.user.profile();
         APP.nostr.gui.modal.set_content('<div id="'+_uid+'"></div>');
@@ -1990,6 +2065,8 @@ APP.nostr.gui.profile_select_modal = function(){
         }];
 
         _user_profiles.forEach(function(c_p,i){
+            _profiles_lookup[c_p.pub_k] = c_p;
+
             let img_src;
 
             // a profile doesn't necessarily exist
@@ -2027,7 +2104,7 @@ APP.nostr.gui.profile_select_modal = function(){
                 id = id.replace(_uid+'-', '');
                 let parts = id.split('-'),
                     pub_k = parts[0],
-                    p = _profiles.lookup(pub_k),
+                    p = _profiles_lookup[pub_k],
                     cmd = '';
 
                 // get cmd if any
@@ -2084,10 +2161,11 @@ APP.nostr.gui.profile_select_modal = function(){
         // show it
         APP.nostr.gui.modal.show();
 
-        APP.nostr.data.local_profiles.init({
-            'success' : draw_profiles
+        APP.remote.local_profiles({
+            'success' : function(data){
+                draw_profiles(data.profiles);
+            }
         });
-
     }
 
     return {

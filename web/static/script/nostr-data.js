@@ -8,7 +8,7 @@ APP.nostr.data.state = function(){
         },
         'get': function(name, args){
             args = args || {};
-            let def = args.def,
+            let def = args.def===undefined ? null : args.def,
             ret = sessionStorage.getItem(name);
             if(ret===null){
                 ret = def;
@@ -184,55 +184,21 @@ APP.nostr.data.user = function(){
         _user = APP.nostr.data.server_state.current_user;
     };
 
+    // for simple get/sets
+    function _property(name, val, def){
+        let ret = val;
+
+        if(val!==undefined){
+            APP.nostr.data.state.set(name, val);
+        }else{
+            ret = APP.nostr.data.state.get(name, {
+                'def' : def
+            });
+        }
+        return ret
+    }
+
     return {
-//        'get_profile' : function(){
-//            let ret = APP.nostr.data.state.get('profile', {
-//                'def' : {}
-//            });
-//            if(typeof(ret)==='string'){
-//                try{
-//                    ret = JSON.parse(ret)
-//                }catch(e){
-//                    ret = {};
-//                }
-//            }
-//            return ret;
-//        },
-//        'set_profile' : function(p){
-//            APP.nostr.data.state.put('profile', JSON.stringify(p));
-//            APP.nostr.data.event.fire_event('profile_set', p);
-//
-////            APP.remote.set_profile({
-////                'key' : key,
-////                'success' : function(data){
-////                    _current_profile = data;
-////                    if(typeof(callback)==='function'){
-////                        return data;
-////                    }
-////                    APP.nostr.data.event.fire_event('profile_set', data);
-////                }
-////            });
-//        },
-//        // to replace get/set
-//        'profile': function(p){
-//            let ret = p;
-//            if(p!==undefined){
-//                APP.nostr.data.state.put('profile', JSON.stringify(p));
-//                APP.nostr.data.event.fire_event('profile_set', p);
-//            }else{
-//                ret = APP.nostr.data.state.get('profile', {
-//                    'def' : {}
-//                });
-//                if(typeof(ret)==='string'){
-//                    try{
-//                        ret = JSON.parse(ret)
-//                    }catch(e){
-//                        ret = {};
-//                    }
-//                }
-//            }
-//            return ret;
-//        },
         'profile': function(user){
             // intial state from server, rendered into state/js file
             if(_user===undefined){
@@ -264,42 +230,87 @@ APP.nostr.data.user = function(){
             APP.nostr.data.state.put('add_client_tag', val);
         },
         'enable_media' : function(val){
-            let ret = val;
-            if(val!==undefined){
-                APP.nostr.data.state.set('enable_media', val);
-            }else{
-                ret = APP.nostr.data.state.get('enable_media', {
-                    'def' : true
-                });
-            }
-            return ret
+            return _property('enable_media', val, true);
+        },
+        // prob only for debugging, should be on
+        // session store of profiles we've seen
+        // NOTE until we get the client to put on seeing meta events
+        // session cache will be an issue so disabled for now
+        'profile_cache' : function(val){
+            return _property('profile_cache', val, false);
         }
     };
 }();
 
+
 /*
-    profiles data is global,
-    the load will only be attempted once no matter how many times init is called
-    so probably better to only do in one place and use on_load for other places
-    in future clear the init flag on load fail so init can be rerun...
-    obvs int the long run keeping lookup of all profiles in mem isn't going to scale...
+    Profiles should be accessed through here, don't use network methods directly...
 */
 APP.nostr.data.profiles = function(){
-    // as loaded
-    let _profiles_arr,
-    // key'd pubk for access
-    _profiles_lookup,
-    // called when completed
-    _on_load = [],
-    // set true when initial load is done
-    _is_loaded = false,
-    // has loaded started
-    _load_started = false;
+    let _lookup = {},
+        _in_progress_count = 0,
+        _wait_load = [],
+        _session_cache = APP.nostr.data.user.profile_cache();
 
+    function _get_picture(p){
+        let ret;
+        if((!APP.nostr.data.user.enable_media()) || p.attrs.picture===undefined){
+            ret = APP.nostr.gui.robo_images.get_url({
+                'text' : p.pub_k
+            });
+        }else{
+            ret = p.attrs.picture;
+        }
+        return ret;
+    }
+
+    function _do_store(data){
+        data.profiles.forEach(function(p){
+            _clean_profile(p);
+            // loads via search might override profiles we already have
+            // probably this is not a problem, but we might have fetched contacts
+            // just incase don't restore this
+            if(_lookup[p.pub_k]===undefined || _lookup[p.pub_k].state!=='loaded'){
+                _lookup[p['pub_k']] = {
+                    'state': 'loaded',
+                    'profile': p
+                };
+
+                if(_session_cache){
+                    APP.nostr.data.state.put('profile-'+p.pub_k, JSON.stringify(p));
+                }
+
+            }
+        });
+    }
+
+    function _clean_profile(p){
+        if(p.attrs===undefined){
+            p.attrs = {};
+        };
+        p.load_contact_info = _get_load_contact_info(p);
+        p.picture = _get_picture(p);
+        // do some clean up
+        if(p.attrs.about===null){
+            p.attrs.about='';
+        }
+        if(p.attrs.name===null){
+            p.attrs.name='';
+        }
+        if(p.attrs.picture!==undefined){
+            if((p.attrs.picture===null) || (p.attrs.picture.toLowerCase().indexOf('http')!==0)){
+                delete p.attrs.picture;
+            }
+        }
+    }
+
+   /*
+        lazy load method to get contacts onto profile objs
+    */
     function _get_load_contact_info(p){
         return function(callback){
             // make sure we're looking at same profile obj
-            let my_p = _profiles_lookup[p.pub_k];
+            let my_p = _lookup[p.pub_k].profile;
             // already loaded, caller can continue
             if(my_p.contacts!==undefined){
                 callback();
@@ -310,99 +321,180 @@ APP.nostr.data.profiles = function(){
                 'include_followers': true,
                 'include_contacts': true,
                 'success' : function(data){
-                    // update org profile with contacts and folloers
+                    let load_required = [];
+                    // update org profile with contacts and followers
                     my_p.contacts = data['contacts'];
                     my_p.followers = data['followed_by'];
-                    try{
+                    // probably we don't have all the profiles for followers/contacts so anotehr load required :(
+                    ['contacts','followers'].forEach(function(c_f){
+                        my_p[c_f].forEach(function(c_key){
+                            if(_lookup[c_key]===undefined){
+                                load_required.push(c_key);
+                            }
+                        });
+                    });
+
+                    if(load_required.length===0){
                         callback();
-                    }catch(e){
-                        console.log(e);
+                    }else{
+                        // looks a bit weird but as the lookup is actually global I think this is ok...
+                        APP.nostr.data.profiles_n.create({
+                            'pub_ks': load_required,
+                            'on_load': callback
+                        });
                     }
                 }
             });
         }
     }
 
-    function _loaded(data){
-        _profiles_arr = data['profiles'];
-        _profiles_lookup = {};
-        _profiles_arr.forEach(function(p){
-            p.load_contact_info = _get_load_contact_info(p);
-            _profiles_lookup[p['pub_k']] = p;
-            // do some clean up
-            if(p.attrs.about===null){
-                p.attrs.about='';
+    function fetch(args){
+        args = args || {};
+        // should never reach here without pub_ks
+        let _pub_ks = args.pub_ks!==undefined ? args.pub_ks : [],
+            _on_load = args.on_load,
+            _load_args;
+
+        function do_load(load_arr){
+            _in_progress_count+=1;
+            if(typeof(_on_load)==='function'){
+                _wait_load.push(_on_load);
             }
-            if(p.attrs.name===null){
-                p.attrs.name='';
+
+            _load_args = {
+                'pub_k' : load_arr.join(','),
+                'success' : function(data){
+                    _in_progress_count-=1;
+                    _do_store(data);
+
+                    // mark unloaded as not found
+                    load_arr.forEach(function(pub_k){
+                        if(_lookup[pub_k]!==undefined && _lookup[pub_k].state!=='loaded'){
+                            _lookup[pub_k] = {
+                                'state': 'not found'
+                            };
+                        }
+                    });
+                    if(_in_progress_count===0){
+                        _wait_load.forEach(function(c_callback){
+                            try{
+                                c_callback();
+                            }catch(e){
+                            }
+                        });
+                        _wait_load = [];
+                    }
+
+                }
+            };
+            APP.remote.load_profiles(_load_args);
+        }
+
+        function init(){
+            let // already started loading by different caller
+                load_start_count = 0,
+                // those we need to load for ourself
+                load_arr = [],
+                p_slot;
+
+            _pub_ks.forEach(function(pub_k){
+                p_slot = _lookup[pub_k];
+                // we're the first to ask for this
+                if(p_slot===undefined){
+
+                    // cached in session storage, will need to check how much can be stored here and limit
+                    // as required, currently cache all profiles is 400k<
+                    if(_session_cache){
+                        p = APP.nostr.data.state.get('profile-'+pub_k);
+                        if(p!==null){
+                            p_slot = _lookup[pub_k] = {
+                                'state': 'loaded',
+                                'profile': JSON.parse(p)
+                            };
+                        }
+                    }
+
+                    // going to have to load
+                    if(p_slot===undefined){
+                        _lookup[pub_k] = {
+                            'state' : 'loading'
+                        };
+                        load_arr.push(pub_k);
+                    }
+
+
+                // someone else asked fot this but it's not loaded yet
+                }else if(p_slot.state==='loading'){
+                    load_start_count+=1;
+                }
+            });
+
+            // cool we had all the profiles already
+            if(load_arr.length===0 && load_start_count===0){
+                if(typeof(_on_load)==='function'){
+                    _on_load();
+                }
+            }else{
+                do_load(load_arr);
             }
-            if(p.attrs.picture!==undefined){
-                if((p.attrs.picture===null) || (p.attrs.picture.toLowerCase().indexOf('http')!==0)){
-                    delete p.attrs.picture;
+
+        }
+        init();
+    };
+
+    function search(args){
+        let _on_load = args.on_load;
+
+        APP.remote.load_profiles({
+            'success' : function(data){
+                try{
+                    _do_store(data);
+                    if(typeof(_on_load)==='function'){
+                        _on_load(data);
+                    }
+                }catch(e){
+                    alert(e)
                 }
             }
-
         });
-
-
-        _is_loaded = true;
-        _on_load.forEach(function(c_on_load){
-            try{
-                c_on_load();
-            }catch(e){
-                console.log(e);
-            }
-        });
-
-        APP.nostr.data.event.fire_event('profiles-loaded',{});
     }
 
-    function init(args){
-        args = args || {};
-        args.success = _loaded;
-
-        if(_load_started===true){
-            if(typeof(args.on_load)==='function'){
-                if(_is_loaded){
-                    args.on_load();
-                }else{
-                    _on_load.push(args.on_load);
-                }
+    function lookup(pub_k, callback){
+        let ret = null,
+            c_val = _lookup[pub_k];
+        if(c_val!==undefined){
+            if(c_val.state==='loaded'){
+                ret = c_val.profile;
             }
-            return;
         }
+        return ret;
+    }
 
-        _load_started = true;
-        if(typeof(args.on_load)==='function'){
-            _on_load.push(args.on_load);
-        };
+    function put(p, overwrite){
 
-        APP.remote.load_profiles(args);
-    };
+    }
 
     return {
-        'init' : init,
-        'is_loaded': function(){
-            return _is_loaded;
-        },
-        'lookup': function(pub_k){
-            return _profiles_lookup[pub_k];
-        },
-        'count' : function(){
-            return _profiles_arr.length;
-        },
-        'all' : function(){
-            return _profiles_arr;
-        }
-
+        // used when we know what pks we want
+        'fetch': fetch,
+        // only used by the profile search screen at the moment and rets everything
+        // (this also means all profiles will be cached after this point) obvs this is not
+        // scalable. so in future it'll have some matches criteria and only ret a max no of profiles
+        // though this will still be cached as everything else
+        'search' : search,
+        'lookup': lookup,
+        'put': put
     };
 }();
+
 
 /*
     same thing but this is only for local profiles,
     ie the ones that we can use to mkae posts, edit their meta etc.
     done without the load code from above...probably need to add it...but work out what the fuck thats
     doing first because I thought the network code was stopping mutiple requests to the same resource...
+
+    TODO... do we still need this?!?!?
 */
 APP.nostr.data.local_profiles = function(){
         // as loaded

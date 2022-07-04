@@ -62,12 +62,6 @@
 
         // start client for future notes....
         load_notes();
-        // init the profiles data
-        APP.nostr.data.profiles.init({
-            'on_load' : function(){
-                _my_event_view.profiles_loaded();
-            }
-        });
 
         _search_in.on('keyup', function(e){
             clearTimeout(_input_timer);

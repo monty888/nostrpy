@@ -40,7 +40,8 @@
         // as the user we're looking at sees things
         _feed_view,
         _feed_filter,
-        _current_profile = APP.nostr.data.user.profile();
+        _current_profile = APP.nostr.data.user.profile(),
+        _profiles = APP.nostr.data.profiles;
 
     function init_view(con, filter){
         return APP.nostr.gui.event_view.create({
@@ -167,16 +168,31 @@
         _my_tab.draw();
 
         // init the profiles data
-        APP.nostr.data.profiles.init({
+//        APP.nostr.data.profiles.init({
+//            'on_load' : function(){
+//                _my_head.profiles_loaded();
+//
+//                if(_post_view!==undefined){
+//                    _post_view.profiles_loaded();
+//                }
+//
+//                let name = APP.nostr.util.short_key(_pub_k),
+//                    cp = APP.nostr.data.profiles.lookup(_pub_k);
+//                if(cp.attrs.name!==undefined){
+//                    name = cp.attrs.name;
+//                }
+//
+//                document.title = name;
+//            }
+//        });
+
+
+        _profiles.fetch({
+            'pub_ks' : [_pub_k],
             'on_load' : function(){
-                _my_head.profiles_loaded();
-
-                if(_post_view!==undefined){
-                    _post_view.profiles_loaded();
-                }
-
                 let name = APP.nostr.util.short_key(_pub_k),
-                    cp = APP.nostr.data.profiles.lookup(_pub_k);
+                    cp = _profiles.lookup(_pub_k);
+
                 if(cp.attrs.name!==undefined){
                     name = cp.attrs.name;
                 }
@@ -184,6 +200,7 @@
                 document.title = name;
             }
         });
+//        profiles.init();
 
         // our own listeners
         // profile has changed
@@ -204,7 +221,12 @@
 
         // any post/ reply we'll go to the home page
         APP.nostr.data.event.add_listener('post-success', function(type, event){
-            window.location = '/';
+            event = event.event;
+            if(event.kind===1){
+                window.location = '/';
+            }else if(event.kind===4){
+                window.location = '/html/messages.html'
+            }
         });
 
         // for relay updates, note this screen is testing events as they come in

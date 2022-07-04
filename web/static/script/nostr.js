@@ -59,7 +59,7 @@ APP.nostr = {
                 }
                 return ret;
             },
-            'http_media_tags_into_text' : function(text, enable_media, tmpl_lookup){
+            'http_media_tags_into_text' : function(text, tmpl_lookup){
                 // first make the text safe
                 let ret = text,
                     // look for link like strs
@@ -79,7 +79,7 @@ APP.nostr = {
                         'external_link' : _link_tmpl,
                         'video' : _video_tmpl
                     };
-                    enable_media = enable_media || true
+                    enable_media = APP.nostr.data.user.enable_media();
 
                     // and do replacements in the text
                     // do inline media and or link replacement
@@ -128,37 +128,14 @@ APP.nostr = {
 
                 do_notification();
             },
-            'get_profile_picture' : function(pub_k){
-                // default, note returned even if enable_media is false... thats because
-                // eventually the robos will be local and won't require going external to get...
-                let ret = APP.nostr.gui.robo_images.get_url({
-                        'text' : pub_k
-                    }),
-                    profiles = APP.nostr.data.profiles;
-
-                    if(profiles.is_loaded()){
-                        p = profiles.lookup(pub_k);
-
-                        // we found the profile
-                        if(p!==undefined){
-                            attrs = p['attrs'];
-                            if(attrs!==undefined){
-                                if(APP.nostr.data.user.enable_media() && attrs['picture']!==undefined){
-                                    ret = attrs['picture'];
-                                }
-                            }
-                        }
-
-                    }
-                return ret;
-            },
-            'get_note_content_for_render' : function(evt, enable_media){
-                let content = evt.content;
+            'get_note_content_for_render' : function(evt){
+                let content = evt.content,
+                    enable_media =false;
 
                 // make safe
                 content = APP.nostr.util.html_escape(content);
                 // insert media tags to content
-                content = APP.nostr.gui.http_media_tags_into_text(content, enable_media);
+                content = APP.nostr.gui.http_media_tags_into_text(content);
                 // do p tag replacement
                 content = APP.nostr.gui.tag_replacement(content, evt.tags)
                 // add line breaks
@@ -246,7 +223,7 @@ APP.nostr = {
 APP.nostr.gui.tag_replacement = function (text, tags){
     // cache of tag replacement regexs
     let _preregex = {},
-        // profile helper for p lookups
+        // profile helper for p lookups, note it can only find profiles
         _profiles,
         //
         _replacements = {
@@ -265,21 +242,16 @@ APP.nostr.gui.tag_replacement = function (text, tags){
                     let profile,
                         // if unable to sub
                         ret = def;
-                    if(_profiles.is_loaded()){
-                        profile = _profiles.lookup(id);
-                        if(profile!==undefined && profile.attrs.name!==undefined){
-                            ret = profile.attrs.name;
-                        }
+                    profile =  APP.nostr.data.profiles.lookup(id);
+
+                    if(profile!==null && profile.attrs.name!==undefined){
+                        ret = profile.attrs.name;
                     }
+
                     return ret;
                 }
             }
         };
-
-    // can't be assigned until doc loaded
-    $(document).ready(function(){
-        _profiles = APP.nostr.data.profiles;
-    });
 
     // the actual function
     return function(text, tags){
@@ -304,7 +276,7 @@ APP.nostr.gui.tag_replacement = function (text, tags){
                 }
                 replacer = _replacements[tag_type];
                 if(replacer.text!==undefined){
-                    replace_text = replacer.text(tag_val);
+                    replace_text = replacer.text(tag_val,replace_text);
                 }
 
                 // finally do the replacement
