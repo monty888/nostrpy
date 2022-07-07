@@ -22,7 +22,7 @@ from geventwebsocket import WebSocketError
 from geventwebsocket.websocket import WebSocket
 from geventwebsocket.handler import WebSocketHandler
 from nostr.event.event import Event
-from nostr.ident.profile import ProfileEventHandler, ProfileList, Profile, Contact
+from nostr.ident.profile import ProfileEventHandler, ProfileList, Profile, Contact, ContactList
 from nostr.ident.persist import SQLiteProfileStore, ProfileType
 from nostr.event.persist import ClientEventStoreInterface, SQLiteEventStore
 from nostr.encrypt import Keys
@@ -179,7 +179,9 @@ class NostrWeb(StaticServer):
 
         self._event_store = event_store
         self._profile_store = profile_store
-        self._profile_handler: ProfileEventHandler = ProfileEventHandler(self._profile_store)
+        self._profile_handler: ProfileEventHandler = ProfileEventHandler(self._profile_store,
+                                                                         on_profile_update=self._my_profile_update,
+                                                                         on_contact_update=self._my_contact_update)
 
         self._web_sockets = {}
         super(NostrWeb, self).__init__(file_root)
@@ -205,6 +207,33 @@ class NostrWeb(StaticServer):
             'session.auto': True
         }
         self._app = beaker.middleware.SessionMiddleware(self._app, session_opts)
+
+    def _my_profile_update(self,
+                           new_p: Profile,
+                           old_p: Profile):
+        print('this fuck only went and updated his profile!!!')
+
+    def _my_contact_update(self,
+                           new_c: ContactList,
+                           old_c: ContactList):
+
+        def null_diff(keys: []):
+            for c_pub_k in keys:
+                c_p = self._profile_handler.profiles.lookup_pub_key(c_pub_k)
+                if c_p:
+                    c_p.followed_by = None
+
+        pub_k = new_c.owner_public_key
+        p: Profile = self._profile_handler.profiles.lookup_pub_key(pub_k)
+        if p is not None:
+            p.contacts = None
+            p.followed_by = None
+            # FIXME: only those that don't appear in both list need to be Noned
+            null_diff(new_c.diff(old_c))
+            # null_diff(new_c)
+            # null_diff(old_c)
+
+        print('mofo contacts shit done')
 
     def _add_routes(self):
         # methods wrapped so that if they raise NostrException it'll be returned as json {error: text}
@@ -233,6 +262,7 @@ class NostrWeb(StaticServer):
         self._app.route('/update_profile', method='POST', callback=_get_err_wrapped(self._do_profile_update))
         self._app.route('/export_profile', method='POST', callback=_get_err_wrapped(self._export_profile))
         self._app.route('/link_profile', method='POST', callback=_get_err_wrapped(self._link_profile))
+        self._app.route('/update_follows',  callback=_get_err_wrapped(self._do_contact_update))
 
         self._app.route('/set_profile', method='POST', callback=_get_err_wrapped(self._set_profile))
         self._app.route('/current_profile', callback=_get_err_wrapped(self._get_profile))
@@ -273,32 +303,30 @@ class NostrWeb(StaticServer):
             raise NostrWebException('value - %s doesn\'t look like a valid nostr %s' % (key, key_name))
 
     def _get_all_contacts_profile(self, pub_k):
-        ret = set([])
         # shortcut, nothing asked for
         if pub_k == '':
-            return ret
+            return set([])
 
-        # add ourself
-        ret.add(pub_k)
-
-        the_profile: Profile
-        c_contact: Contact
+        p: Profile
+        c: Contact
 
         self._check_key(pub_k)
-        the_profile = self._profile_handler.profiles.get_profile(pub_k)
-        if the_profile is None:
+        p = self._profile_handler.profiles.get_profile(pub_k)
+        if p is None:
             raise Exception('no profile found for pub_k - %s' % pub_k)
 
-        # add contacts
-        for c_contact in the_profile.load_contacts(self._profile_store):
-            ret.add(c_contact.contact_public_key)
+        # make contacts
+        cons = [c.contact_public_key for c in p.load_contacts(self._profile_store)]
 
-        # add followers
-        for c_contact in the_profile.load_followers(self._profile_store):
-            ret.add(c_contact.owner_public_key)
+        # make followers'
+        fols = [c.owner_public_key for c in p.load_followers(self._profile_store)]
+
+        # finally create ret set with ourself included
+        ret = set([pub_k])
+        ret.update(cons)
+        ret.update(fols)
 
         return ret
-
 
     def _profiles_list(self):
         # , list of pub_ks we want profiles for
@@ -594,6 +622,92 @@ class NostrWeb(StaticServer):
 
         return ret
 
+    def _do_contact_update(self):
+        pub_k = request.query.pub_k
+        follow = request.query.to_follow
+        unfollow = request.query.to_unfollow
+        follow_list = []
+        unfollow_list = []
+
+        def check_keys(to_check):
+            for c_key in to_check:
+                if Keys.is_key(c_key) is not True:
+                    raise NostrWebException('%s is not a valid nostr key' % c_key)
+
+        self._check_key(pub_k)
+
+        current_profile: Profile = self._profile_handler.profiles.get_profile(pub_k)
+        if current_profile is None:
+            raise NostrWebException('Profile not found for pub_k: %s' % pub_k)
+        if not current_profile.private_key:
+            raise NostrWebException('don\'t to have the private key to sign for given pub_k: ' % pub_k)
+
+        if follow != '':
+            follow_list = follow.split(',')
+
+        if unfollow != '':
+            unfollow_list = unfollow.split(',')
+
+        if not follow_list and not unfollow_list:
+            raise NostrWebException('follow or unfollow pks required')
+
+        check_keys(follow_list)
+        check_keys(unfollow_list)
+
+        my_contacts = ContactList(contacts=current_profile.load_contacts(self._profile_store),
+                                  owner_pub_k=current_profile.public_key)
+
+        con: Contact
+        actually_followed = []
+        actually_unfollowed = []
+
+        # do the adds
+        for pub_k in follow_list:
+            con = Contact(owner_pub_k=current_profile.public_key,
+                          updated_at=None,
+                          contact_pub_k=pub_k)
+            if my_contacts.add(con):
+                actually_followed.append(pub_k)
+        # do the rems
+        for pub_k in unfollow_list:
+            if my_contacts.remove(pub_k):
+                actually_unfollowed.append(pub_k)
+
+        # if actually_followed or actually_unfollowed:
+        my_contacts.updated_at = util_funcs.date_as_ticks(datetime.now())
+
+        # just local, as we always publish may go and rely on the save that gets done when we see the publish
+        # self._profile_store.set_contacts(my_contacts)
+        # current_profile.load_contacts(profile_store=self._profile_store,
+        #                               reload=True)
+
+        # self._update_session_profile(current_profile)
+
+        # publish
+        c_evt = my_contacts.get_contact_event()
+        c_evt.sign(current_profile.private_key)
+        self._client.publish(c_evt)
+
+        return {
+            'followed': actually_followed,
+            'unfollowed': actually_unfollowed
+        }
+
+    def _update_session_profile(self, p: Profile=None):
+        if p is None:
+            p = {}
+        else:
+            p.load_contacts(self._profile_store, reload=True)
+            follows = p.contacts
+            p = p.as_dict(with_private_key=True)
+            c: Contact
+            p['follows'] = [c.contact_public_key for c in follows]
+
+        self.session['profile'] = p
+        self.session.save()
+
+        return p
+
     def _set_profile(self):
         """
         set the profile that will be used when perfoming any action,
@@ -605,10 +719,8 @@ class NostrWeb(StaticServer):
         """
         p_name = request.query.profile
         # if no profile then assumed set to lurker profile
-        c_p = {}
-        if p_name=='':
-            c_p = {}
-        else:
+        p: Profile = None
+        if p_name != '':
             profiles = self._profile_store.select({
                 'private_key': p_name,
                 'public_key': p_name,
@@ -618,11 +730,9 @@ class NostrWeb(StaticServer):
             if not len(profiles):
                 raise Exception('no profile found for key: %s' % p_name)
 
-            c_p = profiles[0].as_dict(with_private_key=True)
-        self.session['profile'] = c_p
-        self.session.save()
+            p = profiles[0]
 
-        return c_p
+        return self._update_session_profile(p)
 
     def _get_profile(self):
         """
@@ -630,12 +740,15 @@ class NostrWeb(StaticServer):
         """
         return self.current_profile()
 
-    def current_profile(self, with_private_key=False):
+    def current_profile(self, with_private_key=False, with_contacts=False):
         ret = {}
         if 'profile' in self.session:
             ret = self.session['profile'].copy()
             if 'private_key' in ret and with_private_key is False:
                 del ret['private_key']
+            if 'follows' in ret and with_contacts is False:
+                del ret['follows']
+
         return ret
 
     def _state(self):
@@ -877,11 +990,11 @@ class NostrWeb(StaticServer):
         return DateTimeEncoder().encode(self._client.status)
 
     def do_event(self, sub_id, evt: Event, relay):
+        print('saw event mofo!!!!!!!!!!')
         if self._dedup.accept_event(evt):
+            print('wasnt dupl')
             # will update our profiles if meta/contact type data
             self._profile_handler.do_event(sub_id, evt, relay)
-
-
 
             if evt.kind == Event.KIND_ENCRYPT:
                 decrypted = 'unable to decrypt...'
@@ -921,6 +1034,7 @@ class NostrWeb(StaticServer):
             # otherwise client will get flooded with events if server is being started and there
             # are a lot of events to catch up on or db has just been created and maybe all old events
             # are being imported
+            print('send event mofo!!!!!!!!!!')
             if evt.created_at_ticks > self._started_at:
                 self.send_data(evt.event_data())
 

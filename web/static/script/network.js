@@ -11,6 +11,7 @@ APP.remote = function(){
         _all_profiles = '/profiles',
         _local_profiles_url = '/local_profiles',
         _update_profile_url = '/update_profile',
+        _update_follows_url = '/update_follows',
         _export_profile_url = '/export_profile',
         _link_profile_url = '/link_profile',
         _set_profile_url = '/set_profile',
@@ -191,6 +192,18 @@ APP.remote = function(){
             args['url'] = _local_profiles_url;
             do_query(args);
         },
+        'update_follows' : function(args){
+            let follows = args.to_follow===undefined ? [] : args.to_follow,
+                unfollows = args.to_unfollow===undefined ? [] : args.to_unfollow;
+
+            args['url'] = _update_follows_url;
+            args['params'] = {
+                'pub_k' : args['pub_k'],
+                'to_follow' : follows.join(','),
+                'to_unfollow' : unfollows.join(',')
+            };
+            do_query(args);
+        },
         'set_profile' : function(args){
             args['url'] = _set_profile_url;
             args['method'] = 'POST';
@@ -353,8 +366,10 @@ APP.nostr_client = function(){
                     APP.nostr.data.event.fire_event('relay_status', data[1]);
                 // assumed event
                 }else{
-                    console.log('new event!!!');
-                    APP.nostr.data.event.fire_event('event', data);
+                    // nostr event
+                    if(data.kind!==undefined){
+                        APP.nostr.data.event.fire_event('event', data);
+                    }
                 }
             }
         });

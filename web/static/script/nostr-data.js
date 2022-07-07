@@ -184,6 +184,30 @@ APP.nostr.data.user = function(){
         _user = APP.nostr.data.server_state.current_user;
     };
 
+    // makes sure our user obj has the most upto
+    APP.nostr.data.event.add_listener('event',function(of_type, data){
+        if(data.kind===3 && _user.pub_k!==undefined){
+            if(data.pubkey===_user.pub_k){
+                let n_contacts = [];
+                data.tags.forEach(function(c_tag){
+                    if(c_tag.length>=1){
+                        if(c_tag[0]=='p'){
+                            n_contacts.push(c_tag[1]);
+                        }
+                    }
+                });
+                _user.follows = n_contacts;
+                set_session_profile(_user);
+                APP.nostr.data.event.fire_event('contacts_updated', _user);
+            }
+        }
+    });
+
+    function set_session_profile(data){
+        _user = data;
+        APP.nostr.data.state.put('profile', JSON.stringify(_user));
+    }
+
     // for simple get/sets
     function _property(name, val, def){
         let ret = val;
@@ -200,20 +224,39 @@ APP.nostr.data.user = function(){
 
     return {
         'profile': function(user){
-            // intial state from server, rendered into state/js file
-            if(_user===undefined){
-                init();
-            };
-            // setting a new user
-            if(user!==undefined && user.pub_k!==_user.pub_k){
+            function set_profile(pub_k){
                 APP.remote.set_profile({
-                    'key' : user.pub_k,
+                    'key' : pub_k,
                     'success' : function(data){
                         // obvs we should look at data first really!!...
-                        _user = data;
+                        set_session_profile(data);
                         APP.nostr.data.event.fire_event('profile_set', _user);
                     }
                 });
+
+            }
+
+            if(_user===undefined){
+                init();
+                let my_user = JSON.parse(APP.nostr.data.state.get('profile', {
+                    'def' : '{}'
+                }));
+                // sanity check who the profile the server thinks we're using
+                // its unlikely this goes out of sync but if it is what shall we do??
+                // we do this cause we don't want to have to bring the full user profile down every page load
+                // with all followers and contacts because this could get quite large
+                // actually in the long run having all followers/contacts client side probably isn't going to work
+                // prpobably will need to change to methods that call and check as required and counts
+                if(my_user.pub_k!==_user.pub_k){
+//                    alert('user sync error?!?!?! what now ' + my_user.pub_k + '<>' + _user.pub_k);
+                    set_profile(_user.pub_k);
+                }
+                _user = my_user;
+            }
+
+            // setting a new user
+            if(user!==undefined && user.pub_k!==_user.pub_k){
+                set_profile(user.pub_k)
             }
 
             return _user;
@@ -238,7 +281,60 @@ APP.nostr.data.user = function(){
         // session cache will be an issue so disabled for now
         'profile_cache' : function(val){
             return _property('profile_cache', val, false);
-        }
+        },
+        'follow_toggle': function(){
+            let my_timer,
+                follows = {},
+                unfollows = {};
+
+            return function(pub_k, callback, delay){
+                delay = delay===undefined ? 200 : delay;
+                clearTimeout(my_timer);
+                if(follows[pub_k]!==undefined){
+                    delete follows[pub_k]
+                }else if(unfollows[pub_k]!==undefined){
+                    delete unfollows[pub_k];
+                }else{
+                    if(_user.follows.includes(pub_k)){
+                        unfollows[pub_k] = true;
+                    }else{
+                        follows[pub_k] = true;
+                    }
+                }
+
+                my_timer = setTimeout(function(){
+                    let k,
+                        to_follow= [],
+                        to_unfollow = [];
+
+                    for(k in follows){
+                        to_follow.push(k);
+                    }
+
+                    for(k in unfollows){
+                        to_unfollow.push(k);
+                    }
+
+                    if(to_follow.length>0 || to_unfollow.length>0){
+                        // change to post?!
+                        APP.remote.update_follows({
+                            'pub_k': _user.pub_k,
+                            'to_follow' : to_follow,
+                            'to_unfollow' : to_unfollow,
+                            'cache' : false,
+                            'success' : function(data){
+                                if(typeof(callback)==='function'){
+                                    callback(data);
+                                }
+                            }
+                        });
+                    }
+                    unfollows = {};
+                    follows = {};
+                },delay);
+
+            }
+        }()
     };
 }();
 
@@ -471,7 +567,21 @@ APP.nostr.data.profiles = function(){
     }
 
     function put(p, overwrite){
-
+        /* ideally all profiles would be got via search/fetch or we register here to see updates
+            on remote requests. As thats not the case at the moment use the put method to make a profile
+            globally available
+        */
+        overwrite = overwrite|| false;
+        let c_val = _lookup[p.pub_k];
+        // note this is change the obj that we were given... its probably what we want anyway
+        _clean_profile(p);
+        if(c_val===undefined||overwrite===true){
+            c_val = _lookup[p.pub_k] = {
+                'state' : 'loaded',
+                'profile' : p
+            };
+        }
+        return c_val;
     }
 
     return {

@@ -65,14 +65,24 @@
 
     function add_search(){
         let tool_html = [
-            '<div style="display:table-row">',
-                '<input style="display:table-cell;width:10em;"  placeholder="search" type="text" class="form-control" id="search-in">',
+//            '<div style="display:table-row">',
+//                '<input style="display:table-cell;width:8em;"  placeholder="search" type="text" class="form-control" id="search-in">',
+//                '<button id="full_search_but" style="display:table-cell;" type="button" class="btn btn-primary" >' +
+//                '<svg class="bi" >',
+//                    '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#person-plus-fill"/>',
+//                '</svg>',
+//                '</button>',
+//            '</div>'
+            '<span style="max-height:100%;float:right;">',
+                '<input style="display:table-cell;width:8em;"  placeholder="search" type="text" class="form-control" id="search-in">',
                 '<button id="full_search_but" style="display:table-cell;" type="button" class="btn btn-primary" >' +
                 '<svg class="bi" >',
                     '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#person-plus-fill"/>',
                 '</svg>',
                 '</button>',
-            '</div>'
+            '</span>'
+
+
             ].join('');
 
         _my_tab.get_tool_con().html(tool_html);
@@ -132,6 +142,7 @@
                     'show_follows': false
                 });
                 try{
+                    APP.nostr.data.profiles.put(_profile);
                     _my_tab.draw();
                 }catch(e){
                     console.log(e);
@@ -158,83 +169,6 @@
 
             }
         });
-
-
-//        _profiles = APP.nostr.data.profiles_n.create({
-//            'pub_ks' : [_pub_k],
-//            'on_load' : function(){
-//                let p = _profiles.lookup(_pub_k);
-//                if(p!==null){
-//                    p.load_contact_info(function(){
-//                        alert('loaded!!!');
-//                    });
-//                }
-//
-//
-//                _my_head.profiles_loaded();
-//                _my_tab.draw();
-//                let contact_tab = _my_tab.get_tab(0),
-//                    follow_tab= _my_tab.get_tab(1),
-//                    tool_html = [
-////                        '<div style="display:table-row">',
-////                            '<input style="display:table-cell;width:10em;"  placeholder="search" type="text" class="form-control" id="search-in">',
-////                            '<button id="full_search_but" style="display:table-cell;" type="button" class="btn btn-primary" ><img src="/bootstrap_icons/person-plus.svg" /></button>',
-////                        '</div>'
-//                        '<div style="display:table-row">',
-//                            '<input style="display:table-cell;width:10em;"  placeholder="search" type="text" class="form-control" id="search-in">',
-//                            '<button id="full_search_but" style="display:table-cell;" type="button" class="btn btn-primary" >' +
-//                            '<svg class="bi" >',
-//                                '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#person-plus-fill"/>',
-//                            '</svg>',
-//                            '</button>',
-//                        '</div>'
-//
-//                    ].join('');
-//
-//                // create list objs
-//                _contacts_list = APP.nostr.gui.profile_list.create({
-//                    'con': contact_tab['content-con'],
-//                    'pub_k': _pub_k,
-//                    'view_type': 'contacts'
-//                });
-//                _followers_list = APP.nostr.gui.profile_list.create({
-//                    'con': follow_tab['content-con'],
-//                    'pub_k': _pub_k,
-//                    'view_type': 'followers'
-//                });
-//
-//
-//                // finally draw
-//                _contacts_list.draw();
-//                _followers_list.draw();
-//                // add a search filed
-//
-//
-//                _my_tab.get_tool_con().html(tool_html);
-//
-//                _search_in = $('#search-in');
-//                _search_in.focus();
-//
-//                _search_in.on('keyup', function(e){
-//                    clearTimeout(_search_timer);
-//                    _search_timer = setTimeout(function(){
-//                        set_list_filter();
-//                    },200);
-//                });
-//
-//                // takes us to a page where we can search for all profiles not just currently looking at profile
-//                $('#full_search_but').on('click', function(){
-//                    location.href = '/html/profile_search.html';
-//                });
-//
-//                // for relay updates, note this screen is testing events as they come in
-//                APP.nostr_client.create();
-//
-//
-//            }
-//        });
-
-        // to see events as they happen
-//        start_client();
+        APP.nostr_client.create();
     });
 }();

@@ -168,18 +168,6 @@
         });
 
         render_screen();
-        // init the profiles data
-//        for(let c_v in _views){
-//            _views[c_v].profiles_loaded();
-//        }
-//        APP.nostr.data.profiles.init({
-//            'on_load' : function(){
-//                for(let c_v in _views){
-//                    _views[c_v].profiles_loaded();
-//                }
-//            }
-//        });
-
         APP.nostr_client.create();
 
     });

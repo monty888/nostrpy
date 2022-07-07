@@ -255,8 +255,9 @@ class Client:
         if self._on_status:
             self._on_status(self.status)
 
-    def _did_comm(self, ws):
-        print('ping or pong')
+    def _did_comm(self, ws, data):
+        print('ping or pong data: %s' % data)
+        self._reset_status()
 
     def start(self):
         # should probably check self._run and error if already true
@@ -271,7 +272,7 @@ class Client:
                                               on_close=self._on_close,
                                               on_ping=self._did_comm,
                                               on_pong=self._did_comm)
-            self._ws.run_forever()  # Set dispatcher to automatic reconnection
+            self._ws.run_forever(ping_interval=60, ping_timeout=5)  # Set dispatcher to automatic reconnection
 
         def monitor_thread():
             while self._run:

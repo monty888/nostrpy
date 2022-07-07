@@ -7,7 +7,6 @@ body {
     font-family : ariel;
     background-color: black;
     color: white;
-    min-width: 480px;
     font-size: 16px;
 }
 
@@ -18,6 +17,7 @@ body {
 .main-row{
     height: calc(100% - 64px);
     max-height: calc(100% - 64px);
+    min-width: 100%;
 }
 
 img{
@@ -34,6 +34,8 @@ img{
     display:table-cell;
     padding-top:4px;
     padding-bottom:4px;
+    max-height: 32px;
+    overflow: hidden;
 }
 
 .profile-pic-large, .profile-pic-small, .profile-pic-verysmall{
@@ -84,9 +86,22 @@ img{
 .bi{
     width: 16px;
     height: 16px;
+    margin-left: 4px;
+    margin-right:4px;
     fill: currentColor;
     cursor: pointer;
 }
+
+.bi-post{
+    width: 100%;
+    height: 100%;
+    margin: 0px;
+    fill: currentColor;
+    cursor: pointer;
+    padding-left:10%;
+    padding-right:10%;
+}
+
 
 .modal {
   padding: 0 !important; // override inline padding-right added from js
@@ -210,9 +225,11 @@ img{
 }
 
 @media (max-width: 480px) {
+    /*
     body {
         min-width: 100%;
     }
+    */
 
     .profile-pic-large{
         min-width: 64px;
@@ -236,6 +253,7 @@ img{
         display: block;
     }
 
+/*
     .tab-tool-area{
         float:none;
         padding-top:0px;
@@ -243,7 +261,7 @@ img{
         display: inline-block;
         width:100%;
     }
-
+*/
     .header-button {
         height:32px;
         width:32px;

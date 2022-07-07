@@ -541,32 +541,32 @@ class SQLProfileStore(ProfileStoreInterface):
 
 
     def set_contacts(self, contacts: ContactList):
-        # nothing to do
-        if len(contacts) == 0:
-            return True
-
-        c_contact: Contact
-        add_data = []
-        for c_contact in contacts:
-            add_data.append([
-                contacts.owner_public_key,
-                c_contact.contact_public_key,
-                contacts.updated_at
-            ])
-
-        return self._db.execute_batch(
-            [
+        sql_batch = [
                 {
                     'sql': 'delete from contacts where pub_k_owner=%s' % self._db.placeholder,
                     'args': [contacts.owner_public_key]
-                },
-                {
-                    'sql': """insert into contacts (pub_k_owner, pub_k_contact, updated_at) 
-                                values (%s)""" % ','.join([self._db.placeholder]*3),
-                    'args': add_data
                 }
             ]
-        )
+
+        # if 0 then you're just deleting any contacts that exist
+        if len(contacts) > 0:
+            c_contact: Contact
+            add_data = []
+            for c_contact in contacts:
+                add_data.append([
+                    contacts.owner_public_key,
+                    c_contact.contact_public_key,
+                    contacts.updated_at
+                ])
+            sql_batch.append(
+                {
+                    'sql': """insert into contacts (pub_k_owner, pub_k_contact, updated_at) 
+                                            values (%s)""" % ','.join([self._db.placeholder] * 3),
+                    'args': add_data
+                }
+            )
+
+        return self._db.execute_batch(sql_batch)
 
 
 class SQLiteProfileStore(SQLProfileStore):

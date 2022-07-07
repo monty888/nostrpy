@@ -163,7 +163,7 @@ APP.nostr.gui.post_button = function(){
     let _post_html = [
             '<div id="post-button" class="post-div">',
                 '<div style="width:50%;height:50%;margin:25%;">',
-                        '<svg class="bi" style="height:100%;width:100%;">',
+                        '<svg class="bi-post" style="height:100%;width:100%;">',
                             '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#send-plus"/>',
                         '</svg>',
                 '</div>',
@@ -378,7 +378,8 @@ APP.nostr.gui.tabs = function(){
 
 APP.nostr.gui.list = function(){
     const CHUNK_SIZE = 50,
-        CHUNK_DELAY = 200;
+        CHUNK_DELAY = 200,
+        MAX_DRAW = null;
 
     function create(args){
         let _con = args.con,
@@ -392,17 +393,23 @@ APP.nostr.gui.list = function(){
             _draw_timer,
             _uid = APP.nostr.gui.uid(),
             _click = args.click,
-            _empty_message = args.empty_message || 'nothing to show!';
+            _empty_message = args.empty_message || 'nothing to show!',
+            _max_draw = args.max_draw || MAX_DRAW;
 
         // draw the entire list
         // TODO: chunk draw, max draw amount
         // future
         function draw(){
+            let to_draw = _data.length;
+            if(_max_draw!==null && _data.length>_max_draw){
+                to_draw = _max_draw;
+            }
+
             clearInterval(_draw_timer);
             _con.html('');
-            if(_data.length===0){
+            if(to_draw===0){
                 _con.html(_empty_message);
-            }else if(_render_chunk && _data.length> _chunk_size){
+            }else if(_render_chunk && to_draw> _chunk_size){
                 let c_start=0,
                     c_end=_chunk_size,
                     last_block = false;
@@ -411,8 +418,8 @@ APP.nostr.gui.list = function(){
                     c_start = draw_chunk(c_start, c_end);
                     if(!last_block){
                         c_end+=_chunk_size;
-                        if(c_end>=_data.length){
-                            c_end = _data.length;
+                        if(c_end>= to_draw){
+                            c_end = to_draw;
                             last_block = true
                         }
 
@@ -429,7 +436,7 @@ APP.nostr.gui.list = function(){
 
 
             }else{
-                draw_chunk(0, _data.length);
+                draw_chunk(0, to_draw);
             }
         }
 
@@ -882,7 +889,8 @@ APP.nostr.gui.profile_about = function(){
     // if showing max n of preview followers in head
     const MAX_PREVIEW_PROFILES = 10,
         _tmpl = [
-                '<div style="height:100%;padding-top:2px;overflow-y:scroll;">',
+                // TODO: merge with template we use in lists?
+                '<div style="height:100%;padding-top:2px;overflow-y:auto;">',
               //  '<span style="display:table-cell;width:128px; background-color:#111111;padding-right:10px;" >',
                     // TODO: do something if unable to load pic
                     '{{#picture}}',
@@ -893,10 +901,24 @@ APP.nostr.gui.profile_about = function(){
                             '<span>{{name}}@</span>',
                         '{{/name}}',
                         '<span class="pubkey-text" >{{pub_k}}</span>',
-                        // dm icon
-                        '<svg id="{{pub_k}}-dm" class="bi" >',
-                            '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#envelope-fill"/>',
-                        '</svg>',
+                        // options that we can if we're in profile and this is not our profile
+                        '{{#other_profile}}',
+                            '<span style="float:right;">',
+                                '<svg id="{{pub_k}}-dm" class="bi" >',
+                                    '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#envelope-fill"/>',
+                                '</svg>',
+                                '{{#follows}}',
+                                    '<svg id="{{pub_k}}-fol" class="bi" >',
+                                        '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#star-fill"/>',
+                                    '</svg>',
+                                '{{/follows}}',
+                                '{{^follows}}',
+                                    '<svg id="{{pub_k}}-fol" class="bi" >',
+                                        '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#star"/>',
+                                    '</svg>',
+                                '{{/follows}}',
+                            '</span>',
+                        '{{/other_profile}}',
                         '{{#about}}',
                             '<div style="max-height:48px;overflow:auto;">',
                                 '{{{about}}}',
@@ -905,27 +927,6 @@ APP.nostr.gui.profile_about = function(){
                     '<div id="contacts-con" ></div>',
                     '<div id="followers-con" ></div>',
                     '</div>',
-                //'</span>',
-//                '<span display:inline-block;word-break: break-all;vertical-align:top;" >',
-
-//                    '<span class="pubkey-text" >{{pub_k}}</span>',
-////                    '<svg id="{{pub_k}}-cc" class="bi" >',
-////                        '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#clipboard-plus-fill"/>',
-////                    '</svg>',
-////                    '<br>',
-////                    '{{#name}}',
-////                        '<div>',
-////                            '{{name}}',
-////                        '</div>',
-////                    '{{/name}}',
-//                    '{{#about}}',
-//                        '<div>',
-//                            '{{{about}}}',
-//                        '</div>',
-//                    '{{/about}}',
-//                    '<div id="contacts-con" ></div>',
-//                    '<div id="followers-con" ></div>',
-//                '</span>',
                 '</div>'
         ].join(''),
         // used to render a limited list of follower/contacts imgs and counts
@@ -962,79 +963,81 @@ APP.nostr.gui.profile_about = function(){
             // gui to click func map
             _click_map = {},
             _enable_media = APP.nostr.data.user.enable_media(),
-            _show_follow_section = args.show_follows!=undefined ? args.show_follows : true;
+            _show_follow_section = args.show_follows!=undefined ? args.show_follows : true,
+            _current_profile = APP.nostr.data.user.profile(),
+            _render_obj;
 
         // called when one of our profiles either from follower or contact is clicked
         function _profile_clicked(pub_k){
             location.href = '/html/profile?pub_k='+pub_k;
         }
 
-        function draw(){
-            let render_obj = {
+
+        function create_render_obj(){
+            let attrs;
+
+            _render_obj = {
                 'pub_k' : _pub_k,
                 'profile_pic_class': _show_follow_section===true ? 'profile-pic-large' : 'profile-pic-small'
-            },
-            attrs,
-            _contacts;
+            };
+
             // fill from the profile if we found it
             if(_profile!==null){
                 attrs = _profile['attrs'];
-                render_obj['picture'] =attrs.picture;
-                render_obj['name'] = attrs.name;
-                render_obj['about'] = attrs.about;
-                if(render_obj.about!==undefined){
-                    render_obj.about = APP.nostr.gui.http_media_tags_into_text(render_obj.about, false);
-                    render_obj.about = render_obj.about.replace().replace(/\n/g,'<br>');
+                _render_obj['picture'] =attrs.picture;
+                _render_obj['name'] = attrs.name;
+                _render_obj['about'] = attrs.about;
+                if(_render_obj.about!==undefined){
+                    _render_obj.about = APP.nostr.gui.http_media_tags_into_text(_render_obj.about, false);
+                    _render_obj.about = _render_obj.about.replace().replace(/\n/g,'<br>');
+                }
+                // we'll be able to dm, (mute future?) and follow unfollow
+                if(_current_profile.pub_k!==undefined && _current_profile.pub_k!==_profile.pub_k){
+                    _render_obj.other_profile = true;
+                    _render_obj.follows = _current_profile.follows.includes(_profile.pub_k);
                 }
             }
             // give a picture based on pub_k event if no pic or media turned off
-            if((render_obj.picture===undefined) ||
-                (render_obj.picture===null) ||
+            if((_render_obj.picture===undefined) ||
+                (_render_obj.picture===null) ||
                     (_enable_media===false)){
-                render_obj.picture = APP.nostr.gui.robo_images.get_url({
+                _render_obj.picture = APP.nostr.gui.robo_images.get_url({
                     'text' : _pub_k
                 });
             }
-            _con.html(Mustache.render(_tmpl, render_obj));
+        }
+
+        function draw(){
+            create_render_obj();
+            _con.html(Mustache.render(_tmpl, _render_obj));
             // grab the follow and contact areas
             _contact_con = $('#contacts-con');
             _follow_con = $('#followers-con');
-
-            // wait for folloer/contact info to be loaded
+            // wait for follower/contact info to be loaded
             if(_show_follow_section){
                 render_followers();
-//                _profile.load_contact_info(function(){
-//                    console.log(_profile);
-//                    render_followers();
-//                });
             }
         };
 
+        function set_follow_el(is_following){
+            _current_profile = APP.nostr.data.user.profile();
+            _render_obj.follows = _current_profile.follows.includes(_profile.pub_k);
+            draw();
+        }
+
         function render_followers(){
-                render_contact_section('follows', _contact_con, _profile.contacts);
-                render_contact_section('followed by', _follow_con, _profile.followed_by);
-
-                // listen for clicks
-                $(_con).on('click', function(e){
-                    let id = APP.nostr.gui.get_clicked_id(e);
-                    if(id!==null){
-                        if(id.indexOf('-dm')>=0){
-                            APP.nostr.gui.post_modal.show({
-                                'kind' : 4,
-                                'pub_k': id.replace('-dm','')
-                            });
-                        }else if(_click_map[id]!==undefined){
-                            _click_map[id].func(_click_map[id].data);
-                        }
-
-
+            function mod_follows(followed_by){
+                let ret = [];
+                followed_by.forEach(function(c_f){
+                    if(c_f.pub_k!==_current_profile.pub_k || _current_profile.follows.includes(_profile.pub_k)){
+                        ret.push(c_f);
                     }
-
-//                    else if((id!==null) && (id.indexOf('-cc')>0)){
-////                        alert('clipboard copy!!!!' + id.replace('-cc',''));
-//                        navigator.clipboard.writeText(id.replace('-cc',''));
-//                    }
                 });
+                return ret;
+            }
+
+            render_contact_section('follows', _contact_con, _profile.contacts);
+            render_contact_section('followed by', _follow_con, mod_follows(_profile.followed_by));
         }
 
         function render_contact_section(label, con, profiles){
@@ -1095,7 +1098,34 @@ APP.nostr.gui.profile_about = function(){
             con.html(Mustache.render(_fol_con_sub, args));
         }
 
+        function add_events(){
+            $(_con).on('click', function(e){
+                let id = APP.nostr.gui.get_clicked_id(e);
+                if(id!==null){
+                    if(id.indexOf('-dm')>=0){
+                        APP.nostr.gui.post_modal.show({
+                            'kind' : 4,
+                            'pub_k': id.replace('-dm','')
+                        });
+                    }else if(id.indexOf('-fol')>=0){
+                        APP.nostr.data.user.follow_toggle(id.replace('-fol',''), function(data){
+//                                set_follow_el(data.followed.length>0);
+                        });
+                    }else if(_click_map[id]!==undefined){
+                        _click_map[id].func(_click_map[id].data);
+                    }
+
+
+                }
+            });
+
+            APP.nostr.data.event.add_listener('contacts_updated', function(of_type, data){
+                set_follow_el(_current_profile.follows.includes(_pub_k));
+            });
+        }
+
         function init(){
+
             if(_profile===undefined){
                 APP.remote.load_profile({
                     'pub_k': _pub_k,
@@ -1103,13 +1133,27 @@ APP.nostr.gui.profile_about = function(){
                     'include_contacts': _show_follow_section,
                     'full_profiles' : _show_follow_section,
                     'success' : function(data){
-                        _profile = data;
+                        if(data.error!==undefined){
+                            // probably we don't have the profile (or it doesn't exist it's not a requirement to post)
+                            // NOTE thet could still have contacts though as it is we wouldn't return them currently
+                            // tofix
+                            _profile = {
+                                'pub_k' : _pub_k,
+                                'attrs' : {
+                                    'about' : data.error
+                                }
+                            };
+                        }else{
+                            _profile = data;
+                        }
                         draw();
+                        add_events();
                     }
                 });
             }else{
                 _pub_k = _profile.pub_k;
                 draw();
+                add_events();
             }
         }
         init();
@@ -1585,7 +1629,8 @@ APP.nostr.gui.profile_list = function (){
             // list obj that actually does the rendering
             _my_list,
             // template to render into
-            _row_tmpl = APP.nostr.gui.templates.get('profile-list');
+            _row_tmpl = APP.nostr.gui.templates.get('profile-list'),
+            _current_profile = APP.nostr.data.user.profile();
 
         // methods
         function init(){
@@ -1630,7 +1675,7 @@ APP.nostr.gui.profile_list = function (){
                 },
                 attrs;
 
-            if(the_profile && the_profile.attrs){
+            if(the_profile.attrs){
                 attrs = the_profile['attrs'];
                 render_profile['picture'] =attrs.picture;
                 render_profile['name'] = attrs.name;
@@ -1649,6 +1694,15 @@ APP.nostr.gui.profile_list = function (){
                     'text': pub_k
                 });
             }
+
+            if(_current_profile.pub_k!==the_profile.pub_k){
+                render_profile.other_profile = true;
+                render_profile.can_dm = true;
+                render_profile.can_switch = the_profile.can_sign;
+            }
+
+            render_profile.can_edit = the_profile.can_sign;
+
             return render_profile;
         }
 
@@ -1674,11 +1728,7 @@ APP.nostr.gui.profile_list = function (){
         }
 
         // prep and draw the list
-        try{
-            init();
-        }catch(e){
-            console.log(e);
-        }
+        init();
 
         return {
             'draw': draw,
@@ -2087,7 +2137,8 @@ APP.nostr.gui.profile_select_modal = function(){
                 'profile_name' : c_p.profile_name,
                 'name' : c_p.attrs.name,
                 'picture' : img_src,
-                'can_edit' : true
+                'can_edit' : true,
+                'can_view' : true
             };
 
             to_add.profile_name = c_p.profile_name;
@@ -2127,6 +2178,8 @@ APP.nostr.gui.profile_select_modal = function(){
                 // go to edit page for this profile
                 }else if(cmd==='profile-edit'){
                     window.location='/html/edit_profile?pub_k='+pub_k;
+                }else if(cmd==='profile-view'){
+                    window.location='/html/profile?pub_k='+pub_k;
                 }
 
             }

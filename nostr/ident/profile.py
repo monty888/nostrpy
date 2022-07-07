@@ -115,6 +115,10 @@ class Profile:
                 'Profile::followed_by - load contacts hasn\'t been called yet for contact %s' % self.display_name())
         return self._followed_by
 
+    @followed_by.setter
+    def followed_by(self, contacts: ContactList):
+        self._followed_by = contacts
+
     @property
     def name(self):
         ret = None
@@ -433,6 +437,10 @@ class Contact:
     def updated_at(self):
         return self._updated_at
 
+    @updated_at.setter
+    def updated_at(self, at_date):
+        self._updated_at = at_date
+
     def __str__(self):
         ret = []
         if self.petname:
@@ -470,19 +478,19 @@ class ContactList:
                                         contact_pub_k=contact_pub_k)
                     contacts.append(n_contact)
 
-        return ContactList(contacts)
+        return ContactList(contacts, evt.pub_key)
 
-    def __init__(self, contacts):
+    def __init__(self, contacts, owner_pub_k):
         self._contacts = contacts
+        self._lookup = set()
+        self._owner_pub_k = owner_pub_k
+        con: Contact
+        for con in self._contacts:
+            self._lookup.add(con.contact_public_key)
 
-    # because a list should only contain the contacts for a single profile
-    # this methods jsut look at the 0 element if it exists and return value from there
     @property
     def owner_public_key(self):
-        ret = None
-        if self._contacts:
-            ret = self._contacts[0].owner_public_key
-        return ret
+        return self._owner_pub_k
 
     @property
     def updated_at(self):
@@ -490,6 +498,59 @@ class ContactList:
         if self._contacts:
             ret = self._contacts[0].updated_at
         return ret
+
+    @updated_at.setter
+    def updated_at(self, at_date):
+        c_con: Contact
+        for c_con in self._contacts:
+            c_con.updated_at = at_date
+
+    def add(self, con: Contact) -> bool:
+        ret = False
+        if con.contact_public_key not in self._lookup:
+            self._lookup.add(con.contact_public_key)
+            self._contacts.append(con)
+            ret = True
+        return ret
+
+    def remove(self, pub_k: str) -> bool:
+        ret = False
+        if pub_k in self._lookup:
+            self._lookup.remove(pub_k)
+            for pos in range(0,len(self._contacts)):
+                if self._contacts[pos].contact_public_key == pub_k:
+                    del self._contacts[pos]
+                    break
+
+            ret = True
+
+        return ret
+
+    def diff(self, cmp_contacts: ContactList) -> []:
+        """
+        :param to_contacts: another contact list
+        :return: [pub_ks] that are not in both lists
+        """
+        con: Contact
+        my_keys = [con.contact_public_key for con in self._contacts]
+        other_keys = [con.contact_public_key for con in cmp_contacts]
+
+        return list(set(my_keys) - set(other_keys)) + list(set(other_keys) - set(my_keys))
+
+
+    def __contains__(self, item:Contact):
+        return item.contact_public_key in self._lookup
+
+    def get_contact_event(self):
+        """
+            returns a meta event for this profile that once signed can be posted to relay for update
+        """
+        c_con: Contact
+        contacts = [['p', c_con.contact_public_key] for c_con in self._contacts]
+        return Event(kind=Event.KIND_CONTACT_LIST,
+                     content='TODO',
+                     tags=contacts,
+                     pub_key=self.owner_public_key)
 
     def __len__(self):
         return len(self._contacts)
@@ -510,11 +571,13 @@ class ProfileEventHandler:
 
     def __init__(self,
                  profile_store: 'ProfileStoreInterface',
-                 on_update=None):
+                 on_profile_update=None,
+                 on_contact_update=None):
 
         self._store = profile_store
         self._profiles = self._store.select()
-        self._on_update = on_update
+        self._on_profile_update = on_profile_update
+        self._on_contact_update = on_contact_update
 
     # update locally rather than via meta 0 event
     # only used to link prov_k or add/change profile name
@@ -548,29 +611,30 @@ class ProfileEventHandler:
                     self._profiles.add(evt_profile)
 
                 # if owner gave us an on_update call with pubkey that has changed, they may want to do something...
-                if self._on_update:
-                    self._on_update(evt_profile, c_profile)
+                if self._on_profile_update:
+                    self._on_profile_update(evt_profile, c_profile)
 
         elif evt.kind == Event.KIND_CONTACT_LIST:
-
             # it's not required that we have a profile to import the events
             # though it might be hard to get to the contacts later if we don't as (until we have a profile)
             # as it won't be handing off anything
-            existing_contacts = ContactList(self._store.contacts({
-                'owner': pubkey
-            }))
+            existing_contacts = ContactList(contacts=self._store.contacts({'owner': pubkey}),
+                                            owner_pub_k=pubkey)
 
             if existing_contacts.updated_at is None or existing_contacts.updated_at < evt.created_at_ticks:
-                self._store.set_contacts(ContactList.create_from_event(evt))
-
-                # make sure contacts will be reloaded on next access
                 c_profile = self._profiles.lookup_pub_key(pubkey)
-                if not c_profile is None:
+
+                # now update
+                n_contacts = ContactList.create_from_event(evt)
+                self._store.set_contacts(n_contacts)
+
+                # if we do have a profile this will force reload of contacts on next access
+                if c_profile:
                     c_profile.contacts = None
 
-                # TODO: contacts changed event
-                # if self._on_update:
-                #     self._on_update()
+                # callback that we updated contacts
+                if self._on_contact_update:
+                    self._on_contact_update(n_contacts, existing_contacts)
 
     @property
     def profiles(self) -> ProfileList:

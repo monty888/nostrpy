@@ -49,7 +49,7 @@
                         'profiles' : _profiles
                     });
                     // finally draw
-                    _profiles_list.draw();
+//                    _profiles_list.draw();
 
                     _search_in.focus();
 

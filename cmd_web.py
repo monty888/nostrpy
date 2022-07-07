@@ -226,8 +226,8 @@ def run():
             'client': 'wss://nostr-pub.wellorder.net',
             'write': True
         },
-        # 'ws://localhost:8081',
-        # 'ws://localhost:8082',
+        'ws://localhost:8081',
+        'ws://localhost:8082',
         {
             'client': 'wss://relay.damus.io',
             'write': True
@@ -272,3 +272,21 @@ def run():
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
     run()
+    # p_store = SQLiteProfileStore(WORK_DIR + 'nostr-client-test.db')
+    #
+    # k1 = '32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245'
+    # k2 = '9ec7a778167afb1d30c4833de9322da0c08ba71a69e1911d5578d3144bb56437'
+    # p = p_store.select({
+    #     'pub_k': [k1, k2]
+    # })
+    # from nostr.ident.profile import ContactList
+    # p1 = p.lookup_pub_key(k1)
+    # c1 = ContactList(p1.load_contacts(p_store),owner_pub_k=p1.public_key)
+    # p2 = p.lookup_pub_key(k2)
+    # c2 = ContactList(p2.load_contacts(p_store), owner_pub_k=p2.public_key)
+    #
+    # print(len(c1))
+    # print(len(c2))
+    #
+    # print(len(c1.diff(c2)))
+
