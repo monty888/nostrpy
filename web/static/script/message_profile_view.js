@@ -8,46 +8,20 @@
     let _client,
         // url params
         _params = new URLSearchParams(window.location.search),
-        // event we want to look at
-        _event_id = _params.get('id'),
-        // where we clicked to this page and the root wasn't visible we add it so
-        // hopefully to put the post in somesort of context
-        _root_id = _params.get('root'),
+        //
+        _pub_k = _params.get('pub_k'),
         // main container where we'll draw out the events
         _main_con,
+        // for now we're using a standard event view, maybe in future
+        // compress down into unique users
         _my_event_view,
         _current_profile = APP.nostr.data.user.profile(),
         _my_filter;
 
-    function create_filter(){
-        let filter = [
-            {
-                'kinds' : [1,4],
-                'ids' : [_event_id]
-            },
-            {
-                'kinds' : [1,4],
-                '#e' : [_event_id]
-            }
-        ];
-
-        if(_root_id!==null){
-            filter.push({
-                'kinds' : [1,4],
-                'ids' : [_root_id]
-            });
-            filter.push({
-                'kinds' : [1,4],
-                '#e' : [_root_id]
-            });
-        }
-        _my_filter = APP.nostr.data.filter.create(filter);
-    }
-
     function load_notes(){
         APP.remote.load_events({
+            'pub_k' : APP.nostr.data.user.profile().pub_k,
             'filter' : _my_filter,
-            'pub_k' : _current_profile.pub_k,
             'success': function(data){
                 if(data['error']!==undefined){
                     alert(data['error']);
@@ -60,11 +34,10 @@
 
     // start when everything is ready
     $(document).ready(function() {
-        if(_event_id===''){
-            alert('no event id!!!');
+        if(_pub_k===null){
+            alert('pub_k is required');
             return;
         }
-        create_filter();
 
         // main page struc
         $('#main_container').html(APP.nostr.gui.templates.get('screen'));
@@ -72,22 +45,39 @@
         // main container where we'll draw out the events
         _main_con = $('#main-con');
         _main_con.css('overflow-y','auto');
+
+
+        _my_filter = APP.nostr.data.filter.create([
+            {
+                'kinds' :[4],
+                'authors' : [_current_profile.pub_k],
+                '#p': [_pub_k]
+            },
+            {
+                'kinds': [4],
+                'authors' : [_pub_k],
+                '#p' : [_current_profile.pub_k]
+            }
+        ]);
         _my_event_view = APP.nostr.gui.event_view.create({
             'con' : _main_con,
             'filter' : _my_filter
         });
 
-        // start client for future notes....
         load_notes();
+        // init the profiles data
+//        APP.nostr.data.profiles.init({
+//            'on_load' : function(){
+//                _my_event_view.profiles_loaded();
+//            }
+//        });
+
 
         APP.nostr.gui.post_button.create();
         // our own listeners
         // profile has changed
         APP.nostr.data.event.add_listener('profile_set',function(of_type, data){
-            if(data.pub_k !== _current_profile.pub_k){
-                _current_profile = data;
-                _my_event_view.draw();
-            }
+            // it'll go to home now anyhow
         });
 
         // so we see new events
@@ -95,7 +85,7 @@
             _my_event_view.add(event);
         });
 
-        // any post/ reply we'll go to the home page
+        // any post
         APP.nostr.data.event.add_listener('post-success', function(type, event){
             // its just a post better go back to the reply screen
             if(event.type!=='reply'){
@@ -103,7 +93,7 @@
             }
         });
 
-
+        // start client for future notes....
         APP.nostr_client.create();
 
     });

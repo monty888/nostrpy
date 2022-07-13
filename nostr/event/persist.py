@@ -9,6 +9,7 @@ from sqlite3.dbapi2 import IntegrityError
 from nostr.event.event import Event
 from nostr.util import util_funcs
 from nostr.exception import NostrCommandException
+from data.data import DataSet
 
 try:
     from psycopg2 import OperationalError
@@ -130,6 +131,14 @@ class ClientEventStoreInterface(EventStoreInterface):
         :return: [str] relay_urls
         """
 
+    @abstractmethod
+    def direct_messages(self, pub_k: str) -> DataSet:
+        """
+        :param pub_k:
+        :return:  DataSet containing event_id, pub_k, created_at of direct messages for this user
+        order newest to oldest, one row per pub_k messaging the event_id, created_at is for the newest record we have
+        """
+
 
 class MemoryEventStore(EventStoreInterface):
     """
@@ -212,8 +221,11 @@ class ClientMemoryEventStore(MemoryEventStore, ClientEventStoreInterface):
         return ret
 
     # TODO
-    # def event_relay(self, event_id: str) -> [str]:
-    #     pass
+    def event_relay(self, event_id: str) -> [str]:
+        pass
+
+    def direct_messages(self, pub_k: str) -> DataSet:
+        pass
 
 
 class SQLEventStore(EventStoreInterface):
@@ -701,6 +713,30 @@ class ClientSQLEventStore(SQLEventStore, ClientEventStoreInterface):
         return self._db.select_sql(sql=sql,
                                    args=[event_id]).as_arr()
 
+    def direct_messages(self, pub_k: str) -> DataSet:
+        sql = """
+select event_id,pub_k,max(created_at) as created_at from(
+    select e.event_id, e_t.value as pub_k,e.created_at as created_at from events e 
+    inner join event_tags e_t on e_t.id = e.id
+    where 
+        e.pubkey=%s and e.kind=4
+        and e_t.type='p' and e_t.value!=%s
+    union
+    select e.event_id, e.pubkey as pub_k,e.created_at as created_at from events e 
+    inner join event_tags e_t on e_t.id = e.id
+    where 
+        e.kind=4 and e_t.type='p' and e_t.value=%s and e.pubkey!=%s
+)
+GROUP by pub_k
+order by created_at desc
+        
+        """ % (self._db.placeholder,
+               self._db.placeholder,
+               self._db.placeholder,
+               self._db.placeholder)
+
+        return self._db.select_sql(sql,
+                                   args=[pub_k]*4)
 
 class ClientSQLiteEventStore(SQLiteEventStore, ClientSQLEventStore,  ClientEventStoreInterface):
 

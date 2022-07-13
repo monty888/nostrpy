@@ -12,19 +12,25 @@
         _main_con,
         // for now we're using a standard event view, maybe in future
         // compress down into unique users
-        _my_event_view,
+        _my_view,
         _current_profile = APP.nostr.data.user.profile(),
         _my_filter;
 
     function load_notes(){
-
-        APP.remote.load_events({
-            'filter' : _my_filter,
+        APP.remote.load_messages({
+            'pub_k' : APP.nostr.data.user.profile().pub_k,
             'success': function(data){
                 if(data['error']!==undefined){
                     alert(data['error']);
                 }else{
-                    _my_event_view.set_notes(data['events']);
+                    try{
+                        _my_view = APP.nostr.gui.dm_list.create({
+                            'con' : _main_con,
+                            'events' : data['events']
+                        });
+                    }catch(e){
+                        console.log(e);
+                    }
                 }
             }
         });
@@ -51,10 +57,6 @@
                 '#p' : [_current_profile.pub_k]
             }
         ]);
-        _my_event_view = APP.nostr.gui.event_view.create({
-            'con' : _main_con,
-            'filter' : _my_filter
-        });
 
         load_notes();
         // init the profiles data

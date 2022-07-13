@@ -526,6 +526,10 @@ class ContactList:
 
         return ret
 
+    def follow_keys(self):
+        con: Contact
+        return [con.contact_public_key for con in self._contacts]
+
     def diff(self, cmp_contacts: ContactList) -> []:
         """
         :param to_contacts: another contact list

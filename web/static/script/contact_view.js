@@ -141,13 +141,15 @@
                     'profile': _profile,
                     'show_follows': false
                 });
-                try{
-                    APP.nostr.data.profiles.put(_profile);
-                    _my_tab.draw();
-                }catch(e){
-                    console.log(e);
-                }
 
+                // hack to make contact profiles available by lookup, should be transparent to use really
+                APP.nostr.data.profiles.put(_profile);
+                _profile.contacts.forEach(function(c_p){
+                    APP.nostr.data.profiles.put(c_p);
+                })
+                //
+
+                _my_tab.draw();
                 add_search();
 
                 let contact_tab = _my_tab.get_tab(0),
@@ -164,8 +166,6 @@
                     'profiles': _profile.followed_by,
                     'view_type': 'followers'
                 });
-
-
 
             }
         });

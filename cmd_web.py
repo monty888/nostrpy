@@ -272,7 +272,20 @@ def run():
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
     run()
+
     # p_store = SQLiteProfileStore(WORK_DIR + 'nostr-client-test.db')
+    # e_store = ClientSQLiteEventStore(WORK_DIR + 'nostr-client-test.db')
+    #
+    # f = {
+    #     'ids': []
+    # }
+    # dms = e_store.direct_messages('40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486')
+    # for c_dm in dms:
+    #     f['ids'].append(c_dm['event_id'])
+    #
+    # print(len(e_store.get_filter(f)))
+
+
     #
     # k1 = '32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245'
     # k2 = '9ec7a778167afb1d30c4833de9322da0c08ba71a69e1911d5578d3144bb56437'

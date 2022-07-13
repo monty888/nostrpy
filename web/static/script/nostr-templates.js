@@ -259,6 +259,25 @@ APP.nostr.gui.templates = function(){
                 '{{> actions}}',
             '</span>'
         ],
+        'dm-content' : [
+            '<span id="{{uid}}-{{event_id}}-content" class="post-content" >',
+                '<div >',
+                    '<span id="{{uid}}-{{event_id}}-pt" >',
+                        '{{#name}}',
+                            '<span style="font-weight:bold">{{name}}</span>@<span style="color:cyan">{{short_key}}</span>',
+                        '{{/name}}',
+                        '{{^name}}',
+                            '<span style="color:cyan;font-weight:bold">{{short_key}}</span>',
+                        '{{/name}}',
+                    '</span>',
+                    '<span id="{{uid}}-{{event_id}}-time" style="float:right">{{at_time}}</span>',
+                '</div>',
+                '<div>',
+                    '<img id="{{uid}}-{{event_id}}-lastpp" class="profile-pic-verysmall" style="float:left;" src="{{sender_picture}}" />',
+                    '<span style="text-align: justify;" >{{{content}}}</span>',
+                '</div>',
+            '</span>'
+        ],
         'event-actions' : [
             '<div style="width:100%">',
                 '<span>&nbsp;</span>',
@@ -297,6 +316,13 @@ APP.nostr.gui.templates = function(){
             '<div id="{{uid}}-{{event_id}}" style="padding-top:2px;border 1px solid #222222">',
                 '{{> profile}}',
                 '{{> path}}',
+                // the note content
+                '{{> content}}',
+            '</div>',
+        ],
+        'dm-event' : [
+            '<div id="{{uid}}-{{event_id}}" style="padding-top:2px;border 1px solid #222222">',
+                '{{> profile}}',
                 // the note content
                 '{{> content}}',
             '</div>'

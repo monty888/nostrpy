@@ -65,8 +65,16 @@
             console.log(e)
         }
 
-        // for relay updates
-//        APP.nostr_client.create();
+        // any post/ reply we'll go to the home page
+        APP.nostr.data.event.add_listener('post-success', function(type, event){
+            event = event.event;
+            if(event.kind===1){
+                window.location = '/';
+            }else if(event.kind===4){
+                window.location = '/html/messages.html'
+            }
+        });
+        APP.nostr_client.create();
 
     });
 }();

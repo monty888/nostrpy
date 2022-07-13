@@ -66,11 +66,7 @@ class SQLiteDatabase(Database, ABC):
     @property
     def file(self):
         return self._f_name
-    """
-        subclass and add methods
-        __init__(as required)
-        _get_con()
-    """
+
     def execute_sql(self, sql, args=None, catch_err=False):
         """
             execute some SQL, currently we'll just fall over on

@@ -6,6 +6,7 @@ APP.remote = function(){
     let _note_url = '/text_events',
         _note_for_profile_url = '/text_events_for_profile',
         _events_by_filter_url = '/events',
+        _messages_url = '/messages',
         _events_by_seach_str = '/events_text_search',
         // this will probably need to change in future
         _all_profiles = '/profiles',
@@ -204,20 +205,20 @@ APP.remote = function(){
             };
             do_query(args);
         },
-        'set_profile' : function(args){
-            args['url'] = _set_profile_url;
-            args['method'] = 'POST';
-            args['params'] = {
-                // either pub key or profile name, if undefined then it's no profile
-                // (the lurker)
-                'profile' : args['key']!==undefined ? args['key'] : ''
-            };
-            do_query(args);
-        },
-        'current_profile' : function(args){
-            args['url'] = _current_profile_url;
-            do_query(args);
-        },
+//        'set_profile' : function(args){
+//            args['url'] = _set_profile_url;
+//            args['method'] = 'POST';
+//            args['params'] = {
+//                // either pub key or profile name, if undefined then it's no profile
+//                // (the lurker)
+//                'profile' : args['key']!==undefined ? args['key'] : ''
+//            };
+//            do_query(args);
+//        },
+//        'current_profile' : function(args){
+//            args['url'] = _current_profile_url;
+//            do_query(args);
+//        },
         'load_notes_from_profile': function(args){
             args['url'] = _note_for_profile_url;
             args['params'] = {
@@ -237,7 +238,21 @@ APP.remote = function(){
             let filter = args.filter===undefined ? {'kinds':[1]} : args.filter;
             args['url'] = _events_by_filter_url;
             args['method'] = 'POST';
+            // this should be pub_k of the profile were using and is only required
+            // if decrypt is needed
+            if(args.pub_k!==undefined){
+                args['params'] = {
+                    'pub_k' : args.pub_k
+                };
+            }
             args['data'] = 'filter=' + filter.as_str();
+            do_query(args);
+        },
+        'load_messages' : function(args){
+            args['url'] = _messages_url;
+            args['params'] = {
+                'pub_k' : args.pub_k
+            };
             do_query(args);
         },
         'text_events_search' : function(args){
@@ -253,6 +268,10 @@ APP.remote = function(){
             let evt = $.extend({}, args.event);
             evt.content = encodeURIComponent(evt.content);
             args['data'] = 'event=' + JSON.stringify(evt);
+
+            args['params'] = {
+                'pub_k' : args['pub_k']
+            };
 
             do_query(args);
         },

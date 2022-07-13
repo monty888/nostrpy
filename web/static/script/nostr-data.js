@@ -22,7 +22,7 @@ APP.nostr.data.relay_status = function(){
     let _state;
 
     function init(){
-        _state = APP.nostr.data.server_state.relay_status;
+        _state = JSON.parse(APP.nostr.data.server_state.relay_status);
         // watch for changes, to start watching for changes you need to make a get request...
         APP.nostr.data.event.add_listener('relay_status', function(type, data){
             _state = data[1];
@@ -180,10 +180,6 @@ APP.nostr.data.user = function(){
 
     let _user;
 
-    function init(){
-        _user = APP.nostr.data.server_state.current_user;
-    };
-
     // makes sure our user obj has the most upto
     APP.nostr.data.event.add_listener('event',function(of_type, data){
         if(data.kind===3 && _user.pub_k!==undefined){
@@ -196,7 +192,7 @@ APP.nostr.data.user = function(){
                         }
                     }
                 });
-                _user.follows = n_contacts;
+                _user.contacts = n_contacts;
                 set_session_profile(_user);
                 APP.nostr.data.event.fire_event('contacts_updated', _user);
             }
@@ -225,41 +221,35 @@ APP.nostr.data.user = function(){
     return {
         'profile': function(user){
             function set_profile(pub_k){
-                APP.remote.set_profile({
-                    'key' : pub_k,
-                    'success' : function(data){
-                        // obvs we should look at data first really!!...
-                        set_session_profile(data);
-                        APP.nostr.data.event.fire_event('profile_set', _user);
-                    }
-                });
+                function loaded(p){
+                    set_session_profile(p);
+                    APP.nostr.data.event.fire_event('profile_set', _user);
+                }
 
+                if(pub_k===undefined){
+                    loaded({});
+                }else{
+                    APP.remote.load_profile({
+                        'pub_k' : pub_k,
+                        'include_contacts' : true,
+                        'success' : loaded
+                    });
+                }
             }
 
             if(_user===undefined){
-                init();
                 let my_user = JSON.parse(APP.nostr.data.state.get('profile', {
                     'def' : '{}'
                 }));
-                // sanity check who the profile the server thinks we're using
-                // its unlikely this goes out of sync but if it is what shall we do??
-                // we do this cause we don't want to have to bring the full user profile down every page load
-                // with all followers and contacts because this could get quite large
-                // actually in the long run having all followers/contacts client side probably isn't going to work
-                // prpobably will need to change to methods that call and check as required and counts
-                if(my_user.pub_k!==_user.pub_k){
-//                    alert('user sync error?!?!?! what now ' + my_user.pub_k + '<>' + _user.pub_k);
-                    set_profile(_user.pub_k);
-                }
                 _user = my_user;
             }
-
             // setting a new user
             if(user!==undefined && user.pub_k!==_user.pub_k){
                 set_profile(user.pub_k)
             }
 
-            return _user;
+            // caller doesn't have the same obj
+            return $.extend({},_user);
         },
         'get_client' : function(){
             return CLIENT;
@@ -295,7 +285,7 @@ APP.nostr.data.user = function(){
                 }else if(unfollows[pub_k]!==undefined){
                     delete unfollows[pub_k];
                 }else{
-                    if(_user.follows.includes(pub_k)){
+                    if(_user.contacts.includes(pub_k)){
                         unfollows[pub_k] = true;
                     }else{
                         follows[pub_k] = true;

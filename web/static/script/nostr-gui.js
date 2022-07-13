@@ -1,3 +1,272 @@
+'use strict';
+
+APP.nostr.gui = function(){
+    let _id=0,
+        // templates for rendering different media
+        // external_link
+        _link_tmpl = '<a href="{{url}}">{{url}}</a>',
+        // image types e.g. jpg, png
+        _img_tmpl = '<img src="{{url}}" width=100% height=auto style="display:block;border-radius:10px;" />',
+        // video
+        _video_tmpl = '<video width=100% height=auto style="display:block" controls>' +
+        '<source src="{{url}}" >' +
+        'Your browser does not support the video tag.' +
+        '</video>',
+        _notifications_con;
+
+    // return a unique id in page
+    function uid(){
+        _id++;
+        return 'guid-'+_id;
+    }
+
+    // from clicked el traverses upwards to first el with id if any
+    // null if we reach the body el before finding an id
+    function get_clicked_id(e, accept_map){
+        let ret = null,
+            el = e.target;
+
+        while((el.id===undefined || el.id==='' || (accept_map && accept_map[el.id]===undefined)) && el!==document.body){
+            el = el.parentNode;
+        }
+
+        if(el!=document.body){
+            ret = el.id;
+        }
+        return ret;
+    }
+
+    /*
+        for given ext returns media type which tells us how to render the content
+        anything not understood is returned as external_link and will be rendered as <a> tag
+    */
+    function media_lookup(ref_str){
+        let media_types = {
+                'jpg': 'image',
+                'jpeg' : 'image',
+                'gif': 'image',
+                'png': 'image',
+                'mp4': 'video',
+                'webm' : 'video',
+                'mkv' : 'video'
+            },
+            parts = ref_str.toLowerCase().split('.'),
+            ext = parts[parts.length-1],
+            ret = 'external_link';
+
+        if(ext in media_types){
+            ret = media_types[ext];
+        }
+        return ret;
+    }
+
+    function http_media_tags_into_text(text, tmpl_lookup){
+        // first make the text safe
+        let ret = text,
+            // look for link like strs
+            http_matches = APP.nostr.util.http_matches(ret),
+            enable_media = APP.nostr.data.user.enable_media();
+
+        /* by default everything, if enable_media is false everything will be rendered
+            as external_link, perhaps enable even this level to be turn off
+            or just dont call and just make text safe ... maybe enable media should
+            be changed from true/false
+            0 - no media whatsoever and text rendered unclickable (user has to physically copy paste)
+            1 - no media but hrefs are still rendered
+            2 - external media rendered where wee can, links otherwise
+            (0 could also just give yes/no alert?)
+        */
+        tmpl_lookup = tmpl_lookup || {
+            'image' : _img_tmpl,
+            'external_link' : _link_tmpl,
+            'video' : _video_tmpl
+        };
+
+        // and do replacements in the text
+        // do inline media and or link replacement
+        if(http_matches!==null){
+            http_matches.forEach(function(c_match){
+                // how to render, unless enable media is false in which case just the link is out put
+                // another level of safety would be that these links are rendered inactive and need the user
+                // to perform some action to actaully enable them
+                let media_type = enable_media===true ? APP.nostr.gui.media_lookup(c_match) : 'external_link';
+                ret = ret.replace(c_match,Mustache.render(tmpl_lookup[media_type],{
+                    'url' : c_match
+                }));
+            });
+        }
+        return ret;
+    }
+
+    function notification(args){
+        /*
+            displays a messge at top of the screen that will clear after a few seconds
+        */
+        let _text = args.text;
+            // boostrap alert types
+            _type = args.type || 'success',
+            _tmpl = APP.nostr.gui.templates.get('notification');
+        function do_notification(){
+            let _id = APP.nostr.gui.uid();
+            _notifications_con.prepend(Mustache.render(_tmpl, {
+                'text' : _text,
+                'type' : _type,
+                'id' : _id
+            }));
+
+            setTimeout(function(){
+
+                let el = $('#'+_id);
+                el.fadeOut(function(){
+                    el.remove();
+                });
+            },5000);
+        }
+        // first notification
+        if(_notifications_con===undefined){
+            $(document.body).prepend(APP.nostr.gui.templates.get('notification-container'));
+            _notifications_con = $('#notifications');
+        }
+
+        do_notification();
+    }
+
+    function get_note_content_for_render(evt){
+        let content = evt.content;
+        // make safe
+        content = APP.nostr.util.html_escape(content);
+        // insert media tags to content
+        content = APP.nostr.gui.http_media_tags_into_text(content);
+        // do p tag replacement
+        content = APP.nostr.gui.tag_replacement(content, evt.tags)
+        // add line breaks
+        content = content.replace(/\n/g,'<br>');
+        // fix special characters as we're rendering in html el
+        content = APP.nostr.util.html_unescape(content);
+
+        return content;
+    }
+
+    return {
+        'uid' : uid,
+        'get_clicked_id': get_clicked_id,
+        'media_lookup' : media_lookup,
+        'http_media_tags_into_text' : http_media_tags_into_text,
+        'notification' : notification,
+        'get_note_content_for_render' : get_note_content_for_render
+    }
+
+}();
+
+/*
+    given a string of text (events content) and tags
+    will return the string with #[n]... replaced with tag links
+    for #p and #e events
+    maybe just hand event in?
+*/
+APP.nostr.gui.tag_replacement = function (text, tags){
+    // cache of tag replacement regexs
+    let _preregex = {},
+        // profile helper for p lookups, note it can only find profiles
+        _profiles,
+        //
+        _replacements = {
+            'e' : {
+                'prefix' : '&',
+                'url' : function(id){
+                    return '/html/event?id='+id;
+                }
+            },
+            'p' : {
+                'prefix' : '@',
+                'url' : function(id){
+                    return '/html/profile?pub_k='+id
+                },
+                'text' : function(id, def){
+                    let profile,
+                        // if unable to sub
+                        ret = def;
+                    profile =  APP.nostr.data.profiles.lookup(id);
+
+                    if(profile!==null && profile.attrs.name!==undefined){
+                        ret = profile.attrs.name;
+                    }
+
+                    return ret;
+                }
+            }
+        };
+
+    // the actual function
+    return function(text, tags){
+        let tag_type,
+            tag_val,
+            replace_text,
+            regex,
+            replacer;
+
+        tags.forEach(function(ct, i){
+            tag_type = ct[0];
+            tag_val = ct[1];
+
+            if((_replacements[tag_type]!==undefined) && (tag_val!==undefined) && (tag_val!==null)){
+                // replacement text is a short version of key
+                // unless there is a lookup function provided
+                replace_text = APP.nostr.util.short_key(ct[1]);
+                regex = _preregex[i];
+                if(regex===undefined){
+                    regex = new RegExp('#\\['+i+'\\]','g');
+                    _preregex[i] = regex;
+                }
+                replacer = _replacements[tag_type];
+                if(replacer.text!==undefined){
+                    replace_text = replacer.text(tag_val,replace_text);
+                }
+
+                // finally do the replacement
+                text = text.replace(regex,'<a href="'+replacer.url(tag_val)+'" style="color:cyan;cursor:pointer;text-decoration: none;">' + replacer.prefix + replace_text +'</a>');
+            }
+        });
+    return text;
+    }
+}();
+
+APP.nostr.gui.util = function(){
+    let _profiles = APP.nostr.data.profiles,
+        _user = APP.nostr.data.user;
+
+    function profile_picture_url(p){
+        // p should either be pub_k or {} profile
+        let pub_k,
+            enable_media = _user.enable_media(),
+            ret;
+
+        if(typeof(p)==='string'){
+            pub_k = p;
+            p = _profiles.lookup(p)
+        }else{
+            pub_k = p.pub_k;
+        }
+
+        if(p!==null && p.attrs && p.attrs.picture && enable_media){
+            ret = p.attrs.picture;
+        }else{
+            ret = APP.nostr.gui.robo_images.get_url({
+                'text' : pub_k
+            });
+        }
+        return ret;
+    }
+
+
+
+
+    return {
+        'profile_picture_url' : profile_picture_url
+    }
+}();
+
+
 /*
     renders the section at the top of the screen
 */
@@ -9,6 +278,7 @@ APP.nostr.gui.header = function(){
         _event_search_but,
         _profile_search_but,
         _relay_but,
+        _message_but,
         _enable_media;
 
     // watches which profile we're using and calls set_profile_button when it changes
@@ -63,13 +333,14 @@ APP.nostr.gui.header = function(){
         }else{
             _profile_but.html('');
             _profile_but.css('background-size',' cover');
-            if(_current_profile.attrs && _current_profile.attrs.picture && _enable_media){
-                url = _current_profile.attrs.picture;
-            }else{
-                url = APP.nostr.gui.robo_images.get_url({
-                    'text' : _current_profile.pub_k
-                });
-            }
+//            if(_current_profile.attrs && _current_profile.attrs.picture && _enable_media){
+//                url = _current_profile.attrs.picture;
+//            }else{
+//                url = APP.nostr.gui.robo_images.get_url({
+//                    'text' : _current_profile.pub_k
+//                });
+//            }
+            url = APP.nostr.gui.util.profile_picture_url(_current_profile);
             _profile_but.css('background-image','url("'+url+'")');
         }
     }
@@ -503,8 +774,9 @@ APP.nostr.gui.event_view = function(){
     }
 
     function get_event_parent(evt){
-        let parent = null;
-        for(j=0;j<evt.tags.length;j++){
+        let parent = null,
+            tag;
+        for(let j=0;j<evt.tags.length;j++){
             tag = evt.tags[j];
             if(tag[0]==='e'){
                 if(tag[1]!==undefined){
@@ -851,18 +1123,6 @@ APP.nostr.gui.event_view = function(){
                 // call load profiles cause it'll make sure we have the profile info before
                 // redrawing, ajax call might be made
                 load_profiles();
-
-//                _render_arr.unshift(add_content);
-//
-//                // we won't redraw the whole list just insert at top
-//                // which should be safe (end might be ok, but anywhere else would be tricky...)
-////                _con.prepend(Mustache.render(_row_tmpl,_render_arr[0]));
-//                _con.prepend(_row_render(_render_arr[0], 0));
-//                _event_map[evt.id] = {
-//                    'event' : evt,
-//                    'render_event': add_content
-//                };
-
             }
         }
 
@@ -994,7 +1254,7 @@ APP.nostr.gui.profile_about = function(){
                 // we'll be able to dm, (mute future?) and follow unfollow
                 if(_current_profile.pub_k!==undefined && _current_profile.pub_k!==_profile.pub_k){
                     _render_obj.other_profile = true;
-                    _render_obj.follows = _current_profile.follows.includes(_profile.pub_k);
+                    _render_obj.follows = _current_profile.contacts.includes(_profile.pub_k);
                 }
             }
             // give a picture based on pub_k event if no pic or media turned off
@@ -1020,22 +1280,26 @@ APP.nostr.gui.profile_about = function(){
         };
 
         function set_follow_el(is_following){
-            _current_profile = APP.nostr.data.user.profile();
-            _render_obj.follows = _current_profile.follows.includes(_profile.pub_k);
+            _render_obj.follows = _current_profile.contacts.includes(_profile.pub_k);
             draw();
         }
 
         function render_followers(){
             function mod_follows(followed_by){
+                // we don't reget followed by so we just do a base off if we follow or not +/- 1
                 let ret = [];
+                if(_current_profile.contacts.includes(_profile.pub_k)){
+                    ret.push($.extend({},_current_profile));
+                }
+
                 followed_by.forEach(function(c_f){
-                    if(c_f.pub_k!==_current_profile.pub_k || _current_profile.follows.includes(_profile.pub_k)){
+                    if(c_f.pub_k!==_current_profile.pub_k){
                         ret.push(c_f);
                     }
                 });
+
                 return ret;
             }
-
             render_contact_section('follows', _contact_con, _profile.contacts);
             render_contact_section('followed by', _follow_con, mod_follows(_profile.followed_by));
         }
@@ -1109,7 +1373,8 @@ APP.nostr.gui.profile_about = function(){
                         });
                     }else if(id.indexOf('-fol')>=0){
                         APP.nostr.data.user.follow_toggle(id.replace('-fol',''), function(data){
-//                                set_follow_el(data.followed.length>0);
+                            _current_profile = data.profile;
+                            set_follow_el(_current_profile.contacts.includes(_pub_k));
                         });
                     }else if(_click_map[id]!==undefined){
                         _click_map[id].func(_click_map[id].data);
@@ -1120,13 +1385,16 @@ APP.nostr.gui.profile_about = function(){
             });
 
             APP.nostr.data.event.add_listener('contacts_updated', function(of_type, data){
-                set_follow_el(_current_profile.follows.includes(_pub_k));
+                if(data.contacts.join(':')!==_current_profile.contacts.join(':')){
+                    _current_profile = APP.nostr.data.user.profile();
+                    set_follow_el(_current_profile.contacts.includes(_pub_k));
+                }
             });
         }
 
         function init(){
-
             if(_profile===undefined){
+
                 APP.remote.load_profile({
                     'pub_k': _pub_k,
                     'include_followers': _show_follow_section,
@@ -1141,15 +1409,24 @@ APP.nostr.gui.profile_about = function(){
                                 'pub_k' : _pub_k,
                                 'attrs' : {
                                     'about' : data.error
-                                }
+                                },
+                                'contacts' : [],
+                                'followed_by' : []
                             };
                         }else{
                             _profile = data;
                         }
-                        draw();
-                        add_events();
+
+                        try{
+                            draw();
+                            add_events();
+                        }catch(e){
+                            console.log(e)
+                        }
+
                     }
                 });
+
             }else{
                 _pub_k = _profile.pub_k;
                 draw();
@@ -1333,6 +1610,7 @@ APP.nostr.gui.profile_edit = function(){
             pic_con,
             edit_con,
             save_but,
+            key_but,
             publish_but,
             img_tmpl = [
                 '<img style="margin-left: auto;margin-right: auto;display:block;" src="{{picture}}" class="profile-pic-large"  />'
@@ -1589,7 +1867,6 @@ APP.nostr.gui.profile_edit = function(){
                 do_update(true);
             });
 
-
         }
 
         if(pub_k){
@@ -1620,8 +1897,10 @@ APP.nostr.gui.profile_list = function (){
             _view_profiles = args.profiles || [],
             // inline media where we can, where false just the link is inserted
             _enable_media = APP.nostr.data.user.enable_media(),
-            // data preped for render to con by _create_render_obj
-            _render_obj,
+            // data in arr to be rendered
+            _render_arr,
+            // above on pub_k
+            _render_lookup,
             // only profiles that pass this filter will be showing
             _filter_text = args.filter || '',
             // so ids will be unique per this list
@@ -1635,18 +1914,99 @@ APP.nostr.gui.profile_list = function (){
         // methods
         function init(){
             // prep the intial render obj
+            create_render_data();
             _my_list = APP.nostr.gui.list.create({
                 'con' : _con,
-                'data' : create_render_data(),
+                'data' : _render_arr,
                 'row_tmpl': _row_tmpl,
                 'filter' : test_filter,
                 'click' : function(id){
-                    let pub_k = id.replace(_uid+'-','');
-                    location.href = '/html/profile?pub_k='+pub_k;
+                    let click_data = get_click_info(id),
+                        action = click_data.action,
+                        pub_k = click_data.pub_k;
+
+                    if(action===undefined){
+                        location.href = '/html/profile?pub_k='+pub_k;
+                    }else if(action=='profile-edit'){
+                        window.location='/html/edit_profile?pub_k='+pub_k;
+                    }else if(action==='profile-switch'){
+                        APP.nostr.data.user.profile({
+                            'pub_k' : pub_k
+                        });
+                    }else if(action==='profile-dm'){
+                        APP.nostr.gui.post_modal.show({
+                            'kind' : 4,
+                            'pub_k': pub_k
+                        });
+                    }else if(action==='profile-fol'){
+                        APP.nostr.data.user.follow_toggle(pub_k, function(data){
+                            // this is tmp but should be correct, it'll be overridden when we actually see
+                            // the contacts event back from a relay
+                            _current_profile = data.profile;
+                            update_follow(pub_k);
+                        });
+                    }
+                }
+            });
+            draw();
+
+            // happens when we get the update back from relay or if user is doing something in another window
+            APP.nostr.data.event.add_listener('contacts_updated', function(of_type, data){
+                let updates = [];
+                // won't do anything for our own update as we should already be in sync
+                if(data.contacts.join(':')!==_current_profile.contacts.join(':')){
+
+                    // any key not in BOTH arrs needs to be updated
+                    updates = data.contacts.filter(function(pk){
+                        return !_current_profile.contacts.includes(pk);
+                    });
+                    _current_profile.contacts.forEach(function(pk){
+                        if(!data.contacts.includes(pk)){
+                            updates.push(pk);
+                        }
+                    });
+
+                    _current_profile = APP.nostr.data.user.profile();
+                    // actually render the updates
+                    updates.forEach(function(pk){
+                        update_follow(pk);
+                    });
                 }
             });
 
-            draw();
+        }
+
+        function update_follow(pub_k){
+            let el = $('#'+_uid+'-'+pub_k+'-profile-fol'),
+                follow = _current_profile.contacts.includes(pub_k),
+                html = follow===true ? '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#star-fill"/>' :
+                '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#star"/>';
+
+            // replace what is currently displayed
+            el.html(html);
+
+            // replace if re-rendered
+            if(_render_lookup[pub_k]!==undefined){
+                _render_lookup[pub_k].follows = _current_profile.contacts.includes(pub_k);
+            }
+        }
+
+        function get_click_info(id){
+                id = id.replace(_uid+'-','');
+            let ret,
+                pubk_eidx = id.indexOf('-');
+            if(pubk_eidx>=0){
+                ret = {
+                    'pub_k' : id.substring(0,pubk_eidx),
+                    'action' : id.substring(pubk_eidx+1)
+                }
+            }else{
+                ret = {
+                    'pub_k' : id
+                };
+            }
+
+            return ret;
         }
 
         function draw(){
@@ -1657,11 +2017,15 @@ APP.nostr.gui.profile_list = function (){
             fills data that'll be used with template to render
         */
         function create_render_data(){
-            let ret = [];
+            _render_arr = [];
+            _render_lookup = {};
+
+            let r_obj;
             _view_profiles.forEach(function(p){
-                ret.push(_create_render_profile(p));
+                r_obj = _create_render_profile(p);
+                _render_lookup[p.pub_k] = r_obj;
+                _render_arr.push(r_obj);
             });
-            return ret;
         }
 
         // create profile render obj to be put in _renderObj['profiles']
@@ -1695,13 +2059,16 @@ APP.nostr.gui.profile_list = function (){
                 });
             }
 
-            if(_current_profile.pub_k!==the_profile.pub_k){
-                render_profile.other_profile = true;
-                render_profile.can_dm = true;
-                render_profile.can_switch = the_profile.can_sign;
-            }
+            if(_current_profile.pub_k!==undefined){
+                render_profile.can_edit = the_profile.can_sign;
+                render_profile.follows = _current_profile.contacts.includes(pub_k);
+                if(_current_profile.pub_k!==the_profile.pub_k){
+                    render_profile.other_profile = true;
+                    render_profile.can_dm = true;
+                    render_profile.can_switch = the_profile.can_sign;
+                }
 
-            render_profile.can_edit = the_profile.can_sign;
+            }
 
             return render_profile;
         }
@@ -1742,6 +2109,211 @@ APP.nostr.gui.profile_list = function (){
 }();
 
 /*
+   list component for messages page. On the messages page you only get the topmost event for each
+   pub_k that we have messages to. We'll show the profile who we're messaging as well as the last message and
+   who it was from either us or them. Clicking will take us to messages for that profile, further clicking to
+   individual threads with that pub_k
+*/
+APP.nostr.gui.dm_list = function (){
+        // lib shortcut
+    let _gui = APP.nostr.gui,
+        _gui_util = _gui.util,
+        _profiles = APP.nostr.data.profiles;
+
+    function create(args){
+            // container for list
+        let _con = args.con,
+            // top level events for each pub_k we're talling to
+            _events = args.events || [],
+            // inline media where we can, where false just the link is inserted
+            _enable_media = APP.nostr.data.user.enable_media(),
+            // so ids will be unique per this list
+            _uid = APP.nostr.gui.uid(),
+            // data in arr to be rendered
+            _render_arr,
+            // above on pub_k
+            _render_lookup,
+            // list obj that actually does the rendering
+            _my_list,
+            // template to render into
+            _row_tmpl = APP.nostr.gui.templates.get('dm-event'),
+            _profile_tmpl = APP.nostr.gui.templates.get('event-profile'),
+            _content_tmpl = APP.nostr.gui.templates.get('dm-content'),
+            _current_profile = APP.nostr.data.user.profile(),
+            _time_update;
+
+        // methods
+        function init(){
+            // prep the intial render obj
+            create_render_data();
+            _my_list = APP.nostr.gui.list.create({
+                'con' : _con,
+                'data' : _render_arr,
+                'row_render': row_render,
+                'click' : do_click
+            });
+            set_events(_events);
+            draw();
+            // update the since every 30s
+            _time_update = setInterval(time_update, 1000*30);
+        }
+
+        function do_click(id){
+            id = id.replace(_uid+"-","");
+            let splits = id.split('-'),
+                evt_id = splits[0],
+                action = splits[1],
+                evt = _render_lookup[evt_id],
+                to_pub_k = get_to_pub_k(evt)
+
+            // goto the person we're msgings profile
+            if(action==='pp' || action==='pt'){
+                window.location='/html/profile?pub_k='+to_pub_k;
+            // goto profile of whoever msged last, either us or same as above
+            }else if(action==='lastpp'){
+                window.location='/html/profile?pub_k='+evt.pubkey;
+            // all other cases go to message page for this profile
+            }else{
+                window.location='/html/messages_profile?pub_k='+to_pub_k;
+            }
+
+        }
+
+        function row_render(r_obj, i){
+            return Mustache.render(_row_tmpl, r_obj, {
+                'profile' : _profile_tmpl,
+                'content' : _content_tmpl
+            })
+        }
+
+        function set_events(events){
+            _events = events;
+            fetch_profiles(function(){
+                create_render_data();
+                _my_list.set_data(_render_arr);
+                draw();
+            });
+
+        }
+
+        // this will make sure any profiles we need have been fetch if we can find them
+        function fetch_profiles(callback){
+            let to_ps = [];
+            _events.forEach(function(c_evt){
+                to_ps.push(get_to_pub_k(c_evt));
+            });
+            // should have us but just incase
+            to_ps.push(_current_profile.pub_k);
+
+            _profiles.fetch({
+                'pub_ks' : to_ps,
+                'on_load' : function(){
+                    callback();
+                }
+            })
+        }
+
+        function draw(){
+            _my_list.draw();
+        }
+
+        function get_to_pub_k(evt){
+            // the to pub_k is the one thats not us, that might be on the evt or else we'll have to look at the p tags
+            let ret = null,
+                tags = evt.tags,
+                c_tag;
+
+            // the most recent event was to use
+            if(evt.pubkey!==_current_profile.pub_k){
+                ret = evt.pubkey;
+            // most recent event was sent buy us
+            }else{
+                for(let i=0;i<tags.length;i++){
+                    c_tag = tags[i];
+                    if(c_tag.length>1 && c_tag[0]==='p' && c_tag[1]!==_current_profile.pub_k){
+                        ret = c_tag[1];
+                        break;
+                    }
+                }
+            }
+
+            // if we return null...probably drop the event cause don't know what we can do with it?!
+            return ret;
+        }
+
+        /*
+            fills data that'll be used with template to render
+        */
+        function create_render_data(){
+            _render_arr = [];
+            _render_lookup = {};
+            _events.forEach(function(c_evt){
+                _render_arr.push(_create_render_row(c_evt));
+                _render_lookup[c_evt.id] = c_evt;
+            });
+        }
+
+        // create profile render obj to be put in _renderObj['profiles']
+        function _create_render_row(evt){
+            let ret = {
+                    'uid' : _uid,
+                    'event_id' : evt.id,
+                    'pub_k' : get_to_pub_k(evt),
+                    'content' : _gui.get_note_content_for_render(evt),
+                    'at_time' : dayjs.unix(evt.created_at).fromNow()
+                },
+                to_p = _profiles.lookup(ret.pub_k);
+
+            ret.picture = _gui_util.profile_picture_url(ret.pub_k);
+            ret.short_key = APP.nostr.util.short_key(ret.pub_k);
+            ret.sender_picture = _gui_util.profile_picture_url(evt.pubkey);
+            if(to_p!==null){
+                ret.name = to_p.attrs.name;
+            }
+
+            return ret;
+        }
+
+        function uevent_id(event_id){
+            return _uid+'-'+event_id;
+        }
+
+        function time_update(){
+            // think we've been killed ..?
+            if(_events===undefined){
+                clearInterval(_time_interval);
+                return;
+            }
+
+            _events.forEach(function(evt){
+                let id = uevent_id(evt.id),
+                    ntime = dayjs.unix(evt.created_at).fromNow();
+
+                // update in render obj, at the moment it never gets reused anyhow
+//                c['at_time'] = ntime;
+                // actually update onscreen
+                $('#'+id+'-time').html(ntime);
+
+            });
+        }
+
+
+        // prep and draw the list
+        init();
+
+        return {
+            'draw': draw,
+            'set_events' : set_events
+        }
+    }
+
+    return {
+        'create': create
+    }
+}();
+
+
+/*
     modal, we only ever create one of this and just fill the content differently
     used to make posts, maybe set options?
 */
@@ -1768,20 +2340,30 @@ APP.nostr.gui.modal = function(){
         _my_title,
         _my_content,
         _my_ok_button,
-        _my_foot_con;
+        _my_foot_con,
+        _title,
+        _content,
+        _ok_text,
+        _on_ok,
+        _ok_hide,
+        _on_show,
+        _on_hide,
+        // if set doing own bottom buttons
+        _footer_content,
+        _was_ok;
 
     function create(args){
         args = args||{};
-        let title = args.title || '?no title?';
-            content = args.content || '',
-            ok_text = args.ok_text || '?no_text?',
-            on_ok = args.on_ok,
-            ok_hide = args.ok_hide===undefined ? false : args.ok_hide;
-            on_show = args.on_show,
-            on_hide = args.on_hide,
-            // if set doing own bottom buttons
-            footer_content = args.footer_content,
-            was_ok = false;
+        _title = args.title || '?no title?',
+        _content = args.content || '',
+        _ok_text = args.ok_text || '?no_text?',
+        _on_ok = args.on_ok,
+        _ok_hide = args.ok_hide===undefined ? false : args.ok_hide,
+        _on_show = args.on_show,
+        _on_hide = args.on_hide,
+        // if set doing own bottom buttons
+        _footer_content = args.footer_content,
+        _was_ok = false;
 
         // make sure we only ever create one
         if(_my_modal===undefined){
@@ -1800,30 +2382,30 @@ APP.nostr.gui.modal = function(){
             });
 
             _my_modal.on('shown.bs.modal', function () {
-                if(typeof(on_show)==='function'){
-                    on_show();
+                if(typeof(_on_show)==='function'){
+                    _on_show();
                 }
             });
 
             _my_modal.on('hidden.bs.modal', function () {
-                if(typeof(on_hide)==='function'){
-                    on_hide();
+                if(typeof(_on_hide)==='function'){
+                    _on_hide();
                 }
             });
 
             _my_ok_button.on('click', function(){
-                was_ok = true;
-                if(typeof(on_ok)==='function'){
-                    on_ok();
+                _was_ok = true;
+                if(typeof(_on_ok)==='function'){
+                    _on_ok();
                 }
             });
 
         }
-        _my_title.html(title);
-        _my_content.html(content);
-        _my_ok_button.html(ok_text);
-        if(footer_content!==undefined){
-            _my_foot_con.html(footer_content);
+        _my_title.html(_title);
+        _my_content.html(_content);
+        _my_ok_button.html(_ok_text);
+        if(_footer_content!==undefined){
+            _my_foot_con.html(_footer_content);
             _my_foot_con.css('display','');
             hide_ok();
         }else{
@@ -1831,7 +2413,7 @@ APP.nostr.gui.modal = function(){
             show_ok();
         }
 
-        if(ok_hide){
+        if(_ok_hide){
             hide_ok();
         }
 
@@ -1882,9 +2464,9 @@ APP.nostr.gui.post_modal = function(){
     // as it's not optional
     function add_reply_tags(o_event){
         let ret = [],
-            to_pub_key = o_event.pubkey;
+            to_pub_key = o_event.pubkey,
             to_evt_id = o_event.id,
-            add_pub = true;
+            add_pub = true,
             add_evt = true;
         // copy all tags, don't thinnk it matters much but also check that
         // we're not going to dupl the p or e tags that we are going to add
@@ -1915,12 +2497,9 @@ APP.nostr.gui.post_modal = function(){
         return ret;
     }
 
-
-
-
     function show(args){
         args =args || {};
-        let gui = APP.nostr.gui,
+        var gui = APP.nostr.gui,
             user = APP.nostr.data.user,
             profiles,
             type = args.type!==undefined ? args.type : 'post',
@@ -1933,14 +2512,16 @@ APP.nostr.gui.post_modal = function(){
                 'content' : 'something has gone wrong!!',
                 'tags' :[]
             },
-            post_text_area,
             render_obj= {},
             enable_media = APP.nostr.data.user.enable_media(),
             uid = gui.uid(),
             picture,
-            name;
+            title,
+            name,
+            note_text_area;
 
             function get_reply_title(){
+                let ret;
                 if(event.kind===1){
                     ret = 'reply to event';
                 }else if(event.kind===4){
@@ -1950,6 +2531,7 @@ APP.nostr.gui.post_modal = function(){
             }
 
             function get_post_title(){
+                let ret;
                 if(kind===1){
                     ret = 'make post';
                 }else if(kind===4){
@@ -1976,8 +2558,6 @@ APP.nostr.gui.post_modal = function(){
                 return ret;
             }
 
-
-
             function add_profile_render(r_obj, pub_k){
                 let p = APP.nostr.data.profiles.lookup(pub_k);
                 if(p!==null){
@@ -1986,7 +2566,7 @@ APP.nostr.gui.post_modal = function(){
                 }else{
                     name = '';
                     picture = APP.nostr.gui.robo_images.get_url({
-                        'text' : p.pub_k
+                        'text' : pub_k
                     });
                 }
                 r_obj['short_key'] = APP.nostr.util.short_key(pub_k);
@@ -1994,6 +2574,55 @@ APP.nostr.gui.post_modal = function(){
                 r_obj['picture'] = picture;
             }
 
+            function create(){
+                APP.nostr.gui.modal.create({
+                    'title' : title,
+                    'content' : Mustache.render(gui.templates.get('modal-note-post'),render_obj, {
+                        'event' : gui.templates.get('event'),
+                        'profile' : gui.templates.get('event-profile'),
+                        'content' : gui.templates.get('event-content'),
+                    }),
+                    'ok_text' : 'send',
+                    'on_ok' : function do_post(){
+                        let n_tags = type==='reply' ? add_reply_tags(event) : add_post_tags(),
+                            content = note_text_area.val(),
+                            hash_tags = (content).match(/(^|\s)\#\w*[\S|$]/g),
+                            evt = {
+                                'pub_k' : user.profile().pub_k,
+                                'content': content,
+                                'tags' : n_tags,
+                                'kind' : type==='reply' ? event.kind : kind
+                            };
+                        // add hashtags
+                        if(hash_tags!==null){
+                            // fixes the matches we got... theres probably a better group based way to do this
+                            // but this is simple
+                            hash_tags.forEach(function(c_tag){
+                                n_tags.push(['hashtag',c_tag.substring(c_tag.indexOf('#')+1)]);
+                            });
+                        }
+
+                        if(user.is_add_client_tag()===true){
+                            n_tags.push(['client', user.get_client()]);
+                        }
+
+                        APP.remote.post_event({
+                            'event' : evt,
+                            'pub_k' : user.profile().pub_k,
+                            'success' : function(data){
+                                // notify anyone interested
+                                APP.nostr.data.event.fire_event('post-success', {
+                                    'event': evt,
+                                    'type': type
+                                });
+                            }
+                        });
+                    },
+                    'on_show' : function(){
+                        note_text_area.focus();
+                    }
+                });
+            }
 
             if(type==='post'){
                 title = get_post_title();
@@ -2010,66 +2639,16 @@ APP.nostr.gui.post_modal = function(){
                 add_profile_render(render_obj, event.pubkey);
                 render_obj['content'] = gui.get_note_content_for_render(event);
             }
-            console.log(render_obj);
-            APP.nostr.gui.modal.create({
-                'title' : title,
-                'content' : Mustache.render(gui.templates.get('modal-note-post'),render_obj, {
-                    'event' : gui.templates.get('event'),
-                    'profile' : gui.templates.get('event-profile'),
-                    'content' : gui.templates.get('event-content'),
-                }),
-                'ok_text' : 'send',
-                'on_ok' : function(){
-                    let n_tags = type==='reply' ? add_reply_tags(event) : add_post_tags(),
-                        content = post_text_area.val()
-                        hash_tags = (content).match(/(^|\s)\#\w*[\S|$]/g),
-                        evt = {
-                            'pub_k' : user.profile().pub_k,
-                            'content': content,
-                            'tags' : n_tags,
-                            'kind' : type==='reply' ? event.kind : kind
-                        };
-                    // add hashtags
-                    if(hash_tags!==null){
-                        // fixes the matches we got... theres probably a better group based way to do this
-                        // but this is simple
-                        hash_tags.forEach(function(c_tag){
-                            n_tags.push(['hashtag',c_tag.substring(c_tag.indexOf('#')+1)]);
-                        });
-                    }
-
-                    if(user.is_add_client_tag()===true){
-                        n_tags.push(['client', user.get_client()]);
-                    }
-
-                    APP.remote.post_event({
-                        'event' : evt,
-                        'success' : function(data){
-                            // notify anyone interested
-                            APP.nostr.data.event.fire_event('post-success', {
-                                'event': evt,
-                                'type': type
-                            });
-
-                        }
-                    });
 
 
 
-                },
-                'on_show' : function(){
-                    post_text_area.focus();
-                }
-            });
-
-        post_text_area = $('#nostr-post-text');
         // nothing is clickable!
         if(type==='reply'){
             $('#'+uid+'-'+render_obj.event.event_id+'-pp').css('cursor','default');
             $('#'+uid+'-'+render_obj.event.event_id-'content').css('cursor','default !important');
         }
-
-
+        create();
+        note_text_area = $('#nostr-post-text');
         APP.nostr.gui.modal.show();
 
     }
