@@ -51,15 +51,15 @@ def get_profile_filter(for_client: Client,
             'kinds': Event.KIND_META,
             'since': event_store.get_newest(for_client.url,
                                             {
-                                                'kinds': Event.KIND_META}
-                                            )
+                                                'kinds': Event.KIND_META
+                                            })
         },
         {
             'kinds': Event.KIND_CONTACT_LIST,
             'since': event_store.get_newest(for_client.url,
                                             {
-                                                'kinds': Event.KIND_CONTACT_LIST}
-                                            )
+                                                'kinds': Event.KIND_CONTACT_LIST
+                                            })
         }
     ]
 
@@ -90,7 +90,11 @@ def run_tor(clients,
         # if since < less_30days:
         #     since = less_30days
         the_client.subscribe(handlers=[evt_persist, my_server], filters={
-            'since': since
+            'since': since,
+            'kinds': [
+                Event.KIND_TEXT_NOTE, Event.KIND_ENCRYPT,
+                Event.KIND_META, Event.KIND_CONTACT_LIST
+            ]
             # 'since': util_funcs.date_as_ticks(datetime.now())
         })
 
@@ -169,7 +173,7 @@ def run_web(clients,
     # called on connect and any reconnect
     def my_connect(the_client: Client):
         # all meta updates
-        the_client.subscribe(handlers=my_server, filters=get_profile_filter(the_client, event_store))
+        # the_client.subscribe(handlers=my_server, filters=get_profile_filter(the_client, event_store))
 
         # the max look back should be an option, maybe the default should just be everything
         # this will do for now
@@ -177,9 +181,13 @@ def run_web(clients,
         # less_30days = util_funcs.date_as_ticks(datetime.now()-timedelta(days=30))
         # if since < less_30days:
         #     since = less_30days
+
         the_client.subscribe(handlers=[evt_persist, my_server], filters={
-            'since': since
-            # 'since': util_funcs.date_as_ticks(datetime.now())
+            'since': since,
+            'kinds': [
+                Event.KIND_TEXT_NOTE, Event.KIND_ENCRYPT,
+                Event.KIND_META, Event.KIND_CONTACT_LIST
+            ]
         })
 
     # so server can send out client status messages
@@ -224,13 +232,13 @@ def run():
     clients = [
         {
             'client': 'wss://nostr-pub.wellorder.net',
-            'write': True
+            'write': False
         },
         'ws://localhost:8081',
         'ws://localhost:8082',
         {
             'client': 'wss://relay.damus.io',
-            'write': True
+            'write': False
         }
     ]
 
@@ -275,6 +283,10 @@ if __name__ == "__main__":
 
     # p_store = SQLiteProfileStore(WORK_DIR + 'nostr-client-test.db')
     # e_store = ClientSQLiteEventStore(WORK_DIR + 'nostr-client-test.db')
+    #
+    # e_store.relay_list(pub_k='40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486')
+
+
     #
     # f = {
     #     'ids': []

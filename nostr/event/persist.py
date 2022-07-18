@@ -139,6 +139,13 @@ class ClientEventStoreInterface(EventStoreInterface):
         order newest to oldest, one row per pub_k messaging the event_id, created_at is for the newest record we have
         """
 
+    @abstractmethod
+    def relay_list(self, pub_k: str = None) -> []:
+        """
+        :param pub_k: if given relays surgested by contacts for this pub_k will be listed first
+        :return: [relay_urls]
+        """
+
 
 class MemoryEventStore(EventStoreInterface):
     """
@@ -651,6 +658,7 @@ class RelayPostgresEventStore(PostgresEventStore, RelayEventStoreInterface):
 
 class ClientSQLEventStore(SQLEventStore, ClientEventStoreInterface):
 
+
     def get_newest(self, for_relay, filter=None):
         """
         returns the newest event we've seen so we can use that as a since in any queries we created and not ask for everthing
@@ -684,14 +692,12 @@ class ClientSQLEventStore(SQLEventStore, ClientEventStoreInterface):
 
         sql_arr.append(' order by created_at desc limit 1')
         my_sql = ''.join(sql_arr)
-
         ret = 0
         my_recent_evt = self._db.select_sql(my_sql, args)
         if my_recent_evt:
             ret = my_recent_evt[0]['created_at']
         else:
             logging.debug('Store::get_newest - no created_at found, db empty?')
-
         return ret
 
     def add_event_relay(self, evt: Event, relay_url: str):
@@ -737,6 +743,51 @@ order by created_at desc
 
         return self._db.select_sql(sql,
                                    args=[pub_k]*4)
+
+    def relay_list(self, pub_k: str = None) -> []:
+        # https://stackoverflow.com/questions/18807276/how-to-make-my-postgresql-database-use-a-case-insensitive-collation
+        # this might work in postgres if we create the collation
+
+        # all order by how many unique pub_k recommended
+        all_sql = """
+select trim(content) as relay
+from events where kind=2 
+group by trim(content)
+order by count(pubkey) desc, trim(content) COLLATE NOCASE 
+        """
+
+        # same but using recomendations of followers of pub_k
+        relative_pub_k_sql = """
+select trim(content) as relay
+from events where kind=2 and 
+pubkey in (
+	select pub_k_contact from contacts where pub_k_owner=%s
+)
+group by trim(content)
+order by count(pubkey) desc, trim(content) COLLATE NOCASE
+        """ % self._db.placeholder
+
+        ret = []
+        for_pub_k = None
+
+        if pub_k:
+            data = self._db.select_sql(sql=relative_pub_k_sql,
+                                        args=[pub_k])
+            for_pub_k = [row['relay'] for row in data]
+
+        data = self._db.select_sql(sql=all_sql)
+        for_all = [row['relay'] for row in data]
+
+        if for_pub_k:
+            ret = for_pub_k
+            test_set = set(for_pub_k)
+            for url in for_all:
+                if url not in test_set:
+                    ret.append(url)
+        else:
+            ret = for_all
+
+        return ret
 
 class ClientSQLiteEventStore(SQLiteEventStore, ClientSQLEventStore,  ClientEventStoreInterface):
 

@@ -71,6 +71,10 @@ APP.nostr.gui.templates = function(){
                 '</div>',
             '<div>'
         ],
+        'screen-relay-edit-struct' : [
+            '<div style="height:50%;min-height:50%;" id="current-con"></div>',
+            '<div style="height:50%;" id="edit-con"></div>'
+        ],
         'head' : [
             '<div >',
                 '<div id="profile-but" class="header-button"></div>',
@@ -116,8 +120,8 @@ APP.nostr.gui.templates = function(){
             '</div>'
         ],
         // just view of relays at moment
-        'modal-relay-status' : [
-            '<div>',
+        'relay-list' : [
+            '<div style="height:100%; overflow-y:auto" >',
                 '<div id="{{uid}}-header" style="background-color:#221124;" >',
                     '<span>&nbsp;</span>',
                     '<span style="float:right" >{{status}} {{connect-count}} of {{relay-count}}</span>',
@@ -133,6 +137,9 @@ APP.nostr.gui.templates = function(){
                 '<span style="display:inline-block;width:100%; padding-left:10px;color:gray;" >',
                     '{{#connected}}',
                         'connected',
+                        '<span style="float:right">',
+                            '{{mode_text}}',
+                        '</span>',
                     '{{/connected}}',
                     '{{^connected}}',
                         '<span style="display:inline-block;height:16px;width:16px;" >',
@@ -235,7 +242,7 @@ APP.nostr.gui.templates = function(){
         // event templates
         'event-profile' : [
             // publishers profile pic
-            '<span style="height:60px;width:120px; word-break: break-all; display:table-cell; background-color:#111111;padding-right:10px;" >',
+            '<span style="display:table-cell; background-color:#111111;padding-right:10px;" >',
                 // TODO: do something if unable to load pic
                 '{{#picture}}',
                     '<img id="{{uid}}-{{event_id}}-pp" src="{{picture}}" class="profile-pic-small" />',

@@ -1258,7 +1258,7 @@ APP.nostr.gui.profile_about = function(){
                 }
             }
             // give a picture based on pub_k event if no pic or media turned off
-            if((_render_obj.picture===undefined) ||
+            if((_render_obj.picture===undefined) || (_render_obj.picture==='') ||
                 (_render_obj.picture===null) ||
                     (_enable_media===false)){
                 _render_obj.picture = APP.nostr.gui.robo_images.get_url({
@@ -1288,7 +1288,7 @@ APP.nostr.gui.profile_about = function(){
             function mod_follows(followed_by){
                 // we don't reget followed by so we just do a base off if we follow or not +/- 1
                 let ret = [];
-                if(_current_profile.contacts.includes(_profile.pub_k)){
+                if(_current_profile.contacts && _current_profile.contacts.includes(_profile.pub_k)){
                     ret.push($.extend({},_current_profile));
                 }
 
@@ -2035,7 +2035,8 @@ APP.nostr.gui.profile_list = function (){
                     // required to make unique ids if page has more than one list showing same items on page
                     'uid' : _uid,
                     'pub_k' : pub_k,
-                    'short_pub_k' : APP.nostr.util.short_key(pub_k)
+                    'short_pub_k' : APP.nostr.util.short_key(pub_k),
+                    'profile_name': the_profile.profile_name
                 },
                 attrs;
 
@@ -2118,7 +2119,9 @@ APP.nostr.gui.dm_list = function (){
         // lib shortcut
     let _gui = APP.nostr.gui,
         _gui_util = _gui.util,
-        _profiles = APP.nostr.data.profiles;
+        _profiles = APP.nostr.data.profiles,
+        _nostr_event = APP.nostr.data.nostr_event;
+
 
     function create(args){
             // container for list
@@ -2156,6 +2159,50 @@ APP.nostr.gui.dm_list = function (){
             draw();
             // update the since every 30s
             _time_update = setInterval(time_update, 1000*30);
+
+            // listen to new events, maybe add them/update display
+            APP.nostr.data.event.add_listener('event', function(type, event){
+                event = _nostr_event(event);
+                if(is_our_dm(event)){
+                    update(event);
+                }
+            });
+
+        }
+
+        function is_our_dm(evt){
+            let to,
+                ret = false;
+            if(evt.is_encrypt()){
+                to = evt.get_first_p_tag_value(function(val){
+                    return val===_current_profile.pub_k;
+                });
+
+                ret = to.length>0 || evt.pubkey===_current_profile.pub_k;
+
+            }
+            return ret;
+        }
+
+        function update(evt){
+            let c_evt,
+                to_k = get_to_pub_k(evt),
+                e_to_k;
+            // if already event to this contact then remove
+            for(let i=0;i<_events.length;i++){
+                c_evt = _events[i];
+                if(get_to_pub_k(c_evt)===to_k){
+                    _events.splice(i,1);
+                    _render_arr.splice(i,1);
+                    delete _render_lookup[c_evt.id];
+                    break;
+                }
+            }
+            // insert at top and redraw
+            _events.splice(0,0, evt);
+            _render_arr.splice(0,0, _create_render_row(evt));
+            _render_lookup[evt.id] = evt;
+            draw();
         }
 
         function do_click(id){
@@ -2228,12 +2275,12 @@ APP.nostr.gui.dm_list = function (){
                 ret = evt.pubkey;
             // most recent event was sent buy us
             }else{
-                for(let i=0;i<tags.length;i++){
-                    c_tag = tags[i];
-                    if(c_tag.length>1 && c_tag[0]==='p' && c_tag[1]!==_current_profile.pub_k){
-                        ret = c_tag[1];
-                        break;
-                    }
+                console.log(evt);
+                tags = evt.get_first_p_tag_value(function(val){
+                    return val!==_current_profile.pub_k;
+                });
+                if(tags.length>0){
+                    ret = tags[0];
                 }
             }
 
@@ -2445,6 +2492,9 @@ APP.nostr.gui.modal = function(){
         'show' : show,
         'hide' : hide,
         'set_content' : set_content,
+        'get_container' : function(){
+            return _my_content;
+        },
         'show_ok' : show_ok,
         'hide_ok' : hide_ok,
         'was_ok' : function(){
@@ -2805,92 +2855,200 @@ APP.nostr.gui.profile_select_modal = function(){
     }
 }();
 
-APP.nostr.gui.relay_view_modal = function(){
-    let _uid = APP.nostr.gui.uid(),
-        _relay_status,
-        _gui = APP.nostr.gui,
-        _is_showing = false;
+APP.nostr.gui.relay_list = function(){
+    const _gui = APP.nostr.gui;
 
-    APP.nostr.data.event.add_listener('relay_status',function(of_type, data){
-        _relay_status = data;
-        if(_is_showing){
-            draw_relays();
+    function create(args){
+        let con = args.con,
+            uid = APP.nostr.gui.uid(),
+            relay_status = APP.nostr.data.relay_status.get(),
+            render_obj_arr = [],
+            my_list;
+
+        function get_last_connect_str(r_status){
+            let ret = 'never ';
+
+            if(r_status.last_connect !== null){
+                ret = dayjs.unix(r_status.last_connect).fromNow();
+                if(ret==='now'){
+                    ret = 'recently';
+                }else{
+                    ret += ' ago';
+                }
+
+            }
+            return ret;
         }
-    });
 
-    function get_last_connect_str(r_status){
-        let ret = 'never ';
+        function set_summary(){
+            // also creates the list area
+            con.html(Mustache.render(_gui.templates.get('relay-list'),{
+                'uid' : uid,
+                'status' : relay_status.connected===true ? 'connected' : 'not-connected',
+                'relay-count': relay_status.relay_count,
+                'connect-count' : relay_status.connect_count,
+            }));
 
-        if(r_status.last_connect !== null){
-            ret = dayjs.unix(r_status.last_connect).fromNow();
-            if(ret==='now'){
-                ret = 'recently';
-            }else{
-                ret += ' ago';
+        }
+
+        function get_mode_text(r_status){
+            let ret = '?';
+            if((r_status.read===true) && (r_status.write===true)){
+                ret = 'read/write';
+            }else if(r_status.write===true){
+                ret = 'write only';
+            }else if(r_status.read===true)
+                ret = 'read only';
+            return ret;
+        }
+
+        function draw_list(){
+            let r_status,
+                mode_arr;
+            render_obj_arr = [];
+            for(let relay in relay_status.relays){
+                r_status = relay_status.relays[relay];
+                render_obj_arr.push({
+                    'url' : relay,
+                    'connected' : r_status.connected,
+                    'last_err' : r_status.last_err,
+                    'last_connect' : get_last_connect_str(r_status),
+                    'mode_text' : get_mode_text(r_status)
+                })
             }
 
+            my_list = _gui.list.create({
+                'con' : $('#'+uid+"-list"),
+                'data' : render_obj_arr,
+                'row_tmpl' : _gui.templates.get('modal-relay-list-row')
+            });
+            my_list.draw();
+
         }
-        return ret;
+
+
+        function draw(){
+            if(relay_status===undefined){
+                return;
+            }
+            set_summary();
+            draw_list();
+
+        }
+
+        function my_listener(of_type, data){
+            relay_status = data;
+//            draw();
+        }
+
+        function init(){
+            APP.nostr.data.event.add_listener('relay_status', my_listener);
+            draw();
+        }
+
+        init();
+
+        return {
+            'stop' : function(){
+                APP.nostr.data.event.remove_listener('relay_status', my_listener);
+            }
+        }
+
     }
 
-    function draw_relays(){
-        if(_relay_status===undefined){
-            return;
-        }
+    return {
+        'create' : create
+    };
+}();
 
-        let render_obj_arr = [],
-            relay,
+APP.nostr.gui.relay_select = function(){
+
+    const my_html = [
+        '<div style="height:100%">',
+            '<div style="max-height:64px;overflow:hidden;margin-bottom:0px;" class="form-group">',
+                '<label for="relays-search">relays</label>',
+                '<input type="text" class="form-control" id="relays-search" aria-describedby="available relays" placeholder="search relays" />',
+            '</div>',
+            '<div id="relays-list-con" style="overflow-y:auto;height:calc(100% - 64px);" >',
+                'loading...',
+            '</div>',
+        '</div>'
+    ].join('');
+
+    function create(args){
+        let con = args.con,
+            search_in,
             my_list,
-            r_status,
-            last_con_str;
+            list_con,
+            current_user = APP.nostr.data.user.profile();
 
-        APP.nostr.gui.modal.set_content(Mustache.render(APP.nostr.gui.templates.get('modal-relay-status'),{
-            'uid' : _uid,
-            'status' : _relay_status.connected===true ? 'connected' : 'not-connected',
-            'relay-count': _relay_status.relay_count,
-            'connect-count' : _relay_status.connect_count,
-        }));
-
-        for(relay in _relay_status.relays){
-            r_status = _relay_status.relays[relay];
-
-            render_obj_arr.push({
-                'url' : relay,
-                'connected' : r_status.connected,
-                'last_err' : r_status.last_err,
-                'last_connect' : get_last_connect_str(r_status)
-            })
+        function draw(){
+            con.html(my_html);
+            search_in = $('#relays-search');
+            list_con = $('#relays-list-con');
+            search_in.focus();
         }
 
-        my_list = _gui.list.create({
-            'con' : $('#'+_uid+"-list"),
-            'data' : render_obj_arr,
-            'row_tmpl' : APP.nostr.gui.templates.get('modal-relay-list-row')
-        });
-        my_list.draw();
+        function load_relays(){
+            APP.remote.relay_list({
+                'success' : function(data){
+                    my_list = APP.nostr.gui.list.create({
+                        'con': list_con,
+                        'data' : data.relays,
+                        'row_render' : function(r){
+
+                            return r+'<br>';
+                        }
+                    });
+
+                    my_list.draw();
+                }
+            });
+        }
+
+        draw();
+        load_relays();
     }
+
+    return {
+        'create' : create
+    };
+}();
+
+
+APP.nostr.gui.relay_view_modal = function(){
+    const _gui = APP.nostr.gui;
 
     function show(){
+        let footer_html = [
+            '<button id="relay-view-edit-button" type="button" class="btn btn-default" >edit</button>',
+            '<button id="relay_view-ok-button" type="button" class="btn btn-default" data-dismiss="modal">ok</button>'
+        ].join(''),
+        relay_list;
+
         // set the modal as we want it
-        APP.nostr.gui.modal.create({
+        _gui.modal.create({
             'title' : 'current relays',
             'content' : 'loading...',
-            'ok_text' : 'ok',
+            'footer_content' : footer_html,
             'on_hide' : function(){
-                _is_showing = false;
+                relay_list.stop();
+            },
+            'click' : function(id){
+                alert(id);
             }
+
         });
         // show it
-        _is_showing = true;
-        _relay_status = APP.nostr.data.relay_status.get();
-        draw_relays();
-//        APP.remote.relay_info({
-//            'success' : function(data){
-//                _relay_status = JSON.parse(data);
-//                draw_relays();
-//            }
-//        });
-        APP.nostr.gui.modal.show();
+        $('#relay-view-edit-button').on('click', function(){
+            window.location = '/html/edit_relays';
+        });
+
+        relay_list = _gui.relay_list.create({
+            'con': _gui.modal.get_container()
+        });
+        _gui.modal.show();
+
     }
 
     return {

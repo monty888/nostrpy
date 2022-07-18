@@ -385,8 +385,8 @@ class SQLProfileStore(ProfileStoreInterface):
         # for now we're ordering what we return
         sql_arr.append("""
         order by 
-            case when profile_name ISNULL or profile_name='' then 1 else 0 end, profile_name,
-            case when name ISNULL or name='' then 1 else 0 end, name
+            case when profile_name ISNULL or profile_name='' then 1 else 0 end, trim(profile_name) COLLATE NOCASE,
+            case when name ISNULL or name='' then 1 else 0 end, trim(name)  COLLATE NOCASE
         """)
 
         return {

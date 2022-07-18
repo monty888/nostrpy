@@ -521,7 +521,7 @@ class DataSet:
 		"""
 		ret = {
 			'heads': self.Heads,
-			'contacts': self.Data
+			'data': self.Data
 		}
 		if dict_rows:
 			ret = []

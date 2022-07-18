@@ -74,11 +74,6 @@
             // it'll go to home now anyhow
         });
 
-        // so we see new events
-        APP.nostr.data.event.add_listener('event', function(type, event){
-            _my_event_view.add(event);
-        });
-
         // any post
         APP.nostr.data.event.add_listener('post-success', function(type, event){
             // its just a post better go back to the reply screen

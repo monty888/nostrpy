@@ -256,7 +256,7 @@ APP.nostr.data.user = function(){
         },
         'is_add_client_tag' : function(){
             return APP.nostr.data.state.get('add_client_tag', {
-                'def': true
+                'def': false
             });
         },
         'set_add_client_tag' : function(val){
@@ -270,7 +270,7 @@ APP.nostr.data.user = function(){
         // NOTE until we get the client to put on seeing meta events
         // session cache will be an issue so disabled for now
         'profile_cache' : function(val){
-            return _property('profile_cache', val, false);
+            return _property('profile_cache', val, true);
         },
         'follow_toggle': function(){
             let my_timer,
@@ -340,7 +340,7 @@ APP.nostr.data.profiles = function(){
 
     function _get_picture(p){
         let ret;
-        if((!APP.nostr.data.user.enable_media()) || p.attrs.picture===undefined){
+        if((!APP.nostr.data.user.enable_media()) || p.attrs.picture===undefined || p.attrs.picture===''){
             ret = APP.nostr.gui.robo_images.get_url({
                 'text' : p.pub_k
             });
@@ -636,3 +636,63 @@ APP.nostr.data.local_profiles = function(){
     }
 
 }();
+
+/*
+    returns a wrap around event JSON with some handy methods
+*/
+APP.nostr.data.nostr_event = function(event){
+    const TEXT = 1,
+        ENCRYPT = 4;
+
+    let _data = event;
+
+    function get_tag_values(name, test_func, break_on_match){
+        let ret = [],
+            tags = _data.tags,
+            is_match,
+            val;
+        break_on_match = break_on_match===undefined ? false : break_on_match;
+
+        for(let i=0;i<tags.length;i++){
+            c_tag = tags[i];
+            if(c_tag.length>1 && c_tag[0]===name){
+                is_match = true;
+                val = c_tag[1];
+                if(typeof(test_func)==='function'){
+                    is_match = test_func(val);
+                }
+                if(is_match){
+                    ret.push(val);
+                    if(break_on_match){
+                        break;
+                    }
+                }
+            }
+        }
+        return ret;
+    }
+
+    function get_first_tag_value(name, test_func){
+        return get_tag_values(name, test_func, true);
+    }
+
+    // not sure if i like this... does mean we can access the evt fields like it was just the normal
+    // {} obj though
+    _data = $.extend({
+        'is_encrypt' : function(){
+            return _data.kind === ENCRYPT;
+        },
+        'get_tag_values' : get_tag_values,
+        'get_p_tag_values' : function(test_func, break_on_match){
+            return get_p_tag_values(test_func, break_on_match);
+        },
+        'get_first_tag_value' : get_first_tag_value,
+        'get_first_p_tag_value' : function(test_func){
+            return get_first_tag_value('p', test_func);
+        }
+
+    }, _data);
+
+    return _data
+
+};

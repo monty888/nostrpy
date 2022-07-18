@@ -319,7 +319,9 @@ class Client:
             'last_err': self._last_err,
             # so status from single Client looks same as ClientPool
             'relay_count': 1,
-            'connect_count': con_count
+            'connect_count': con_count,
+            'read' : self._read,
+            'write' : self._write
         }
 
     def end(self):
@@ -351,6 +353,14 @@ class Client:
     @property
     def connected(self):
         return self._is_connected
+
+    @property
+    def read(self):
+        return self._read
+
+    @property
+    def write(self):
+        return self._write
 
     @property
     def last_connected(self):
@@ -417,23 +427,22 @@ class ClientPool:
                     the_client = self._clients[c_client.url] = c_client
                 elif isinstance(c_client, dict):
                     read = True
-                    if read in c_client:
+                    if 'read' in c_client:
                         read = c_client['read']
                     write = True
-                    if write in c_client:
+                    if 'write' in c_client:
                         write = c_client['write']
 
                     client_url = c_client['client']
-
                     the_client = self._clients[client_url] = Client(client_url,
                                                                     on_connect=on_connect,
                                                                     read=read,
                                                                     write=write)
 
                 self._clients[the_client.url].set_status_listener(get_on_status(the_client.url))
-
             except Exception as e:
                 logging.debug('ClientPool::__init__ - %s' % e)
+        print('create client pool')
 
     def set_on_connect(self, on_connect):
         for c_client in self._clients:
@@ -501,18 +510,18 @@ class ClientPool:
     # methods work on all but we'll probably want to be able to name on calls
     def start(self):
         for c_client in self._clients:
-            the_client = self._clients[c_client]['client']
+            the_client = self._clients[c_client]
             the_client.start()
 
     def end(self):
         for c_client in self._clients:
-            the_client = self._clients[c_client]['client']
+            the_client = self._clients[c_client]
             the_client.end()
 
     def subscribe(self, sub_id=None, handlers=None, filters={}):
 
         for c_client in self._clients:
-            the_client = self._clients[c_client]['client']
+            the_client = self._clients[c_client]
             sub_id = the_client.subscribe(sub_id, self, filters)
 
         # add handlers if any given - nothing happens on receiving events if not
@@ -525,10 +534,12 @@ class ClientPool:
 
     def publish(self, evt: Event):
         logging.debug('ClientPool::publish - %s', evt.event_data())
+        c_client: Client
         for c_client in self._clients:
-            if self._clients[c_client]['write']:
+            c_client = self._clients[c_client]
+            if c_client.write:
                 try:
-                    self._clients[c_client]['client'].publish(evt)
+                    c_client.publish(evt)
                 except Exception as e:
                     logging.debug(e)
 
@@ -538,7 +549,7 @@ class ClientPool:
             raise Exception('ClientPool::do_event received event from unexpected relay - %s WTF?!?' % relay)
 
         # only do anyhting if relay read is True
-        if self._clients[relay]['read']:
+        if self._clients[relay].read:
             # note no de-duplication is done here, you might see the same event from mutiple relays
             if sub_id in self._handlers:
                 for c_handler in self._handlers[sub_id]:

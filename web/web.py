@@ -216,7 +216,6 @@ class NostrWeb(StaticServer):
     def _my_contact_update(self,
                            new_c: ContactList,
                            old_c: ContactList):
-
         def null_diff(keys: []):
             for c_pub_k in keys:
                 c_p = self._profile_handler.profiles.lookup_pub_key(c_pub_k)
@@ -280,7 +279,10 @@ class NostrWeb(StaticServer):
         # self._app.route('/post_text', method='POST', callback=_get_err_wrapped(self._do_post))
         self._app.route('/post_event', method='POST', callback=_get_err_wrapped(self._do_post))
 
-        self._app.route('/relays', callback=_get_err_wrapped(self._relay_status))
+        # current relay connection status
+        self._app.route('/relay_status', callback=_get_err_wrapped(self._relay_status))
+        # list of relays we can connect to, with some basic order of those we think are better at the top
+        self._app.route('/relay_list', callback=_get_err_wrapped(self._relay_list))
 
         self._app.route('/websocket', callback=self._handle_websocket)
         self._app.route('/count', callback=self._count)
@@ -1007,8 +1009,20 @@ class NostrWeb(StaticServer):
     def _relay_status(self):
         return DateTimeEncoder().encode(self._client.status)
 
+    def _relay_list(self):
+        pub_k = request.query.pub_k
+        if pub_k:
+            self._check_key(pub_k)
+        else:
+            pub_k = None
+
+        return {
+            'relays': self._event_store.relay_list(pub_k)
+        }
+
     def do_event(self, sub_id, evt: Event, relay):
         if self._dedup.accept_event(evt):
+            print(evt, relay, evt.kind)
             # will update our profiles if meta/contact type data
             self._profile_handler.do_event(sub_id, evt, relay)
 

@@ -21,7 +21,8 @@ APP.remote = function(){
         _profile_url = '/profile',
         _post_text_url = '/post_text',
         _post_event_url = '/post_event',
-        _relay_info_url = '/relays',
+        _relay_info_url = '/relay_status',
+        _relay_list_url = '/relay_list',
         _event_relay_url = '/event_relay',
 
         // to stop making duplicate calls we key here only one call per key will be made
@@ -58,6 +59,7 @@ APP.remote = function(){
                 console.log(ajax.responseText);
                 console.log(errorThrown);
             },
+            prepare = args.prepare,
             call_args = {
                 method : method,
                 url: url+params,
@@ -114,6 +116,10 @@ APP.remote = function(){
             // out success and error that call back everyone in the queue
             call_args.success = function(my_cache){
                 return function(data){
+                    if(typeof(prepare)==='function'){
+                        data = prepare(data);
+                    }
+
                     my_cache.success.forEach(function(cSuccess){
                         try{
                             cSuccess(data);
@@ -253,6 +259,15 @@ APP.remote = function(){
             args['params'] = {
                 'pub_k' : args.pub_k
             };
+            args['prepare'] = function (data){
+                let ret = []
+                data.events.forEach(function(c_evt){
+                    ret.push(APP.nostr.data.nostr_event(c_evt));
+                });
+                data.events = ret;
+
+                return data;
+            };
             do_query(args);
         },
         'text_events_search' : function(args){
@@ -307,6 +322,15 @@ APP.remote = function(){
         },
         'relay_info' : function(args){
             args['url'] = _relay_info_url;
+            do_query(args);
+        },
+        'relay_list' : function(args){
+            args['url'] = _relay_list_url;
+            if(args.pub_k!==undefined){
+                args['params'] = {
+                    'pub_k' : args.pub_k
+                };
+            };
             do_query(args);
         },
         'event_relay' : function(args){
