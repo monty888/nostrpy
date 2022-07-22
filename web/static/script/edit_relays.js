@@ -20,19 +20,11 @@
         APP.nostr.gui.header.create();
         // main container where we'll draw out the events
         _main_con = $('#main-con');
-//        _main_con.css('overflow-y','auto');
-        _main_con.html(APP.nostr.gui.templates.get('screen-relay-edit-struct'));
-        _current_con = $('#current-con');
-        _edit_con = $('#edit-con');
+        _main_con.css('overflow-y','auto');
 
-        APP.nostr.gui.relay_list.create({
-            'con' : _current_con
+        APP.nostr.gui.relay_edit.create({
+            'con' : _main_con
         });
-
-        APP.nostr.gui.relay_select.create({
-            'con' : _edit_con
-        })
-
 
         APP.nostr.gui.post_button.create();
         // our own listeners

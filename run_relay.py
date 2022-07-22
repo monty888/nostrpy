@@ -33,6 +33,7 @@ PG_PASSWORD = 'password'
 PG_DATBASE = 'nostr-relay'
 MAX_SUB = 3
 MAX_CONTENT_LENGTH = None
+EOSE = False
 
 def usage():
     print("""
@@ -114,16 +115,17 @@ def main():
     create_work_dir()
 
     try:
-        opts, args = getopt.getopt(sys.argv[1:], 'hs:w', ['help',
-                                                          'host=',
-                                                          'port=',
-                                                          'endpoint=',
-                                                          'config=',
-                                                          'store=',
-                                                          'dbfile=',
-                                                          'maxsub=',
-                                                          'maxlength=',
-                                                          'wipe'])
+        opts, args = getopt.getopt(sys.argv[1:], 'hs:we', ['help',
+                                                           'host=',
+                                                           'port=',
+                                                           'endpoint=',
+                                                           'config=',
+                                                           'store=',
+                                                           'dbfile=',
+                                                           'maxsub=',
+                                                           'maxlength=',
+                                                           'wipe',
+                                                           'eose'])
     except getopt.GetoptError as e:
         print(e)
         usage()
@@ -151,7 +153,8 @@ def main():
         'maxlength': MAX_CONTENT_LENGTH,
         'pg_database': PG_DATBASE,
         'pg_user': PG_USER,
-        'pg_password': PG_PASSWORD
+        'pg_password': PG_PASSWORD,
+        'eose': EOSE
     }
     config.update(load_toml(config_file))
 
@@ -178,6 +181,8 @@ def main():
             config['maxsub'] = a
         elif o == '--maxlength':
             config['maxlength'] = a
+        elif o in ('-e','--eose'):
+            config['eose'] = True
 
     # make sure items that need to be ints are
     for num_field in ('port', 'maxsub', 'maxlength'):
@@ -227,7 +232,10 @@ def main():
     # now we have config run the relay
     config['pg_password'] = '***'
     logging.debug('config = %s' % config)
-    my_relay = Relay(my_store, max_sub=config['maxsub'], accept_req_handler=accept_handlers)
+    my_relay = Relay(my_store,
+                     max_sub=config['maxsub'],
+                     accept_req_handler=accept_handlers,
+                     enable_nip15=config['eose'])
     my_relay.start(config['host'], config['port'], config['endpoint'])
 
 if __name__ == "__main__":

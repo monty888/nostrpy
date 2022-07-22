@@ -51,7 +51,7 @@ class ProfileStoreInterface(ABC):
         """
 
     @abstractmethod
-    def select(self, filter={}, profile_type=ProfileType.ANY) -> ProfileList:
+    def select_profiles(self, filter={}, profile_type=ProfileType.ANY) -> ProfileList:
         """
         TODO : filter support
         :param filter: [
@@ -65,7 +65,7 @@ class ProfileStoreInterface(ABC):
         """
 
     @abstractmethod
-    def contacts(self, filter):
+    def select_contacts(self, filter):
         """
         :return: contact list that owner_pk is following
         """
@@ -103,7 +103,7 @@ class ProfileStoreInterface(ABC):
                     # update_at as zero so attrs will be update over if we get anything from relay
                     update_at=0)
 
-        all = self.select()
+        all = self.select_profiles()
 
         if all.lookup_profilename(name) or all.lookup_priv_key(keys['priv_k']):
             raise Exception('Profile:new_profile %s already exists' % name)
@@ -122,7 +122,7 @@ class ProfileStoreInterface(ABC):
         :return:
         """
 
-        profiles = self.select()
+        profiles = self.select_profiles()
         c_p: Profile
         to_output = []
         for c_p in profiles:
@@ -323,6 +323,8 @@ class TransientProfileStore(ProfileStoreInterface):
 class SQLProfileStore(ProfileStoreInterface):
     """
         SQL implementation of ProfileStoreInterface
+        NOTE: batch methods are only correct if events are ordered old>newest
+
     """
     def __init__(self, db: Database):
         self._db = db
@@ -493,7 +495,60 @@ class SQLProfileStore(ProfileStoreInterface):
         logging.debug('SQLProfileStore::update_profile_local sql: %s args: %s' % (sql, args))
         self._db.execute_sql(sql, args)
 
-    def select(self, filter={}, profile_type=ProfileType.ANY) -> ProfileList:
+    def _prepare_put_profile(self, p: Profile, is_local=False, batch=None):
+        if batch is None:
+            batch = []
+
+        if is_local:
+            sql = """
+                insert or replace into 
+                    profiles 
+                        (priv_k, pub_k, profile_name, attrs, name, picture, updated_at)
+                        values(?,?,?,?,?,?,?)
+            """
+            args = [
+                p.private_key, p.public_key,
+                p.profile_name, json.dumps(p.attrs),
+                p.get_attr('name'), p.get_attr('picture'),
+                util_funcs.date_as_ticks(p.update_at)
+            ]
+        else:
+            sql = """
+                insert or replace into 
+                    profiles (pub_k, attrs, name, picture, updated_at) 
+                            values(?,?,?,?,?)
+            """
+            args = [
+                p.public_key,
+                json.dumps(p.attrs),
+                p.get_attr('name'), p.get_attr('picture'),
+                util_funcs.date_as_ticks(p.update_at)
+            ]
+        batch.append({
+            'sql': sql,
+            'args': args
+        })
+
+        return batch
+
+    def put_profile(self, p: Profile, is_local=False):
+        """
+        replace add/update/update_profile_local with single put method
+        :param p: p single or [] of profiles batches have to be all of same type and expect we'd only use for nonlocal
+        :param is_local: if local profile name,prov_k also included in update
+        :return:
+        """
+
+        if hasattr(p, '__iter__'):
+            batch = []
+            for c_p in p:
+                self._prepare_put_profile(c_p,is_local,batch)
+        else:
+            batch = self._prepare_put_profile(p, is_local)
+
+        return self._db.execute_batch(batch)
+
+    def select_profiles(self, filter={}, profile_type=ProfileType.ANY) -> ProfileList:
         filter_query = SQLProfileStore._get_profile_sql_filter(filter,
                                                                profile_type=profile_type,
                                                                placeholder=self._db.placeholder)
@@ -512,7 +567,7 @@ class SQLProfileStore(ProfileStoreInterface):
 
         return ProfileList(profiles)
 
-    def contacts(self, filter):
+    def select_contacts(self, filter):
         """
             returned as a list of contacts rather than a contact as the contacts may belong to more than
             one profile dependent on the filter. Up to the caller to make sense of things, if know that
@@ -538,7 +593,6 @@ class SQLProfileStore(ProfileStoreInterface):
             )
 
         return ret
-
 
     def set_contacts(self, contacts: ContactList):
         sql_batch = [
@@ -567,6 +621,48 @@ class SQLProfileStore(ProfileStoreInterface):
             )
 
         return self._db.execute_batch(sql_batch)
+
+    def _prepare_contacts_put(self, contacts: ContactList, batch=None):
+        if batch is None:
+            batch = []
+
+        # delete existing
+        batch.append(
+            {
+                'sql': 'delete from contacts where pub_k_owner=%s' % self._db.placeholder,
+                'args': [contacts.owner_public_key]
+            }
+        )
+
+        # if 0 then you're just deleting any contacts that exist
+        if len(contacts) > 0:
+            c_contact: Contact
+            add_data = []
+            for c_contact in contacts:
+                add_data.append([
+                    contacts.owner_public_key,
+                    c_contact.contact_public_key,
+                    contacts.updated_at
+                ])
+            batch.append(
+                {
+                    'sql': """insert into contacts (pub_k_owner, pub_k_contact, updated_at) 
+                                                    values (%s)""" % ','.join([self._db.placeholder] * 3),
+                    'args': add_data
+                }
+            )
+
+        return batch
+
+    def put_contacts(self, contacts: ContactList):
+        if hasattr(contacts, '__iter__'):
+            batch = []
+            for c_c in contacts:
+                self._prepare_contacts_put(c_c, batch)
+        else:
+            batch = self._prepare_contacts_put(contacts)
+
+        return self._db.execute_batch(batch)
 
 
 class SQLiteProfileStore(SQLProfileStore):

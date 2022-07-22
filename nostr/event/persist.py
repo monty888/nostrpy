@@ -157,12 +157,12 @@ class MemoryEventStore(EventStoreInterface):
 
     def __init__(self, delete_mode=DeleteMode.DEL_FLAG):
         self._delete_mode = delete_mode
-        self._evts = {}
+        self._events = {}
 
     def add_event(self, evt: Event):
-        if evt.id in self._evts:
+        if evt.id in self._events:
             raise NostrCommandException.event_already_exists(evt.id)
-        self._evts[evt.id] = {
+        self._events[evt.id] = {
             'is_deleted': False,
             'evt': evt
         }
@@ -173,24 +173,47 @@ class MemoryEventStore(EventStoreInterface):
         to_delete = evt.e_tags
         if self._delete_mode == DeleteMode.DEL_FLAG:
             for c_id in to_delete:
-                if c_id in self._evts:
-                    self._evts[c_id]['is_deleted'] = True
+                if c_id in self._events:
+                    self._events[c_id]['is_deleted'] = True
         elif self._delete_mode == DeleteMode.DEL_DELETE:
             for c_id in to_delete:
-                if c_id in self._evts:
+                if c_id in self._events:
                     # we just leave the is deleted flag in place but get rid of the evt data
                     # as it's just in memory it wouldn't be easy to get at anyway so really we're just freeing the mem
-                    del self._evts[c_id]['evt']
+                    del self._events[c_id]['evt']
 
-    def get_filter(self, filter):
-        ret = []
+    def get_filter(self, filters):
+        ret = set([])
         c_evt: Event
-        for evt_id in self._evts:
-            r = self._evts[evt_id]
+        limit = None
+        # only been passed a single, put into list
+        if isinstance(filters, dict):
+            filters = [filters]
+
+        # get limit if any
+        for c_filter in filters:
+            if 'limit' in c_filter:
+                if limit is None or c_filter['limit'] > limit:
+                    limit = c_filter['limit']
+
+        # bit shit as we store unsorted we have to get all then sort and can only cut
+        # to limit then
+        for evt_id in self._events:
+            r = self._events[evt_id]
             if not r['is_deleted']:
                 c_evt = r['evt']
-                if c_evt.test(filter):
-                    ret.append(c_evt)
+                for c_filter in filters:
+                    if c_evt.test(c_filter):
+                        ret.add(c_evt)
+
+        def _updated_sort(evt:Event):
+            return evt.created_at
+
+        ret = list(ret)
+        ret.sort(key=_updated_sort, reverse=True)
+        if limit is not None:
+            ret = ret[:limit]
+
         return ret
 
 
@@ -229,9 +252,43 @@ class ClientMemoryEventStore(MemoryEventStore, ClientEventStoreInterface):
 
     # TODO
     def event_relay(self, event_id: str) -> [str]:
-        pass
+        ret = []
+        evt = self._events[event_id]
+        if evt:
+            # to match sql, should just be [str] as we say!!!
+            ret = [{'relay_url': c_r} for c_r in list(evt['relays'])]
+
+        return ret
 
     def direct_messages(self, pub_k: str) -> DataSet:
+
+
+        dms = self.get_filter({
+            'authors': pub_k,
+            'kinds': [Event.KIND_ENCRYPT]
+        })
+
+        got_pks = set()
+        data = []
+        c_evt: Event
+        for c_evt in dms:
+            if c_evt.id not in got_pks:
+                to_k = c_evt.p_tags[0]
+                if to_k==pub_k:
+                    to_k = c_evt.p_tags[1]
+
+                data.append([
+                    c_evt.id,
+                    to_k,
+                    c_evt.created_at_ticks
+                ])
+                got_pks.add(c_evt.id)
+
+
+        ret = DataSet(heads=['event_id', 'pub_k', 'created_at'], data=data)
+        return ret
+
+    def relay_list(self, pub_k: str = None) -> []:
         pass
 
 
@@ -374,67 +431,86 @@ class SQLEventStore(EventStoreInterface):
         self._delete_mode = delete_mode
         self._db = db
 
-    def _prepare_add_event_batch(self, evt: Event):
-        batch = []
+    def _prepare_most_recent_types(self, evt:Event, batch:[]):
         # META and CONTACT_LIST event type supercede any previous events of same type, so if this event is newer
         # then we'll delete all pre-existing
         if evt.kind in (Event.KIND_META, Event.KIND_CONTACT_LIST):
-            if self._db.select_sql(sql='select id from events '
-                                       'where created_at>=%s and kind=%s '
-                                       'and pubkey=%s'.replace('%s', self._db.placeholder),
-                                   args=[evt.created_at_ticks, evt.kind, evt.pub_key]):
-                raise NostrCommandException('Newer event for kind %s already exists' % evt.kind)
+            # if self._db.select_sql(sql='select id from events '
+            #                            'where created_at>=%s and kind=%s '
+            #                            'and pubkey=%s'.replace('%s', self._db.placeholder),
+            #                        args=[evt.created_at_ticks, evt.kind, evt.pub_key]):
+            #     raise NostrCommandException('Newer event for kind %s already exists' % evt.kind)
+            #
+            # else:
+            # delete existing, note these are done as actual deletes not perhaps
+            # they should also honor the delete mode, so if flagging just mark as deleted?
+            batch.append(
+                {
+                    'sql': 'delete from event_tags where id in '
+                           '(select id from events where kind=%s and pubkey=%s)' %
+                           (self._db.placeholder, self._db.placeholder),
+                    'args': [evt.kind, evt.pub_key]
+                }
+            )
+            batch.append(
+                {
+                    'sql': 'delete from events where id in '
+                           '(select id from events '
+                           'where kind=%s and pubkey=%s)'.replace('%s', self._db.placeholder),
+                    'args': [evt.kind, evt.pub_key]
+                }
+            )
 
-            else:
-                # delete existing, note these are done as actual deletes not perhaps
-                # they should also honor the delete mode, so if flagging just mark as deleted?
-                batch.append(
-                    {
-                        'sql': 'delete from event_tags where id in '
-                               '(select id from events where kind=%s and pubkey=%s)' %
-                               (self._db.placeholder, self._db.placeholder),
-                        'args': [evt.kind, evt.pub_key]
-                    }
-                )
-                batch.append(
-                    {
-                        'sql': 'delete from events where id in '
-                               '(select id from events '
-                               'where kind=%s and pubkey=%s)'.replace('%s', self._db.placeholder),
-                        'args': [evt.kind, evt.pub_key]
-                    }
-                )
+    def _prepare_add_event_batch(self, evt: Event, batch=None):
+        if batch is None:
+            batch = []
+        is_add = False
+        if not self._db.select_sql(sql='select id from events where event_id=%s' % self._db.placeholder,
+                                   args=[evt.id]):
+            is_add = True
+            self._prepare_most_recent_types(evt, batch)
 
-        batch.append({
-            'sql': 'insert into events(event_id, pubkey, created_at, kind, tags, content,sig) '
-                   'values(%s,%s,%s,%s,%s,%s,%s)'.replace('%s', self._db.placeholder),
-            'args': [
-                evt.id, evt.pub_key, evt.created_at_ticks,
-                evt.kind, json.dumps(evt.tags), evt.content, evt.sig
-            ]
-        })
+            batch.append({
+                'sql': 'insert into events(event_id, pubkey, created_at, kind, tags, content,sig) '
+                       'values(%s,%s,%s,%s,%s,%s,%s)'.replace('%s', self._db.placeholder),
+                'args': [
+                    evt.id, evt.pub_key, evt.created_at_ticks,
+                    evt.kind, json.dumps(evt.tags), evt.content, evt.sig
+                ]
+            })
 
-        # currently we only put in the tags table the bits needed to suport query [2:] could go in an extra field
-        # but as we already have the full info in events tbl probably don't need
-        for c_tag in evt.tags:
-            if len(c_tag) >= 2:
-                tag_type = c_tag[0]
-                tag_value = c_tag[1]
-                batch.append({
-                    # 'sql': 'insert into event_tags SELECT last_insert_rowid(),?,?',
-                    'sql': """
-                                                insert into event_tags values (
-                                                (select id from events where event_id=%s),
-                                                %s,
-                                                %s)
-                                            """.replace('%s', self._db.placeholder),
-                    'args': [evt.id, tag_type, tag_value]
+            # currently we only put in the tags table the bits needed to suport query [2:] could go in an extra field
+            # but as we already have the full info in events tbl probably don't need
+            for c_tag in evt.tags:
+                if len(c_tag) >= 2:
+                    tag_type = c_tag[0]
+                    tag_value = c_tag[1]
+                    batch.append({
+                        # 'sql': 'insert into event_tags SELECT last_insert_rowid(),?,?',
+                        'sql': """
+                                                    insert into event_tags values (
+                                                    (select id from events where event_id=%s),
+                                                    %s,
+                                                    %s)
+                                                """.replace('%s', self._db.placeholder),
+                        'args': [evt.id, tag_type, tag_value]
                 })
-
-        return batch
+        return batch, is_add
 
     def add_event(self, evt: Event):
-        self._db.execute_batch(self._prepare_add_event_batch(evt))
+        if hasattr(evt, '__iter__'):
+            batch = []
+            for c_evt in evt:
+                self._prepare_add_event_batch(c_evt, batch)
+
+            is_add = self._db.execute_batch(batch)
+
+        else:
+            batch, is_add = self._prepare_add_event_batch(evt)
+            if is_add:
+                is_add = self._db.execute_batch(batch)
+
+        return is_add
 
     def get_filter(self, filter, custom=None) -> [Event]:
         """
@@ -701,12 +777,23 @@ class ClientSQLEventStore(SQLEventStore, ClientEventStoreInterface):
         return ret
 
     def add_event_relay(self, evt: Event, relay_url: str):
-        try:
-            self.add_event(evt)
-            self._db.execute_sql('insert into event_relay values ((select id from events where event_id=?), ?)',
-                                 args=[evt.id, relay_url])
-        except IntegrityError as ie:
-            self._db.execute_sql('insert into event_relay values ((select id from events where event_id=?), ?)', args=[evt.id, relay_url])
+        if hasattr(evt, '__iter__'):
+            batch = []
+            for c_evt in evt:
+                self._prepare_add_event_batch(c_evt, batch)
+                batch.append({
+                    'sql': 'insert into event_relay values ((select id from events where event_id=?), ?)',
+                    'args': [c_evt.id, relay_url]
+                })
+
+        else:
+            batch, is_add = super()._prepare_add_event_batch(evt)
+            batch.append({
+                'sql': 'insert into event_relay values ((select id from events where event_id=?), ?)',
+                'args': [evt.id, relay_url]
+            })
+
+        return self._db.execute_batch(batch)
 
     def event_relay(self, event_id: str) -> [str]:
         sql = """
@@ -747,24 +834,25 @@ order by created_at desc
     def relay_list(self, pub_k: str = None) -> []:
         # https://stackoverflow.com/questions/18807276/how-to-make-my-postgresql-database-use-a-case-insensitive-collation
         # this might work in postgres if we create the collation
+        # just used lower!
 
         # all order by how many unique pub_k recommended
         all_sql = """
-select trim(content) as relay
+select lower(trim(trim(trim(content),X'09'),'/')) as relay
 from events where kind=2 
-group by trim(content)
-order by count(pubkey) desc, trim(content) COLLATE NOCASE 
+group by relay
+order by count(pubkey) desc, relay  
         """
 
         # same but using recomendations of followers of pub_k
         relative_pub_k_sql = """
-select trim(content) as relay
+select lower(trim(trim(trim(content),X'09'),'/')) as relay
 from events where kind=2 and 
 pubkey in (
 	select pub_k_contact from contacts where pub_k_owner=%s
 )
-group by trim(content)
-order by count(pubkey) desc, trim(content) COLLATE NOCASE
+group by relay
+order by count(pubkey) desc, relay
         """ % self._db.placeholder
 
         ret = []
@@ -829,19 +917,27 @@ class ClientSQLiteEventStore(SQLiteEventStore, ClientSQLEventStore,  ClientEvent
 
         self._db.execute_batch(create_batch)
 
-    def add_event(self, evt: Event):
-        evt_batch = super()._prepare_add_event_batch(evt)
-        if self._full_text and evt.kind == Event.KIND_TEXT_NOTE:
+    def _prepare_add_event_batch(self, evt: Event, batch=None):
+        if batch is None:
+            batch = []
+
+        evt_batch, is_add = super()._prepare_add_event_batch(evt, batch)
+        if is_add and self._full_text and evt.kind == Event.KIND_TEXT_NOTE:
             evt_batch.append({
                 'sql': """
-                                            insert into event_content values (
-                                            (select id from events where event_id=%s),
-                                            %s)
-                                        """.replace('%s', self._db.placeholder),
+                                                    insert into event_content values (
+                                                    (select id from events where event_id=%s),
+                                                    %s)
+                                                """.replace('%s', self._db.placeholder),
                 'args': [evt.id, evt.content]
             })
 
-        self._db.execute_batch(evt_batch)
+        return evt_batch, is_add
+
+    # def add_event(self, evt: Event):
+    #     evt_batch, is_add = self._prepare_add_event_batch(evt)
+    #     if is_add:
+    #         self._db.execute_batch(evt_batch)
 
     def get_filter(self, filter) -> [Event]:
         def my_custom(filter, join):

@@ -24,6 +24,7 @@ from nostr.util import util_funcs
 WORK_DIR = '/home/%s/.nostrpy/' % Path.home().name
 DB = SQLiteDatabase('%s/nostr-client-test.db' % WORK_DIR)
 EVENT_STORE = ClientSQLEventStore(DB)
+# EVENT_STORE = ClientMemoryEventStore()
 # EVENT_STORE = TransientEventStore()
 PROFILE_STORE = SQLProfileStore(DB)
 # RELAYS = ['wss://rsslay.fiatjaf.com','wss://nostr-pub.wellorder.net']
@@ -154,7 +155,7 @@ def run_post():
                     print('via public inbox but it couldn\'t be created bad private key or unknown profile?')
                     sys.exit(2)
 
-            elif o in ('-s', '--s'):
+            elif o in ('-s', '--subject'):
                 subject = a
             elif o in ('-l', '--loop'):
                 is_loop = True
@@ -176,6 +177,7 @@ def run_post():
             msg = ' '.join(args)
 
         my_client = ClientPool(relays)
+
         my_post = PostApp(
             use_relay=my_client,
             as_user=as_user,
@@ -197,6 +199,7 @@ def run_post():
 
             for c_evt in local_events:
                 my_post.do_event(None, c_evt, None)
+
             persist_event = PersistEventHandler(EVENT_STORE)
 
 

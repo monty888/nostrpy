@@ -481,7 +481,7 @@ class NostrWeb(StaticServer):
         """
         :return: profiles that we have priv_k for
         """
-        profiles = self._profile_store.select(profile_type=ProfileType.LOCAL)
+        profiles = self._profile_store.select_profiles(profile_type=ProfileType.LOCAL)
         c_p: Profile
 
         ret = {

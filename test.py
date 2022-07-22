@@ -8,7 +8,7 @@ import base64
 from db.db import SQLiteDatabase as Database
 from nostr.client.client import Client
 from nostr.event.event import Event
-from nostr.client.event_handlers import PrintEventHandler, PersistEventHandler
+from nostr.client.event_handlers import PrintEventHandler, PersistEventHandler, EventHandler
 # from nostr.client.persist import SQLLiteEventStore
 from nostr.util import util_funcs
 # from nostr.ident import ProfileList, Profile
@@ -273,9 +273,87 @@ def events_backup(relay_url, filename, since=None):
 def events_import(relay_url, filename):
     Client.post_events_from_file(relay_url, filename)
 
+def backfill_test():
+    print('lets check batch compared to single if we can....')
+
+    # url = 'wss://nostr-pub.wellorder.net'
+    url = 'ws://localhost:8081/'
+    # url = 'wss://relay.damus.io'
+
+    is_done = False
+    events = []
+    start_time:datetime = None
+    since = util_funcs.date_as_ticks(datetime.now()-timedelta(days=5))
+    from nostr.event.persist import ClientSQLiteEventStore
+    from nostr.ident.persist import SQLiteProfileStore
+    from nostr.ident.profile import Profile,ContactList, ProfileEventHandler
+    db_file = '/home/shaun/performance_test/test.db'
+    util_funcs.create_sqlite_store(db_file)
+    event_store = ClientSQLiteEventStore(db_file=db_file)
+    profile_store = SQLiteProfileStore(db_file=db_file)
+    peh =ProfileEventHandler(profile_store)
+
+    def on_eose(the_client: Client, sub_id):
+        nonlocal is_done
+        nonlocal start_time
+        profiles = []
+        contacts = []
+        # no events!!!
+        if start_time is None:
+            start_time = datetime.now()
+
+        print('%s' % (datetime.now() - start_time).total_seconds())
+        print('n events %s' % len(events))
+
+        try:
+            event_store.add_event_relay(events, the_client.url)
+            c_evt: Event
+            for c_evt in events:
+                if c_evt.kind == Event.KIND_META:
+                    p = Profile.from_event(c_evt)
+                    if peh.is_newer_profile(p):
+                        profiles.append(p)
+                elif c_evt.kind == Event.KIND_CONTACT_LIST:
+                    contacts_list = ContactList.create_from_event(c_evt)
+                    if peh.is_newer_contacts(contacts_list):
+                        contacts.append(contacts_list)
+
+            profile_store.put_profile(profiles)
+            profile_store.put_contacts(contacts)
+
+        except Exception as e:
+            print(e)
+
+        is_done = True
+        print('%s' % (datetime.now() - start_time).total_seconds())
+
+    class my_event(EventHandler):
+
+        def do_event(self, sub_id, evt: Event, relay):
+            nonlocal start_time
+            nonlocal events
+            nonlocal event_store
+            if start_time is None:
+                start_time = datetime.now()
+            events.append(evt)
+
+    def my_connected(the_client: Client):
+        since  = event_store.get_newest(for_relay=the_client.url, filter={
+            # 'kinds': [Event.KIND_CONTACT_LIST]
+        })
+        the_client.subscribe(handlers=[my_event()], filters={
+            # 'kinds': [Event.KIND_CONTACT_LIST],
+            'since': since
+        })
+
+    with Client(url, on_connect=my_connected, on_eose=on_eose) as c:
+        while is_done is False:
+            print('client is busy')
+            time.sleep(1)
+
 
 if __name__ == "__main__":
-    logging.getLogger().setLevel(logging.DEBUG)
+    # logging.getLogger().setLevel(logging.DEBUG)
     nostr_db_file = '/home/shaun/.nostrpy/nostr-client.db'
     # nostr_db_file = '/home/shaun/PycharmProjects/nostrpy/nostr/storage/nostr-relay.db'
     # relay_url = 'wss://nostr-pub.wellorder.net'
@@ -290,23 +368,25 @@ if __name__ == "__main__":
     # command_line(relay_url, nostr_db_file)
     # test_encrypt()
 
-    from nostr.ident.profile import Profile,ProfileEventHandler
-    from nostr.ident.persist import SQLiteProfileStore
+    backfill_test()
 
-    peh = ProfileEventHandler(SQLiteProfileStore(nostr_db_file))
-    my_profile = peh.profiles.lookup_profilename('firedragon888')
-
-    with Client('ws://localhost:8081') as my_client:
-        i = 0
-        while True:
-            if my_client.connected:
-                n_evt = Event(kind=Event.KIND_TEXT_NOTE,
-                              content='test event: %s' % i,
-                              pub_key=my_profile.public_key)
-                n_evt.sign(my_profile.private_key)
-                i += 1
-                my_client.publish(n_evt)
-            time.sleep(0.01)
+    # from nostr.ident.profile import Profile,ProfileEventHandler
+    # from nostr.ident.persist import SQLiteProfileStore
+    #
+    # peh = ProfileEventHandler(SQLiteProfileStore(nostr_db_file))
+    # my_profile = peh.profiles.lookup_profilename('firedragon888')
+    #
+    # with Client('ws://localhost:8081') as my_client:
+    #     i = 0
+    #     while True:
+    #         if my_client.connected:
+    #             n_evt = Event(kind=Event.KIND_TEXT_NOTE,
+    #                           content='test event: %s' % i,
+    #                           pub_key=my_profile.public_key)
+    #             n_evt.sign(my_profile.private_key)
+    #             i += 1
+    #             my_client.publish(n_evt)
+    #         time.sleep(0.01)
 
     # NOTE: each event is json but the file structure isn't correct json there are \n between each event
     # events_backup(relay_url, backup_dir+'events.json')

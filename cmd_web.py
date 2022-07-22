@@ -183,7 +183,7 @@ def run_web(clients,
         #     since = less_30days
 
         the_client.subscribe(handlers=[evt_persist, my_server], filters={
-            'since': since,
+            'since': 0,
             'kinds': [
                 Event.KIND_TEXT_NOTE, Event.KIND_ENCRYPT,
                 Event.KIND_META, Event.KIND_CONTACT_LIST
@@ -232,13 +232,13 @@ def run():
     clients = [
         {
             'client': 'wss://nostr-pub.wellorder.net',
-            'write': False
+            'write': True
         },
-        'ws://localhost:8081',
+        'ws://localhost:8081'
         'ws://localhost:8082',
         {
             'client': 'wss://relay.damus.io',
-            'write': False
+            'write': True
         }
     ]
 
@@ -265,6 +265,10 @@ def run():
         event_store = ClientSQLiteEventStore(db_file,
                                              full_text=full_text)
         profile_store = SQLiteProfileStore(db_file)
+
+        # from nostr.event.persist import ClientMemoryEventStore
+        # event_store = ClientMemoryEventStore()
+
 
     if is_tor:
         run_tor(clients=clients,

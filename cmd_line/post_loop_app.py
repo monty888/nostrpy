@@ -118,7 +118,7 @@ class PostAppGui:
             prompt_col = 'red'
             content_col = ''
             if c_m.pub_key == as_user.public_key:
-                prompt_col = 'green'
+                prompt_col = 'cyan'
             if not self._post_app.connection_status:
                 content_col = prompt_col = 'gray'
 

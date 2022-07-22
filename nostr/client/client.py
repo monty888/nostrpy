@@ -211,10 +211,9 @@ class Client:
             # if relay support nip15 you get this event after the relay has sent the last stored event
             # at the moment a single function but might be better to add as option to subscribe
             if self._eose_func:
-                self._eose_func(sub_id)
+                self._eose_func(self, sub_id)
             else:
                 logging.debug('NIP-15 end of stored events for %s' % sub_id)
-
         else:
             logging.debug('Network::_on_message unexpected type %s' % type)
 
@@ -256,7 +255,6 @@ class Client:
             self._on_status(self.status)
 
     def _did_comm(self, ws, data):
-        print('ping or pong data: %s' % data)
         self._reset_status()
 
     def start(self):
@@ -442,7 +440,6 @@ class ClientPool:
                 self._clients[the_client.url].set_status_listener(get_on_status(the_client.url))
             except Exception as e:
                 logging.debug('ClientPool::__init__ - %s' % e)
-        print('create client pool')
 
     def set_on_connect(self, on_connect):
         for c_client in self._clients:

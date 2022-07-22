@@ -756,7 +756,14 @@ APP.nostr.gui.list = function(){
             'draw' : draw,
             'set_data' : function(data){
                 _data = data;
+            },
+            'data' : function(data){
+                if(data!==undefined){
+                    _data = data;
+                }
+                return _data;
             }
+
         };
     }
 
@@ -2861,9 +2868,17 @@ APP.nostr.gui.relay_list = function(){
     function create(args){
         let con = args.con,
             uid = APP.nostr.gui.uid(),
-            relay_status = APP.nostr.data.relay_status.get(),
-            render_obj_arr = [],
-            my_list;
+            o_relay_status = APP.nostr.data.relay_status.get(),
+            c_relay_status = o_relay_status,
+            my_list,
+            summary_con,
+            list_con,
+            is_edit = args.edit===undefined ? false : args.edit,
+            list_tmpl = _gui.templates.get('relay-list'),
+            row_tmpl = _gui.templates.get('modal-relay-list-row'),
+            list_con_status_tmpl = _gui.templates.get('relay_list-status'),
+            sum_con_status_tmpl = _gui.templates.get('relay-con-status'),
+            relay_map = {};
 
         function get_last_connect_str(r_status){
             let ret = 'never ';
@@ -2880,15 +2895,88 @@ APP.nostr.gui.relay_list = function(){
             return ret;
         }
 
-        function set_summary(){
-            // also creates the list area
-            con.html(Mustache.render(_gui.templates.get('relay-list'),{
+        function summary_data(){
+            return {
                 'uid' : uid,
-                'status' : relay_status.connected===true ? 'connected' : 'not-connected',
-                'relay-count': relay_status.relay_count,
-                'connect-count' : relay_status.connect_count,
-            }));
+                'status' : c_relay_status.connected===true ? 'connected' : 'not-connected',
+                'relay-count': c_relay_status.relay_count,
+                'connect-count' : c_relay_status.connect_count,
+            }
+        }
 
+        function list_data(){
+            let r_status,
+                ret = [],
+                relay_uid,
+                relay_data;
+
+
+            for(let relay in c_relay_status.relays){
+                r_status = c_relay_status.relays[relay];
+                relay_uid = relay_map[relay]===undefined ? _gui.uid() : relay_map[relay].uid;
+
+                relay_data = {
+                    'url' : relay,
+                    'connected' : r_status.connected,
+                    'last_err' : r_status.last_err,
+                    'last_connect' : get_last_connect_str(r_status),
+                    'mode_text' : get_mode_text(r_status),
+                    'is_mode_edit' : is_edit,
+                    'relay_uid' : relay_uid
+                };
+                ret.push(relay_data);
+
+                relay_map[relay] = {
+                    'data' : relay_data,
+                    'uid' : relay_uid
+                };
+
+            }
+            return ret;
+        }
+
+        function add_relay(url){
+            let data = my_list.data();
+            data.unshift({
+                'url' : url,
+                'last_err' : '',
+                'is_edit_mode' : is_edit
+            });
+            my_list.data(data);
+            my_list.draw();
+        }
+        function remove_relay(url){
+            let data= my_list.data();
+            for(let i=0;i<data.length;i++){
+                if(data[i].url===url){
+                    data.splice(i,1);
+                    break;
+                }
+            }
+            my_list.data(data);
+            my_list.draw();
+        }
+
+        function init_draw(){
+            // also creates the list area
+            con.html(Mustache.render(list_tmpl,summary_data(),
+                {
+                    'status' : list_con_status_tmpl
+                }
+            ));
+            summary_con = $('#'+uid+'-header');
+            list_con = $('#'+uid+"-list");
+            my_list = _gui.list.create({
+                'con' : list_con,
+                'data' : list_data(),
+                'row_render' : function(r){
+                    return Mustache.render(row_tmpl,r,
+                        {
+                            'con-status' :  sum_con_status_tmpl
+                        });
+                }
+            });
+            my_list.draw();
         }
 
         function get_mode_text(r_status){
@@ -2902,48 +2990,29 @@ APP.nostr.gui.relay_list = function(){
             return ret;
         }
 
-        function draw_list(){
-            let r_status,
-                mode_arr;
-            render_obj_arr = [];
-            for(let relay in relay_status.relays){
-                r_status = relay_status.relays[relay];
-                render_obj_arr.push({
-                    'url' : relay,
-                    'connected' : r_status.connected,
-                    'last_err' : r_status.last_err,
-                    'last_connect' : get_last_connect_str(r_status),
-                    'mode_text' : get_mode_text(r_status)
-                })
-            }
-
-            my_list = _gui.list.create({
-                'con' : $('#'+uid+"-list"),
-                'data' : render_obj_arr,
-                'row_tmpl' : _gui.templates.get('modal-relay-list-row')
-            });
-            my_list.draw();
-
+        function set_summary(){
+            summary_con.html(
+                Mustache.render(list_con_status_tmpl,summary_data())
+            );
         }
 
-
         function draw(){
-            if(relay_status===undefined){
-                return;
-            }
             set_summary();
-            draw_list();
-
+            // we need to be able to partial update if editing so we'll live it for now TODO: FIXME
+            let data = list_data();
+            data.forEach(function(c_relay){
+               $('#'+c_relay.relay_uid+"-con-status").html(Mustache.render(sum_con_status_tmpl, c_relay));
+            });
         }
 
         function my_listener(of_type, data){
-            relay_status = data;
-//            draw();
+            c_relay_status = data;
+            draw();
         }
 
         function init(){
             APP.nostr.data.event.add_listener('relay_status', my_listener);
-            draw();
+            init_draw();
         }
 
         init();
@@ -2961,17 +3030,22 @@ APP.nostr.gui.relay_list = function(){
     };
 }();
 
+// make generic select?
 APP.nostr.gui.relay_select = function(){
 
     const my_html = [
         '<div style="height:100%">',
-            '<div style="max-height:64px;overflow:hidden;margin-bottom:0px;" class="form-group">',
-                '<label for="relays-search">relays</label>',
-                '<input type="text" class="form-control" id="relays-search" aria-describedby="available relays" placeholder="search relays" />',
+            '<label for="relays-search">relays</label>',
+            '<div style="display:table-row" >',
+                '<div style="display:table-cell;">',
+                    '<input style="min-width:280px;" type="text" class="form-control" id="relays-search" aria-describedby="available relays" placeholder="search relays" list="relay-options" />',
+                '</div>',
+                '<div style="display:table-cell;vertical-align:top;" >',
+                    '<button type="button" class="btn btn-primary">+</button>',
+                '</div>',
             '</div>',
-            '<div id="relays-list-con" style="overflow-y:auto;height:calc(100% - 64px);" >',
-                'loading...',
-            '</div>',
+            '<datalist id="relay-options">',
+            '</datalist>',
         '</div>'
     ].join('');
 
@@ -2985,19 +3059,19 @@ APP.nostr.gui.relay_select = function(){
         function draw(){
             con.html(my_html);
             search_in = $('#relays-search');
-            list_con = $('#relays-list-con');
+            list_con = $('#relay-options');
             search_in.focus();
         }
 
         function load_relays(){
             APP.remote.relay_list({
                 'success' : function(data){
+                    list_con.html('loaded!');
                     my_list = APP.nostr.gui.list.create({
                         'con': list_con,
                         'data' : data.relays,
                         'row_render' : function(r){
-
-                            return r+'<br>';
+                            return '<option value="'+r+'" >';
                         }
                     });
 
@@ -3008,6 +3082,42 @@ APP.nostr.gui.relay_select = function(){
 
         draw();
         load_relays();
+    }
+
+    return {
+        'create' : create
+    };
+}();
+
+APP.nostr.gui.relay_edit = function(){
+    const _gui = APP.nostr.gui;
+
+    function create(args){
+        let con = args.con,
+            relay_con,
+            select_con;
+
+
+        function init(){
+            con.html(APP.nostr.gui.templates.get('screen-relay-edit-struct'));
+            relay_con = $('#current-con');
+            select_con = $('#edit-con');
+
+            _gui.relay_select.create({
+                'con' : select_con
+            });
+
+            _gui.relay_list.create({
+                'con' : relay_con,
+                'edit' : true
+            });
+
+        }
+
+
+
+        init();
+
     }
 
     return {

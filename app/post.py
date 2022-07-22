@@ -119,9 +119,12 @@ class PostApp:
         msg_members = list(set([msg.pub_key]).union(msg.p_tags))
         msg_members.sort()
 
-        is_subject = True
-        if self._subject and msg.get_tags('subject'):
-            is_subject = self._subject in [s[0] for s in msg.get_tags('subject')]
+        if self._subject:
+            is_subject = False
+            if msg.get_tags('subject'):
+                is_subject = self._subject in [s[0] for s in msg.get_tags('subject')]
+        else:
+            is_subject = True
 
         return self._chat_members == msg_members and is_subject or (self._is_encrypt is False and self._to_users is None)
 
@@ -150,7 +153,10 @@ class PostApp:
             # unwrap if evt is shared
             if self._public_inbox:
                 # evt = self._unwrap_public(evt)
-                evt = PostApp.clust_unwrap_event(evt, self._as_user, self._shared_keys)
+                if evt.pub_key == self._public_inbox.public_key:
+                    evt = PostApp.clust_unwrap_event(evt, self._as_user, self._shared_keys)
+                else:
+                    evt = None
 
             # evt None if using public_box and couldn't unwrap
             if evt is not None and self._is_chat(evt):

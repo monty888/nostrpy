@@ -11,7 +11,7 @@ from db.db import SQLiteDatabase
 from nostr.ident.profile import Profile, ProfileEventHandler, ProfileList, Contact
 from nostr.ident.persist import SQLProfileStore, TransientProfileStore, ProfileStoreInterface
 from nostr.client.client import ClientPool, Client
-from nostr.event.persist import ClientSQLEventStore, ClientSQLiteEventStore
+from nostr.event.persist import ClientSQLEventStore, ClientSQLiteEventStore, ClientMemoryEventStore
 from nostr.client.event_handlers import PrintEventHandler, PersistEventHandler, EventAccepter, DeduplicateAcceptor, LengthAcceptor
 from nostr.util import util_funcs
 from nostr.event.event import Event
@@ -20,7 +20,7 @@ from cmd_line.util import EventPrinter, FormattedEventPrinter
 
 # TODO: also postgres
 WORK_DIR = '/home/%s/.nostrpy/' % Path.home().name
-DB_FILE = '%s/nostr-client.db' % WORK_DIR
+DB_FILE = '%s/nostr-client-test.db' % WORK_DIR
 
 # RELAYS = ['wss://rsslay.fiatjaf.com','wss://nostr-pub.wellorder.net']
 # RELAYS = ['wss://rsslay.fiatjaf.com']
@@ -103,6 +103,14 @@ def get_from_config(config,
     except ValueError as e:
         print('since - %s not a numeric value' % config['since'])
 
+    until = config['until']
+    try:
+        if config['until'] is not None:
+            until = int(config['until'])
+    except ValueError as e:
+        print('until - %s not a numeric value' % config['until'])
+        sys.exit(2)
+
     return {
         'as_user': as_user,
         'all_view': all_view,
@@ -110,7 +118,8 @@ def get_from_config(config,
         'inboxes': inboxes,
         'inbox_keys': inbox_keys,
         'shared_keys': shared_keys,
-        'since': since
+        'since': since,
+        'until': until
     }
 
 
@@ -165,6 +174,7 @@ class MyAccept(EventAccepter):
 def run_watch(config):
     my_db = SQLiteDatabase(DB_FILE)
     event_store = ClientSQLiteEventStore(DB_FILE, full_text=True)
+    # event_store = ClientMemoryEventStore()
     my_persist = PersistEventHandler(event_store)
     profile_store = SQLProfileStore(my_db)
     profile_handler = ProfileEventHandler(profile_store)
@@ -176,6 +186,7 @@ def run_watch(config):
     inbox_keys = config['inbox_keys']
     share_keys = config['shared_keys']
     since = config['since']
+    until = config['until']
 
     def print_run_info():
         extra_view_profiles = config['view_extra']
@@ -206,6 +217,9 @@ def run_watch(config):
     print_run_info()
     # change to since to point in time
     since = datetime.now() - timedelta(hours=since)
+    # same for util if it is a value, which is taken as hours from since
+    if until:
+        until = util_funcs.date_as_ticks(since + timedelta(hours=until))
 
     # prints out the events
     my_printer = PrintEventHandler(profile_handler=profile_handler,
@@ -235,8 +249,11 @@ def run_watch(config):
         # get events from newest we have for this relay
         # TODO: add kind to get_newest
         evt_filter = {
-            'since': event_store.get_newest(the_client.url)+1
+            # 'since': event_store.get_newest(the_client.url)+1
+            'since': util_funcs.date_as_ticks(since)
         }
+        if until:
+            evt_filter['until'] = until
 
         # note in the case of wss://rsslay.fiatjaf.com it looks like author is required to receive anything
         if the_client.url == 'wss://rsslay.fiatjaf.com':
@@ -250,10 +267,12 @@ def run_watch(config):
         'since': util_funcs.date_as_ticks(since)
     }
 
+    # print events as we have them locally if using persistent event store
     existing_evts = event_store.get_filter(local_filter)
     existing_evts.reverse()
     for c_evt in existing_evts:
         my_printer.do_event(None, c_evt, None)
+        since = c_evt.created_at - timedelta(hours=1)
 
     my_client = ClientPool(RELAYS, on_connect=my_connect).start()
 
@@ -263,7 +282,8 @@ def run_event_view():
         'as_user': AS_PROFILE,
         'view_profiles': VIEW_PROFILE,
         'inbox': INBOX,
-        'since': SINCE
+        'since': SINCE,
+        'until': None
     }
 
     try:
@@ -271,7 +291,8 @@ def run_event_view():
                                                        'as_profile=',
                                                        'view_profiles=',
                                                        'inbox=',
-                                                       'since='])
+                                                       'since=',
+                                                       'until='])
 
         # attempt interpret action
         for o, a in opts:
@@ -285,6 +306,8 @@ def run_event_view():
                 config['inbox'] = a
             if o == '--since':
                 config['since'] = a
+            if o == '--until':
+                config['until'] = a
 
         run_watch(config)
 
@@ -298,61 +321,4 @@ if __name__ == "__main__":
     util_funcs.create_work_dir(WORK_DIR)
     util_funcs.create_sqlite_store(DB_FILE)
     run_event_view()
-    # from nostr.event.persist import ClientSQLiteEventStore
-    # my_store = ClientSQLiteEventStore(DB_FILE)
-    #
-    # evts = my_store.get_filter({
-    #     'ids' : ['e7cd845b72ecea0e409a22526c273982b5db3c724259152c80c704781b0515ae']
-    # })
-    # print(len(evts))
 
-    # from nostr.event.persist import ClientSQLEventStore
-    #
-    #
-    #
-    #
-    # event_store = ClientSQLEventStore(SQLiteDatabase(WORK_DIR + '/nostr-client.db'))
-    #
-    # print(event_store.get_newest(for_relay='wss://nostr-pub.wellorder.net',
-    #                              filter={
-    #                                  'kinds': Event.KIND_META
-    #                              }))
-
-
-    #
-    #
-    #
-    # evts = event_store.get_filter([
-    #     {
-    #     }
-    # ])
-    #
-    #
-    # evt = Event(kind=Event.KIND_TEXT_NOTE,
-    #             content='monkey',
-    #             pub_key='40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486')
-    # evt.sign('5c7102135378a5223d74ce95f11331a8282ea54905d61018c7f1bc166994a1d9')
-    # # event_store.add_event(evt)
-    # e = evts[0]
-    # event_store.add_event_relay(e, 'shauns relay')
-
-
-
-
-    # profile_store = SQLProfileStore(SQLiteDatabase(DB_FILE))
-    # evts = event_store.get_filter({
-    #     'ids' : ['d56320fbfa274944f8a95a935eb4d83b4ca0c5ca3421761905b827fbfed9b23d']
-    # })
-    #
-    # as_user:Profile = profile_store.select({
-    #     'profile_name': 'firedragon888'
-    # })[0]
-    #
-    # evt = Event(kind=Event.KIND_ENCRYPT,
-    #             content='1234567890123456',
-    #             pub_key=as_user.public_key)
-    # evt.content = evt.encrypt_content(as_user.private_key, as_user.public_key)
-    # evt.sign(as_user.private_key)
-    #
-    # evt.content = evt.decrypted_content(as_user.private_key, as_user.public_key)
-    # print('>>>>',evt.content)

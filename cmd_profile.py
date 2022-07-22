@@ -13,7 +13,7 @@ from nostr.encrypt import Keys
 
 # TODO: also postgres
 WORK_DIR = '/home/%s/.nostrpy/' % Path.home().name
-DB = SQLiteDatabase('%s/nostr-client.db' % WORK_DIR)
+DB = SQLiteDatabase('%s/nostr-client-test.db' % WORK_DIR)
 PROFILE_STORE = SQLProfileStore(DB)
 
 def usage():
@@ -77,7 +77,7 @@ def load_file(args):
 
     # already existing are updated, this only changes the link to profile name, attrs will stay as they are
     # this will work most of the time but doesn't cover e.g. the profile name exists and is used for another key
-    profiles = PROFILE_STORE.select()
+    profiles = PROFILE_STORE.select_profiles()
     if result['existed']:
         print('--Existed updated--')
         for c_p in result['existed']:
@@ -115,7 +115,7 @@ def link_profile(args):
     p = Profile(priv_key,
                 profile_name=profile_name)
 
-    profiles = PROFILE_STORE.select()
+    profiles = PROFILE_STORE.select_profiles()
     if profiles.lookup_profilename(profile_name):
         print('profile with name %s already exists' % profile_name)
         sys.exit(2)

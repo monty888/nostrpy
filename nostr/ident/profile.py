@@ -29,6 +29,15 @@ class UnknownProfile(Exception):
 
 class Profile:
 
+    @staticmethod
+    def from_event(evt:Event):
+        ret = None
+        if evt.kind == Event.KIND_META:
+            ret = Profile(pub_k=evt.pub_key,
+                          attrs=evt.content,
+                          update_at=evt.created_at_ticks)
+        return ret
+
     def __init__(self, priv_k=None, pub_k=None, attrs=None, profile_name='', update_at=None):
         """
             create a new ident/person that posts can be followed etc.
@@ -81,9 +90,9 @@ class Profile:
 
     def load_contacts(self, profile_store: ProfileStoreInterface, reload=False) -> ContactList:
         if self._contacts is None or reload is True:
-            self._contacts = profile_store.contacts({
+            self._contacts = ContactList(profile_store.select_contacts({
                 'owner': self.public_key
-            })
+            }), owner_pub_k=self.public_key)
 
         return self._contacts
 
@@ -92,7 +101,7 @@ class Profile:
         #  and then just split the contact list ourself?
         #  also add method to set_profile_store then contacts/followed_by could just attempt the loads adhoc?
         if self._followed_by is None or reload is True:
-            self._followed_by = profile_store.contacts({
+            self._followed_by = profile_store.select_contacts({
                 'contact': self.public_key
             })
 
@@ -109,14 +118,14 @@ class Profile:
         self._contacts = contacts
 
     @property
-    def followed_by(self) -> ContactList:
+    def followed_by(self) -> []:
         if self._followed_by is None:
             raise Exception(
                 'Profile::followed_by - load contacts hasn\'t been called yet for contact %s' % self.display_name())
         return self._followed_by
 
     @followed_by.setter
-    def followed_by(self, contacts: ContactList):
+    def followed_by(self, contacts: []):
         self._followed_by = contacts
 
     @property
@@ -566,20 +575,17 @@ class ContactList:
 
 class ProfileEventHandler:
     """
-        loads all profiles from db and then keeps that mem copy up to date whenever any meta events are recieved
-        obvs at some point keeping all profiles in memory might not work so well but OK at the moment....
-        TODO: check and verify NIP05 if profile has it
-        FIXME: on_update-> on_profile_update
-                add on_contacts_update
-    """
+        access profile, contacts through here rather than via the store, at the moment we keep everything in memory
+        but in future where this might not be possible it should be transparent to caller that we had to fetch from store...
 
+    """
     def __init__(self,
                  profile_store: 'ProfileStoreInterface',
                  on_profile_update=None,
                  on_contact_update=None):
 
         self._store = profile_store
-        self._profiles = self._store.select()
+        self._profiles = self._store.select_profiles()
         self._on_profile_update = on_profile_update
         self._on_contact_update = on_contact_update
 
@@ -622,7 +628,7 @@ class ProfileEventHandler:
             # it's not required that we have a profile to import the events
             # though it might be hard to get to the contacts later if we don't as (until we have a profile)
             # as it won't be handing off anything
-            existing_contacts = ContactList(contacts=self._store.contacts({'owner': pubkey}),
+            existing_contacts = ContactList(contacts=self._store.select_contacts({'owner': pubkey}),
                                             owner_pub_k=pubkey)
 
             if existing_contacts.updated_at is None or existing_contacts.updated_at < evt.created_at_ticks:
@@ -647,8 +653,40 @@ class ProfileEventHandler:
     def set_on_update(self, on_update):
         self._on_update = on_update
 
+    def profile(self, pub_k):
+        ret = self._profiles.lookup_pub_key(pub_k)
+        return ret
 
+    def is_newer_profile(self, p: Profile):
+        # return True if given profile is newer than what we have
+        ret = False
+        c_p = self.profile(p.public_key)
+        if c_p is None or c_p.update_at < p.update_at:
+            ret = True
+        return ret
 
+    def is_newer_contacts(self, contacts: ContactList):
+        # return True if given profile is newer than what we have
+        ret = False
+
+        c_p = self.profile(contacts.owner_public_key)
+        if c_p is None:
+            existing = ContactList(contacts=self._store.select_contacts({'owner': contacts.owner_public_key}),
+                                   owner_pub_k=contacts)
+
+        else:
+            c_p.load_contacts(self._store)
+            existing = c_p.contacts
+
+        if existing is None or existing.updated_at is None or existing.updated_at < contacts.updated_at:
+            if existing.updated_at is None and len(contacts) == 0:
+                # check this... assumed that we have the contact but cant find any contacts for then
+                # which is the same as adding 0 len contacts ie nothing to do
+                pass
+            else:
+                ret = True
+
+        return ret
 
 if __name__ == "__main__":
     from nostr.util import util_funcs
