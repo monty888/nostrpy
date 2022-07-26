@@ -187,12 +187,15 @@ class ProfileStoreInterface(ABC):
         """
 
         # get profile update events
-        evts = event_store.get_filter({
-            'kinds': [Event.KIND_META],
-            'since': since
-        })
+        evt_filter = {
+            'kinds': [Event.KIND_META]
+        }
+        if since is not None:
+            evt_filter['since'] = since
 
-        profiles = self.select()
+        evts = event_store.get_filter(evt_filter)
+
+        profiles = self.select_profiles()
         """
             now cycle through either adding or inserting only the most recent profile update
         """
@@ -237,7 +240,7 @@ class ProfileStoreInterface(ABC):
         c_list_updates = event_store.get_filter(my_event_filter)
 
         # to check if event is newer than what we already have if any
-        existing = self.contacts({})
+        existing = self.select_contacts({})
         lookup = {}
         c_c: Contact
         for c_c in existing:
@@ -265,13 +268,13 @@ class ProfileStoreInterface(ABC):
                 self.set_contacts(ContactList.create_from_event(c_evt))
 
 
-
-class TransientProfileStore(ProfileStoreInterface):
+class MemoryProfileStore(ProfileStoreInterface):
     """
         in memory profile store - normally we wouldn't use,
         you'd have to request all META, CONTACT_LIST events
         from relays again on start up
     """
+
     def __init__(self):
         self._profiles = {}
 
@@ -290,7 +293,7 @@ class TransientProfileStore(ProfileStoreInterface):
             to_update.profile_name = p.profile_name
             to_update.private_key = p.private_key
 
-    def select(self, filter={}, profile_type=ProfileType.ANY) -> ProfileList:
+    def select_profiles(self, filter={}, profile_type=ProfileType.ANY) -> ProfileList:
         c_p: Profile
         profiles: [Profile] = []
 
@@ -299,7 +302,7 @@ class TransientProfileStore(ProfileStoreInterface):
 
             matches = 'public_key' in filter and pub_k in filter['public_key'] \
                       or 'private_key' in filter and c_p.private_key in filter['private_key'] \
-                      or'profile_name' in filter and c_p.profile_name in filter['profile_name'] \
+                      or 'profile_name' in filter and c_p.profile_name in filter['profile_name'] \
                       or len(filter) == 0
 
             if matches:
@@ -312,9 +315,11 @@ class TransientProfileStore(ProfileStoreInterface):
 
         return ProfileList(profiles)
 
-    # TODO - implement me !!
-    def contacts(self, filter):
-        pass
+    def select_contacts(self, filter):
+        """
+        :return: contact list that owner_pk is following
+        """
+        ret = []
 
     def set_contacts(self, contacts: ContactList):
         pass

@@ -917,9 +917,26 @@ class NostrWeb(StaticServer):
                     filter['authors'] = [' ']
 
             search_str = ' '.join(search_str.split())
-            print('  ** ',search_str)
+
+            ids_pres, search_str = extract_tag('&', search_str)
+            if ids_pres:
+                filter['ids'] = ids_pres
+
             if search_str:
                 filter['content'] = search_str
+
+            # this works but as tag search #e is only for full id have removed for now
+            # because its confusing.... maybe add prefix search just for #e?(#p)
+            # so event search looks both for events of that id and those that ref it
+            # if 'ids' in filter:
+            #     ref_copy = filter.copy()
+            #     ref_copy['#e'] = ref_copy['ids']
+            #     del ref_copy['ids']
+            #     filter = [
+            #         filter,
+            #         ref_copy
+            #     ]
+
 
         evts = [c_evt.event_data() for c_evt in self._event_store.get_filter(filter)]
 

@@ -6,6 +6,7 @@ import logging
 import sys
 import time
 import websocket
+import requests
 from gevent import Greenlet
 from collections import OrderedDict
 from websocket._exceptions import WebSocketConnectionClosedException
@@ -18,6 +19,7 @@ from nostr.util import util_funcs
 from nostr.event.event import Event
 from nostr.client.event_handlers import EventTimeHandler, FileEventHandler
 from threading import Thread
+
 
 class Client:
 
@@ -97,9 +99,10 @@ class Client:
                  on_status=None,
                  on_eose=None,
                  read=True,
-                 write=True):
+                 write=True,
+                 emulate_eose=True):
         self._url = relay_url
-        self._handlers = {}
+        self._subs = {}
         self._run = True
         self._ws = None
         self._last_con = None
@@ -111,10 +114,30 @@ class Client:
         self._read = read
         self._write = write
         self._eose_func = on_eose
+        self._emulate_eose = emulate_eose
+        # NIP11 info for the relay we're connected to
+        self._relay_info = None
 
     @property
     def url(self):
         return self._url
+
+    @property
+    def relay_information(self):
+        """
+        what to do in case of error?
+        :return:
+        """
+        if self._relay_info is None:
+            info_url = self._url.replace('ws:','http:').replace('wss:', 'https:')
+            response = requests.get(info_url,
+                                    headers={
+                                        'Accept': 'application/nostr+json'
+                                    })
+            if response.status_code == 200:
+                self._relay_info = json.loads(response.content)
+
+        return self._relay_info
 
     def set_on_connect(self, on_connect):
         # probably should either pass in on create or call this before start()
@@ -153,7 +176,31 @@ class Client:
             # caller only passed in single handler
             if not hasattr(handlers, '__iter__'):
                 handlers = [handlers]
-            self._handlers[sub_id] = handlers
+            self._subs[sub_id] = {
+                'handlers': handlers,
+                # if we have eose function then the caller will receive all stored events via the EOSE func
+                # and this will be set True when done. If not the events will look like they come in 1 by 1
+                'is_eose': self._eose_func is None,
+                'events': [],
+                'start_time': datetime.now(),
+                'last_event': None
+            }
+
+            if not self._relay_supports_eose() and self._emulate_eose:
+                logging.debug('emulating EOSE for sub_id %s' % sub_id)
+                def my_emulate():
+                    is_wait = True
+                    from datetime import timedelta
+                    while is_wait:
+                        sub_info = self._subs[sub_id]
+                        now = datetime.now()
+                        if (sub_info['last_event'] is not None and now - sub_info['last_event'] > timedelta(seconds=2)) or \
+                                (now - sub_info['start_time'] > timedelta(seconds=2)):
+                            is_wait = False
+                            pass
+                        time.sleep(1)
+                    self._on_message(self._ws, json.dumps(['EOSE', sub_id]))
+                Thread(target=my_emulate).start()
 
         self._ws.send(the_req)
         self._reset_status()
@@ -177,19 +224,21 @@ class Client:
 
     def unsubscribe(self, sub_id):
         # if subscribed, should we error if unknown sub_id?
-        if sub_id in self._handlers:
+        # FIXME: this probably needs to be wrapped in a lock
+        if sub_id in self._subs:
             self._ws.send(json.dumps(['CLOSE', sub_id]))
-            self._handlers[sub_id]
+            del self._subs[sub_id]
             self._reset_status()
         self._reset_status()
 
     def publish(self, evt: Event):
-        logging.debug('Client::publish - %s', evt.event_data())
-        to_pub = json.dumps([
-            'EVENT', evt.event_data()
-        ])
+        if self.write:
+            logging.debug('Client::publish - %s', evt.event_data())
+            to_pub = json.dumps([
+                'EVENT', evt.event_data()
+            ])
+            self._ws.send(to_pub)
 
-        self._ws.send(to_pub)
         self._reset_status()
 
     def set_end_stored_events(self, eose_func=None):
@@ -203,27 +252,64 @@ class Client:
         type = message[0]
         sub_id = message[1]
         if type == 'EVENT':
-            self._do_events(sub_id, message)
+            if self._read:
+                self._do_events(sub_id, message)
         elif type == 'NOTICE':
             # creator should probably be able to suppliy a notice handler
             logging.debug('NOTICE!! %s' % sub_id)
         elif type == 'EOSE':
             # if relay support nip15 you get this event after the relay has sent the last stored event
             # at the moment a single function but might be better to add as option to subscribe
+            if not self._have_sub(sub_id):
+                logging.debug('Client::_on_message EOSE event for unknown sub_id?!??!! - %s' % sub_id)
+
             if self._eose_func:
-                self._eose_func(self, sub_id)
-            else:
-                logging.debug('NIP-15 end of stored events for %s' % sub_id)
+                self._eose_func(self, sub_id, self._subs[sub_id]['events'])
+
+            # no longer needed
+            logging.debug('end of stored events for %s - %s events received' % (sub_id,
+                                                                                len(self._subs[sub_id]['events'])))
+            self._subs[sub_id]['events'] = []
+            self._subs[sub_id]['is_eose'] = True
+
         else:
             logging.debug('Network::_on_message unexpected type %s' % type)
 
+    def _have_sub(self, sub_id):
+        return sub_id in self._subs
+
+    def _relay_supports_eose(self):
+        relay_info = self.relay_information
+        return relay_info and 'supported_nips' in relay_info and 15 in relay_info['supported_nips']
+
+    def _check_eose(self, sub_id, message):
+        the_evt: Event
+        ret = self._subs[sub_id]['is_eose']
+
+        # these are stored events
+        if ret is False:
+            if self._relay_supports_eose() or self._emulate_eose:
+                self._subs[sub_id]['events'].append(Event.create_from_JSON(message[2]))
+                self._subs[sub_id]['last_event'] = datetime.now()
+            else:
+                # eose not supported by relay and we're not emulating
+                self._subs[sub_id]['is_eose'] = True
+                ret = True
+
+        return ret
+
     def _do_events(self, sub_id, message):
         the_evt: Event
+        if not self._have_sub(sub_id):
+            logging.debug(
+                'Client::_on_message event for subscription with no handler registered subscription : %s\n event: %s' % (
+                    sub_id, message))
+            return
 
-        if sub_id in self._handlers:
+        if sub_id in self._subs and self._check_eose(sub_id, message):
             try:
                 the_evt = Event.create_from_JSON(message[2])
-                for c_handler in self._handlers[sub_id]:
+                for c_handler in self._subs[sub_id]['handlers']:
                     try:
                         c_handler.do_event(sub_id, the_evt, self._url)
                     except Exception as e:
@@ -232,10 +318,6 @@ class Client:
             except Exception as e:
                 # TODO: add name property to handlers
                 logging.debug('Client::_do_events %s' % (e))
-        else:
-            logging.debug(
-                'Client::_on_message event for subscription with no handler registered subscription : %s\n event: %s' % (
-                sub_id, message))
 
     def _on_error(self, ws, error):
         self._last_err = str(error)
@@ -253,6 +335,7 @@ class Client:
             self._on_connect(self)
         if self._on_status:
             self._on_status(self.status)
+
 
     def _did_comm(self, ws, data):
         self._reset_status()
@@ -272,14 +355,14 @@ class Client:
                                               on_pong=self._did_comm)
             self._ws.run_forever(ping_interval=60, ping_timeout=5)  # Set dispatcher to automatic reconnection
 
-        def monitor_thread():
-            while self._run:
-                try:
-                    if self._on_status:
-                        self._on_status(self.status)
-                except Exception as e:
-                    logging.debug(e)
-                time.sleep(1)
+        # def monitor_thread():
+        #     while self._run:
+        #         try:
+        #             if self._on_status:
+        #                 self._on_status(self.status)
+        #         except Exception as e:
+        #             logging.debug(e)
+        #         time.sleep(1)
 
         def my_thread():
             # Thread(target=monitor_thread).start()
@@ -318,8 +401,8 @@ class Client:
             # so status from single Client looks same as ClientPool
             'relay_count': 1,
             'connect_count': con_count,
-            'read' : self._read,
-            'write' : self._write
+            'read': self._read,
+            'write': self._write
         }
 
     def end(self):
@@ -371,6 +454,7 @@ class Client:
     def last_error(self):
         return self._last_err
 
+
 class ClientPool:
     """
         a collection of Clients so we can subscribe/post to a number of relays with single call
@@ -390,7 +474,8 @@ class ClientPool:
     """
     def __init__(self, clients,
                  on_connect=None,
-                 on_status=None):
+                 on_status=None,
+                 on_eose=None):
         # Clients (Relays) we connecting to
         self._clients = {}
         # subscription event handlers keyed on sub ids
@@ -420,9 +505,12 @@ class ClientPool:
                 if isinstance(c_client, str):
                     # read/write default True
                     the_client = self._clients[c_client] = Client(c_client,
-                                                                  on_connect=on_connect)
+                                                                  on_connect=on_connect,
+                                                                  on_eose=on_eose)
                 elif isinstance(c_client, Client):
                     the_client = self._clients[c_client.url] = c_client
+                    the_client.set_on_connect(on_connect)
+                    the_client.set_end_stored_events(on_eose)
                 elif isinstance(c_client, dict):
                     read = True
                     if 'read' in c_client:
@@ -434,6 +522,7 @@ class ClientPool:
                     client_url = c_client['client']
                     the_client = self._clients[client_url] = Client(client_url,
                                                                     on_connect=on_connect,
+                                                                    on_eose=on_eose,
                                                                     read=read,
                                                                     write=write)
 

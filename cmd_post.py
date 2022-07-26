@@ -29,9 +29,9 @@ EVENT_STORE = ClientSQLEventStore(DB)
 PROFILE_STORE = SQLProfileStore(DB)
 # RELAYS = ['wss://rsslay.fiatjaf.com','wss://nostr-pub.wellorder.net']
 # RELAYS = ['wss://rsslay.fiatjaf.com']
-RELAYS = ['ws://localhost:8081']
+# RELAYS = ['ws://localhost:8081']
 # RELAYS = ['ws://localhost:8081','ws://localhost:8082']
-# RELAYS = ['wss://nostr-pub.wellorder.net']
+RELAYS = ['wss://nostr-pub.wellorder.net']
 
 
 def usage():
@@ -208,14 +208,19 @@ def run_post():
 
             def my_connect(the_client: Client):
                 the_client.subscribe(filters={
-                    'kind': [Event.KIND_META]
+                    'kind': [Event.KIND_META],
+                    'since': EVENT_STORE.get_newest(the_client.url, {
+                        'kind': [Event.KIND_META]
+                    }) + 1
                 }, handlers=[persist_profile])
 
                 the_client.subscribe(filters={
                     # rem'd as if we're persisting locally it's best just to get everything else we're more likely
                     # to end up with gaps
-                    # 'kind': [Event.KIND_TEXT_NOTE, Event.KIND_ENCRYPT],
-                    'since': EVENT_STORE.get_newest(the_client.url)+1
+                    'kind': [Event.KIND_TEXT_NOTE, Event.KIND_ENCRYPT],
+                    'since': EVENT_STORE.get_newest(the_client.url, {
+                        'kind': [Event.KIND_TEXT_NOTE, Event.KIND_ENCRYPT]
+                    })+1
                 }, handlers=[my_post, persist_event])
 
             con_status = my_client.connected

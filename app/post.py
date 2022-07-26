@@ -194,6 +194,8 @@ class PostApp:
                         tags=tags)
 
             evt.sign(self._as_user.private_key)
+            if self._public_inbox:
+                evt = self._inbox_wrap(evt)
             post = [evt]
         else:
             post = []
@@ -216,19 +218,25 @@ class PostApp:
 
         return post
 
-    def _inbox_wrap(self, evt, to_pub_k):
-
-        se = SharedEncrypt(self._as_user.private_key)
-        se.derive_shared_key(to_pub_k)
+    def _inbox_wrap(self, evt, to_pub_k=None):
+        tags = []
+        if to_pub_k:
+            se = SharedEncrypt(self._as_user.private_key)
+            se.derive_shared_key(to_pub_k)
+            tags = [
+                    ['shared', PostApp.get_clust_shared(se.shared_key())]
+            ]
 
         evt = Event(kind=Event.KIND_ENCRYPT,
                     content=json.dumps(evt.event_data()),
                     pub_key=self._public_inbox.public_key,
-                    tags=[
-                        ['shared', PostApp.get_clust_shared(se.shared_key())]
-                    ])
+                    tags=tags)
         # evt.content = evt.encrypt_content(self._public_inbox.private_key, to_pub_k)
-        evt.content = evt.encrypt_content(self._as_user.private_key, to_pub_k)
+        if to_pub_k:
+            evt.content = evt.encrypt_content(self._as_user.private_key, to_pub_k)
+        else:
+            evt.content = evt.encrypt_content(self._public_inbox.private_key, self._public_inbox.public_key)
+
         evt.sign(self._public_inbox.private_key)
         return evt
 

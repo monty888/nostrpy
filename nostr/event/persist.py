@@ -160,8 +160,6 @@ class MemoryEventStore(EventStoreInterface):
         self._events = {}
 
     def add_event(self, evt: Event):
-        if evt.id in self._events:
-            raise NostrCommandException.event_already_exists(evt.id)
         self._events[evt.id] = {
             'is_deleted': False,
             'evt': evt
@@ -181,6 +179,9 @@ class MemoryEventStore(EventStoreInterface):
                     # we just leave the is deleted flag in place but get rid of the evt data
                     # as it's just in memory it wouldn't be easy to get at anyway so really we're just freeing the mem
                     del self._events[c_id]['evt']
+
+    def test_event(self, evt:Event, filter):
+        return evt.test(filter)
 
     def get_filter(self, filters):
         ret = set([])
@@ -203,10 +204,10 @@ class MemoryEventStore(EventStoreInterface):
             if not r['is_deleted']:
                 c_evt = r['evt']
                 for c_filter in filters:
-                    if c_evt.test(c_filter):
+                    if self.test_event(c_evt, c_filter):
                         ret.add(c_evt)
 
-        def _updated_sort(evt:Event):
+        def _updated_sort(evt: Event):
             return evt.created_at
 
         ret = list(ret)
@@ -219,6 +220,11 @@ class MemoryEventStore(EventStoreInterface):
 
 class RelayMemoryEventStore(MemoryEventStore, RelayEventStoreInterface):
 
+    def add_event(self, evt: Event):
+        if evt.id in self._events:
+            raise NostrCommandException.event_already_exists(evt.id)
+        super().add_event(evt)
+
     def is_NIP09(self):
         return self._delete_mode in (DeleteMode.DEL_FLAG, DeleteMode.DEL_DELETE)
 
@@ -228,13 +234,38 @@ class ClientMemoryEventStore(MemoryEventStore, ClientEventStoreInterface):
     def __init__(self):
         super().__init__(DeleteMode.DEL_DELETE)
 
-    def add_event_relay(self, evt: Event, relay_url: str):
-        super().add_event(evt)
-        e_store = self._events[evt.id]
-        if not 'relays' in e_store:
-            e_store['relays'] = set()
+    def add_event(self, evt: Event):
+        if hasattr(evt, '__iter__'):
+            for c_evt in evt:
+                super().add_event(c_evt)
+        else:
+            super().add_event(evt)
 
-        self._events[evt.id]['relays'].add(relay_url)
+    def add_event_relay(self, evt: Event, relay_url: str):
+        def do_add(evt: Event):
+            if evt.id not in self._events:
+                self.add_event(evt)
+            e_store = self._events[evt.id]
+            if not 'relays' in e_store:
+                e_store['relays'] = set()
+
+            self._events[evt.id]['relays'].add(relay_url)
+
+        if hasattr(evt, '__iter__'):
+            for c_evt in evt:
+                do_add(c_evt)
+        else:
+            do_add(evt)
+
+    def test_event(self, evt, filter):
+        # adds basic text filter to client mem store
+        ret = False
+        if evt.test(filter):
+            if 'content' in filter:
+                ret = filter['content'].lower() in evt.content.lower()
+            else:
+                ret = True
+        return ret
 
     def get_newest(self, for_relay, filter=None):
         if filter is None:
@@ -242,9 +273,10 @@ class ClientMemoryEventStore(MemoryEventStore, ClientEventStoreInterface):
 
         ret = 0
         evt: Event
-        for i, o in enumerate(self._events):
-            if for_relay in o['relays']:
-                evt = o['event']
+        for i, k in enumerate(self._events):
+            e_store = self._events[k]
+            if for_relay in e_store['relays']:
+                evt = e_store['evt']
                 if evt.created_at_ticks > ret:
                     ret = evt.created_at_ticks
 
@@ -261,29 +293,28 @@ class ClientMemoryEventStore(MemoryEventStore, ClientEventStoreInterface):
         return ret
 
     def direct_messages(self, pub_k: str) -> DataSet:
-
-
-        dms = self.get_filter({
-            'authors': pub_k,
-            'kinds': [Event.KIND_ENCRYPT]
-        })
+        all_dms = self.get_filter([
+            {
+                'authors': pub_k,
+                'kinds': [Event.KIND_ENCRYPT]
+            },
+            {
+                '#p': pub_k,
+                'kinds': [Event.KIND_ENCRYPT]
+            }
+        ])
 
         got_pks = set()
         data = []
         c_evt: Event
-        for c_evt in dms:
-            if c_evt.id not in got_pks:
-                to_k = c_evt.p_tags[0]
-                if to_k==pub_k:
-                    to_k = c_evt.p_tags[1]
-
+        for c_evt in all_dms:
+            if c_evt.pub_key not in got_pks:
+                got_pks.add(c_evt.pub_key)
                 data.append([
                     c_evt.id,
-                    to_k,
-                    c_evt.created_at_ticks
+                    c_evt.pub_key,
+                    c_evt.created_at
                 ])
-                got_pks.add(c_evt.id)
-
 
         ret = DataSet(heads=['event_id', 'pub_k', 'created_at'], data=data)
         return ret

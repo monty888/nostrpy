@@ -13,7 +13,7 @@ from nostr.client.event_handlers import RepostEventHandler
 def do_mirror(from_relay, to_relay, filter=None):
     if filter is None:
         filter = {
-            'since': util_funcs.date_as_ticks(datetime.now()-timedelta(days=60)),
+            'since': util_funcs.date_as_ticks(datetime.now()-timedelta(days=30)),
             # 'kinds': 1
         }
 
@@ -21,6 +21,7 @@ def do_mirror(from_relay, to_relay, filter=None):
     to_relay = ClientPool(to_relay)
     to_relay.start()
 
+    # TODO add EOSE support
     def on_connect(the_from_relay):
         reposter = RepostEventHandler(to_relay)
         the_from_relay.subscribe(handlers=reposter, filters=filter)
@@ -36,6 +37,6 @@ if __name__ == "__main__":
     from_relay = ['wss://nostr-pub.wellorder.net', 'wss://nostr.bitcoiner.social',
                   'wss://rsslay.fiatjaf.com','wss://nostr.rocks','wss://nostr-relay.wlvs.space',
                   'wss://nostrrr.bublina.eu.org','wss://expensive-relay.fiatjaf.com']
-    # from_relay = ['ws://localhost:8082/']
+    # from_relay = ['ws://localhost:8082/','ws://localhost:8083/']
     to_relay = ['ws://localhost:8081/']
     do_mirror(from_relay, to_relay)

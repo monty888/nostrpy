@@ -33,7 +33,8 @@ PG_PASSWORD = 'password'
 PG_DATBASE = 'nostr-relay'
 MAX_SUB = 3
 MAX_CONTENT_LENGTH = None
-EOSE = False
+NIP15 = False
+NIP16 = False
 
 def usage():
     print("""
@@ -52,6 +53,8 @@ usage: python run_relay.py --host=localhost --port=8081
                 should be created manually. The dbfile will be created if it doesn't already exist.
 --maxsub    -   maximum open subs allowed per client websocket, default %s
 --maxlength -   maximum length for event content if any
+--nip15     -   enables End Of Stored Events(EOSE) as NIP15
+--nip16     -   enable event reatment as, ephemeral and replacable event ranges as NIP16
   
     """ % (HOST, PORT, END_POINT, DB_TYPE, SQL_LITE_FILE, MAX_SUB))
 
@@ -125,7 +128,8 @@ def main():
                                                            'maxsub=',
                                                            'maxlength=',
                                                            'wipe',
-                                                           'eose'])
+                                                           'nip15',
+                                                           'nip16'])
     except getopt.GetoptError as e:
         print(e)
         usage()
@@ -154,7 +158,8 @@ def main():
         'pg_database': PG_DATBASE,
         'pg_user': PG_USER,
         'pg_password': PG_PASSWORD,
-        'eose': EOSE
+        'nip15': NIP15,
+        'nip16': NIP16
     }
     config.update(load_toml(config_file))
 
@@ -181,8 +186,10 @@ def main():
             config['maxsub'] = a
         elif o == '--maxlength':
             config['maxlength'] = a
-        elif o in ('-e','--eose'):
-            config['eose'] = True
+        elif o in ('--nip15'):
+            config['nip15'] = True
+        elif o in ('--nip16'):
+            config['nip16'] = True
 
     # make sure items that need to be ints are
     for num_field in ('port', 'maxsub', 'maxlength'):
@@ -235,7 +242,8 @@ def main():
     my_relay = Relay(my_store,
                      max_sub=config['maxsub'],
                      accept_req_handler=accept_handlers,
-                     enable_nip15=config['eose'])
+                     enable_nip15=config['nip15'],
+                     enable_nip16=config['nip16'])
     my_relay.start(config['host'], config['port'], config['endpoint'])
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ from nostr.event.persist import RelayEventStoreInterface
 # from nostr.relay.persist import RelayStoreInterface
 from nostr.relay.accept_handlers import AcceptReqHandler
 from nostr.exception import NostrCommandException
+from nostr.encrypt import Keys
 from sqlite3 import IntegrityError
 try:
     import psycopg2.errors as pg_errors
@@ -40,6 +41,9 @@ class Relay:
         NIP-15      -   send 'EOSE' msg after sending the final event for a subscription
                         https://github.com/nostr-protocol/nips/blob/master/15.md
 
+        NIP-16      -   ephemeral and replaceable events
+                        https://github.com/nostr-protocol/nips/blob/master/16.md
+
         for NIPS n,n... whats actually being implemented will be decided by the store/properties it was created with
         e.g. delete example....
         For NIP-12 the relay will check with the store for those NIPs
@@ -49,8 +53,15 @@ class Relay:
     """
     VALID_CMDS = ['EVENT', 'REQ', 'CLOSE']
 
-    def __init__(self, store: RelayEventStoreInterface, accept_req_handler=None,
-                 max_sub=3, enable_nip15=False):
+    def __init__(self, store: RelayEventStoreInterface,
+                 accept_req_handler=None,
+                 max_sub=3,
+                 name: str = None,
+                 description: str = None,
+                 pubkey: str = None,
+                 contact: str = None,
+                 enable_nip15=False,
+                 enable_nip16=False):
         self._app = Bottle()
         # self._web_sockets = {}
 
@@ -66,6 +77,8 @@ class Relay:
         # enable support for nip15, probably this will be removed and just be default on in future
         # as apart from extra msg it shouldn't cause any issues
         self._enable_nip15 = enable_nip15
+        # empheral and replacable events, again this should probably default to true in time
+        self._enable_nip16 = enable_nip16
 
         # by default when we recieve requests as long as the event has a valid sig we accept
         # (Prob we should also have a future timestamp requirement, it'd probably have to be 12hr+ as
@@ -82,10 +95,45 @@ class Relay:
         if not hasattr(self._accept_req, '__iter__'):
             self._accept_req = [self._accept_req]
 
-        logging.info('Relay::__init__ maxsub=%s nip15enabled=%s' % (self._max_sub,
-                                                                  self._enable_nip15))
+        logging.info('Relay::__init__ maxsub=%s '
+                     'EOSE enabled(NIP15)=%s, Deletes(NIP9)=%s, Event treatment(NIP16)=%s' % (self._max_sub,
+                                                                                              self._enable_nip15,
+                                                                                              self._store.is_NIP09(),
+                                                                                              self._enable_nip16))
         # gevent.pywsgi.WSGIServer on calling start
         self._server = None
+
+
+        if pubkey is not None and not Keys.is_key(pubkey):
+            raise Exception('given contact pubkey is not correct: %s' % pubkey)
+
+        nips = [1, 2, 11]
+        if self._enable_nip15:
+            nips.append(15)
+        if self._store.is_NIP09():
+            nips.append(9)
+        if self._enable_nip16:
+            nips.append(16)
+
+        nips.sort()
+
+        self._relay_information = {
+            'software': 'https://github.com/monty888/nostrpy',
+            'version': '0.1',
+            'supported_nips': nips
+        }
+        if name:
+            self._relay_information['name'] = name
+        if description:
+            self._relay_information['description'] = description
+        if contact:
+            self._relay_information['contact'] = contact
+        if pubkey is not None:
+            if Keys.is_key(pubkey):
+                raise Exception('given contact pubkey is not correct: %s' % pubkey)
+            self._relay_information['pubkey'] = pubkey
+
+        nips = []
 
     def start(self, host='localhost', port=8080, endpoint='/'):
         """
@@ -121,7 +169,7 @@ class Relay:
 
         if not ws:
             # abort(400, 'Expected WebSocket request.')
-            return 'HI THERE, info about what this guys supports!'
+            return self._NIP11_relay_info_route()
 
         # set up place to store subs for ws
         self._ws[ws] = {
@@ -179,11 +227,29 @@ class Relay:
             c_accept.accept_post(ws, evt)
 
         try:
-            self._store.add_event(evt)
-            logging.info('Relay::_do_event persisted event - %s - %s (%s)' % (evt.short_id,
-                                                                              util_funcs.str_tails(evt.content, 6),
-                                                                              # give str mapping of kind where we can in future
-                                                                              evt.kind))
+            kind = evt.kind
+            standard = kind < 9999
+            replaceable = 10000 <= kind < 20000
+            ephemeral = 20000 <= kind < 30000
+
+            if self._enable_nip16 is False or standard:
+                self._store.add_event(evt)
+                logging.info('Relay::_do_event persisted event - %s - %s (%s)' % (evt.short_id,
+                                                                                  util_funcs.str_tails(evt.content, 6),
+                                                                                  # give str mapping of kind where we can in future
+                                                                                  evt.kind))
+            elif self._enable_nip16 and replaceable:
+                logging.info('Relay::_do_event TODO update of replaceable event - %s - %s (%s)' % (evt.short_id,
+                                                                                                   util_funcs.str_tails(
+                                                                                                       evt.content,
+                                                                                                       6),
+                                                                                                        # give str mapping of kind where we can in future
+                                                                                                        evt.kind))
+            elif self._enable_nip16 and ephemeral:
+                logging.info('Relay::_do_event skipped persist of ephemeral event - %s - %s (%s)' % (evt.short_id,
+                                                                                                     util_funcs.str_tails(evt.content, 6),
+                                                                                                     # give str mapping of kind where we can in future
+                                                                                                     evt.kind))
 
             if evt.kind == Event.KIND_DELETE:
                 logging.debug('Relay::_do_event doing delete events - %s ' % evt.e_tags)
@@ -273,7 +339,6 @@ class Relay:
 
         # post back the pre existing
         evts = self._store.get_filter(filter)
-
         def get_sub_func(ws, sub_id, lock, evts):
             def my_func():
                 for c_evt in evts:
@@ -333,4 +398,11 @@ class Relay:
                           'EOSE', sub_id
                       ],
                       lock=lock)
+
+    def _NIP11_relay_info_route(self):
+        """
+        as https://github.com/nostr-protocol/nips/blob/master/11.md
+        :return:
+        """
+        return self._relay_information
 

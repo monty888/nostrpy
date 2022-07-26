@@ -5,6 +5,8 @@ import logging
 import signal
 import sys
 import os
+import time
+
 from stem.control import Controller
 import shutil
 from datetime import datetime, timedelta
@@ -12,8 +14,8 @@ from pathlib import Path
 import getopt
 from nostr.client.client import ClientPool, Client
 from nostr.client.event_handlers import PersistEventHandler
-from nostr.event.persist import ClientSQLEventStore, Event, ClientSQLiteEventStore, ClientEventStoreInterface
-from nostr.ident.persist import SQLiteProfileStore, ProfileStoreInterface
+from nostr.event.persist import ClientSQLEventStore, Event, ClientSQLiteEventStore, ClientEventStoreInterface, ClientMemoryEventStore
+from nostr.ident.persist import SQLiteProfileStore, ProfileStoreInterface,MemoryProfileStore
 from nostr.ident.profile import ProfileEventHandler
 from nostr.util import util_funcs
 from web.web import NostrWeb
@@ -183,12 +185,15 @@ def run_web(clients,
         #     since = less_30days
 
         the_client.subscribe(handlers=[evt_persist, my_server], filters={
-            'since': 0,
+            'since': since,
             'kinds': [
                 Event.KIND_TEXT_NOTE, Event.KIND_ENCRYPT,
                 Event.KIND_META, Event.KIND_CONTACT_LIST
             ]
         })
+
+    def my_eose(the_client: Client, sub_id: str, events: []):
+        evt_persist.do_event(sub_id, events, the_client.url)
 
     # so server can send out client status messages
     def my_status(status):
@@ -199,7 +204,8 @@ def run_web(clients,
     # connection to the various relays
     my_client = ClientPool(clients,
                            on_connect=my_connect,
-                           on_status=my_status)
+                           on_status=my_status,
+                           on_eose=my_eose)
 
     my_server = NostrWeb(file_root='%s/web/static/' % web_dir,
                          event_store=event_store,
@@ -230,16 +236,16 @@ def run():
 
     # who to attach to
     clients = [
-        {
-            'client': 'wss://nostr-pub.wellorder.net',
-            'write': True
-        },
-        'ws://localhost:8081'
-        'ws://localhost:8082',
-        {
-            'client': 'wss://relay.damus.io',
-            'write': True
-        }
+        # {
+        #     'client': 'wss://nostr-pub.wellorder.net',
+        #     'write': True
+        # },
+        'ws://localhost:8081',
+        # 'ws://localhost:8082',
+        # {
+        #     'client': 'wss://relay.damus.io',
+        #     'write': True
+        # }
     ]
 
 
@@ -264,7 +270,12 @@ def run():
         util_funcs.create_sqlite_store(db_file)
         event_store = ClientSQLiteEventStore(db_file,
                                              full_text=full_text)
+
+        # event_store = ClientMemoryEventStore()
         profile_store = SQLiteProfileStore(db_file)
+        # profile_store = MemoryProfileStore()
+        # profile_store.import_profiles_from_events(event_store)
+        # profile_store.import_contacts_from_events(event_store)
 
         # from nostr.event.persist import ClientMemoryEventStore
         # event_store = ClientMemoryEventStore()
@@ -283,7 +294,50 @@ def run():
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
+
     run()
+    from nostr.client.event_handlers import EventHandler
+    # is_done = False
+    #
+    # class my_printer(EventHandler):
+    #
+    #     def do_event(self, sub_id, evt: Event, relay):
+    #         print(evt)
+    # my_handler = my_printer()
+    #
+    # def my_eose(the_client: Client, sub_id: str, events: []):
+    #     for c_evt in events:
+    #         my_handler.do_event(sub_id, c_evt, the_client)
+    #
+    # def my_stuff(the_client: Client):
+    #     print(the_client.relay_information)
+    #
+    #     the_client.subscribe(filters={
+    #         'since': util_funcs.date_as_ticks(datetime.now() - timedelta(days=100))
+    #     }, handlers=my_handler)
+    #
+    # from nostr.ident.profile import Profile
+    # def my_post_test(the_client:Client):
+    #     store = SQLiteProfileStore(WORK_DIR + 'nostr-client-test.db')
+    #
+    #     p: Profile = store.select_profiles({
+    #         'profile_name': 'squizal'
+    #     })[0]
+    #
+    #
+    #     while True:
+    #         e = Event(kind=20001,
+    #                   content='replaceme',
+    #                   pub_key=p.public_key)
+    #         e.sign(p.private_key)
+    #         the_client.publish(e)
+    #
+    #         time.sleep(1)
+    #
+    # ClientPool(['ws://localhost:8082',
+    #             'ws://localhost:8083'], on_connect=my_post_test).start()
+
+
 
     # p_store = SQLiteProfileStore(WORK_DIR + 'nostr-client-test.db')
     # e_store = ClientSQLiteEventStore(WORK_DIR + 'nostr-client-test.db')
