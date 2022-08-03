@@ -20,3 +20,17 @@ The default is to run the relay at ws://localhost:8081 with an sqlite db at /hom
 
 > python run_relay -h for other options
 
+## events view ##
+live nostr events view from the command line
+
+> python3 cmd_event_view.py 
+
+> python cmd_event_view.py -h for other options
+
+
+## web ##
+web interface to nostr
+
+> python3 cmd_web.py 
+
+
