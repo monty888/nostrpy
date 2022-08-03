@@ -329,6 +329,7 @@ class Relay:
 
             return my_func
 
+        # unsafe -?? make it safe
         Greenlet(get_sub_func(ws, sub_id, self._ws[ws]['send_lock'], evts)).start()
 
         # for c_evt in evts:

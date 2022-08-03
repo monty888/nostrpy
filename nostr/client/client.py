@@ -153,7 +153,7 @@ class Client:
     def set_status_listener(self, on_status):
         self._on_status = on_status
 
-    def subscribe(self, sub_id=None, handlers=None, filters={}):
+    def subscribe(self, sub_id=None, handlers=None, filters={}, wait_connect=False):
         """
         :param sub_id: if none a rndish 4digit hex sub_id will be given
         :param handler: single or [] of handlers that'll get called for events on sub
@@ -162,6 +162,9 @@ class Client:
         :return: sub_id
         """
 
+        # block until we have connection, fine for simple stuff
+        if wait_connect:
+            self.wait_connect()
         the_req = ['REQ']
 
         # no sub given, ok we'll generate one
@@ -172,38 +175,35 @@ class Client:
 
         the_req = json.dumps(the_req)
         logging.debug('Client::subscribe - %s', the_req)
-        # TODO: at the moment there'd be no point subscribing if you don't pass handler
-        #  because there's no way of adding later
-        #
-        if handlers:
-            # caller only passed in single handler
-            if not hasattr(handlers, '__iter__'):
-                handlers = [handlers]
-            self._subs[sub_id] = {
-                'handlers': handlers,
-                # if we have eose function then the caller will receive all stored events via the EOSE func
-                # and this will be set True when done. If not the events will look like they come in 1 by 1
-                'is_eose': self._eose_func is None,
-                'events': [],
-                'start_time': datetime.now(),
-                'last_event': None
-            }
 
-            if not self._relay_supports_eose() and self._emulate_eose:
-                logging.debug('emulating EOSE for sub_id %s' % sub_id)
-                def my_emulate():
-                    is_wait = True
-                    from datetime import timedelta
-                    while is_wait:
-                        sub_info = self._subs[sub_id]
-                        now = datetime.now()
-                        if (sub_info['last_event'] is not None and now - sub_info['last_event'] > timedelta(seconds=2)) or \
-                                (now - sub_info['start_time'] > timedelta(seconds=2)):
-                            is_wait = False
-                        time.sleep(1)
+        # caller only passed in single handler
+        if not hasattr(handlers, '__iter__'):
+            handlers = [handlers]
+        self._subs[sub_id] = {
+            'handlers': handlers,
+            # if we have eose function then the caller will receive all stored events via the EOSE func
+            # and this will be set True when done. If not the events will look like they come in 1 by 1
+            'is_eose': self._eose_func is None,
+            'events': [],
+            'start_time': datetime.now(),
+            'last_event': None
+        }
 
-                    self._on_message(self._ws, json.dumps(['EOSE', sub_id]))
-                Thread(target=my_emulate).start()
+        if not self._relay_supports_eose() and self._emulate_eose:
+            logging.debug('emulating EOSE for sub_id %s' % sub_id)
+            def my_emulate():
+                is_wait = True
+                from datetime import timedelta
+                while is_wait:
+                    sub_info = self._subs[sub_id]
+                    now = datetime.now()
+                    if (sub_info['last_event'] is not None and now - sub_info['last_event'] > timedelta(seconds=2)) or \
+                            (now - sub_info['start_time'] > timedelta(seconds=2)):
+                        is_wait = False
+                    time.sleep(1)
+
+                self._on_message(self._ws, json.dumps(['EOSE', sub_id]))
+            Thread(target=my_emulate).start()
 
         self._ws.send(the_req)
         self._reset_status()
@@ -412,7 +412,9 @@ class Client:
         if self._ws:
             self._ws.close()
 
-        # rel.abort()
+    def wait_connect(self):
+        while not self.connected:
+            time.sleep(0.1)
 
     # so where appropriate can use with syntax, exit function probably needs to do more...
     def __enter__(self):

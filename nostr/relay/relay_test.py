@@ -90,7 +90,7 @@ class RelayTestCase(unittest.TestCase):
         self._client.subscribe(handlers=[my_handler()],filters={})
 
         # we have nip15 so we'll exit early if we see it
-        def my_end(sub_id):
+        def my_end(the_client:Client, sub_id, events):
             nonlocal done
             done = True
 

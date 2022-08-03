@@ -11,6 +11,7 @@ from nostr.event.event import Event
 from nostr.util import util_funcs
 from nostr.exception import NostrCommandException
 from data.data import DataSet
+from collections import Counter
 
 try:
     from psycopg2 import OperationalError
@@ -344,8 +345,20 @@ class ClientMemoryEventStore(MemoryEventStore, ClientEventStoreInterface):
         return ret
 
     def relay_list(self, pub_k: str = None) -> []:
-        pass
+        """
+            with memory store it's not possible to get ordered for pk as we're unable to look up contacts
+            probably change interface to use passed in list of keys for relavence
+            also write some common code to do name cleaning
+        """
+        my_count = Counter()
+        evts = self.get_filter({
+            'kinds': [Event.KIND_RELAY_REC]
+        })
+        c_evt: Event
+        for c_evt in evts:
+            my_count[c_evt.content] += 1
 
+        return [i[0] for i in my_count.most_common()]
 
 class SQLEventStore(EventStoreInterface):
 

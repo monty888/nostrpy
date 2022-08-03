@@ -346,6 +346,21 @@ if __name__ == "__main__":
     # ClientPool(['ws://localhost:8081',
     #             'ws://localhost:8083'], on_connect=my_post_test).start()
 
+    # complete = False
+    # my_store = ClientMemoryEventStore()
+    # def my_eose(the_client: Client, sub_id: str, events):
+    #     global complete
+    #     my_store.add_event(events)
+    #     my_store.relay_list()
+    #     complete = True
+    #
+    # with Client('ws://localhost:8081', on_eose=my_eose) as c:
+    #     c.subscribe(filters={
+    #         'kinds': [Event.KIND_RELAY_REC]
+    #     },wait_connect=True)
+    #
+    #     while complete is False:
+    #         time.sleep(0.1)
 
 
     # p_store = SQLiteProfileStore(WORK_DIR + 'nostr-client-test.db')
