@@ -5,6 +5,7 @@
 
 """
 import sqlite3
+import time
 from sqlite3 import Error
 try:
     import psycopg2
@@ -168,6 +169,7 @@ class SQLiteDatabase(Database, ABC):
         except Error as e:
             was_err = e
             logging.debug('Database::execute_batch error - not committed %s' % e)
+
         finally:
             if c:
                 c.close()

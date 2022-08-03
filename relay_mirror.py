@@ -1,7 +1,5 @@
 """
 watches one relay and post what it sees into another
-TODO: use ClientPool for multiple)
-
 """
 import logging
 import time
@@ -13,7 +11,8 @@ from nostr.client.event_handlers import RepostEventHandler
 def do_mirror(from_relay, to_relay, filter=None):
     if filter is None:
         filter = {
-            'since': util_funcs.date_as_ticks(datetime.now()-timedelta(days=30)),
+            'since': util_funcs.date_as_ticks(datetime.now()-timedelta(days=60)),
+            # 'since': 0
             # 'kinds': 1
         }
 
@@ -22,9 +21,9 @@ def do_mirror(from_relay, to_relay, filter=None):
     to_relay.start()
 
     # TODO add EOSE support
+    my_repost = RepostEventHandler(to_relay)
     def on_connect(the_from_relay):
-        reposter = RepostEventHandler(to_relay)
-        the_from_relay.subscribe(handlers=reposter, filters=filter)
+        the_from_relay.subscribe(handlers=my_repost, filters=filter)
 
     from_relay = ClientPool(from_relay, on_connect=on_connect)
     from_relay.start()
@@ -38,5 +37,6 @@ if __name__ == "__main__":
                   'wss://rsslay.fiatjaf.com','wss://nostr.rocks','wss://nostr-relay.wlvs.space',
                   'wss://nostrrr.bublina.eu.org','wss://expensive-relay.fiatjaf.com']
     # from_relay = ['ws://localhost:8082/','ws://localhost:8083/']
+    from_relay = ['wss://nostr-pub.wellorder.net']
     to_relay = ['ws://localhost:8081/']
     do_mirror(from_relay, to_relay)

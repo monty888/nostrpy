@@ -102,7 +102,7 @@ APP.nostr.gui = function(){
         /*
             displays a messge at top of the screen that will clear after a few seconds
         */
-        let _text = args.text;
+        let _text = args.text,
             // boostrap alert types
             _type = args.type || 'success',
             _tmpl = APP.nostr.gui.templates.get('notification');
@@ -2505,7 +2505,7 @@ APP.nostr.gui.modal = function(){
         'show_ok' : show_ok,
         'hide_ok' : hide_ok,
         'was_ok' : function(){
-            return was_ok;
+            return _was_ok;
         }
 
 //        'is_showing' : function(){

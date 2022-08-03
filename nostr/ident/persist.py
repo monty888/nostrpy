@@ -11,6 +11,7 @@ from db.db import Database, SQLiteDatabase
 from data.data import DataSet
 from nostr.util import util_funcs
 from nostr.encrypt import Keys
+from copy import copy
 
 
 class ProfileType(Enum):
@@ -27,26 +28,35 @@ class ProfileStoreInterface(ABC):
 
     """
 
-    @abstractmethod
-    def add(self, p: Profile):
-        """
-        :param p: add profile to the store
-        :return:
-        """
+    # @abstractmethod
+    # def add(self, p: Profile):
+    #     """
+    #     :param p: add profile to the store
+    #     :return:
+    #     """
+    #
+    # @abstractmethod
+    # def update(self, p: Profile):
+    #     """
+    #     :param p: update profile in store
+    #     :return:
+    #     """
+    #
+    # @abstractmethod
+    # def update_profile_local(self, p: Profile):
+    #     """
+    #     associates a profile with a local name
+    #     :param profile_name:
+    #     :param private_key:
+    #     :return:
+    #     """
 
     @abstractmethod
-    def update(self, p: Profile):
+    def put_profile(self, p: Profile, is_local=False):
         """
-        :param p: update profile in store
-        :return:
-        """
-
-    @abstractmethod
-    def update_profile_local(self, p: Profile):
-        """
-        associates a profile with a local name
-        :param profile_name:
-        :param private_key:
+        replaces add, update and update_profile_local
+        :param p:
+        :param is_local:
         :return:
         """
 
@@ -70,13 +80,20 @@ class ProfileStoreInterface(ABC):
         :return: contact list that owner_pk is following
         """
 
+    # @abstractmethod
+    # def set_contacts(self, contacts: ContactList):
+    #     """ TODGO
+    #         inserts a contact list into the db, note that all contacts for the listowner are first deleted.
+    #         this is as expected for when we recieve a contact list via a relay. We're also going to have local contacts
+    #         (followed but not published to relay) in that case maybe we won't want to rewrite the entire contact list
+    #         on update. For now we'll just keep it simple so both done the same.
+    #     """
     @abstractmethod
-    def set_contacts(self, contacts: ContactList):
+    def put_contacts(self, contacts: ContactList):
         """
-            inserts a contact list into the db, note that all contacts for the listowner are first deleted.
-            this is as expected for when we recieve a contact list via a relay. We're also going to have local contacts
-            (followed but not published to relay) in that case maybe we won't want to rewrite the entire contact list
-            on update. For now we'll just keep it simple so both done the same.
+        replaces set_contacts
+        :param contacts:
+        :return:
         """
 
 
@@ -179,39 +196,50 @@ class ProfileStoreInterface(ABC):
 
     def import_profiles_from_events(self,
                                     event_store: ClientEventStoreInterface,
-                                    since=None):
+                                    evts: [Event] = None,
+                                    since = None):
         """
+        :param evts:
         :param event_store:
         :param since:
         :return:
         """
 
-        # get profile update events
-        evt_filter = {
-            'kinds': [Event.KIND_META]
-        }
-        if since is not None:
-            evt_filter['since'] = since
-
-        evts = event_store.get_filter(evt_filter)
+        # if no events given then events since from events_store
+        if evts is None:
+            evt_filter = {
+                'kinds': [Event.KIND_META]
+            }
+            if since is not None:
+                evt_filter['since'] = since
+                evts = event_store.get_filter(evt_filter)
+        else:
+            def my_sort(evt:Event):
+                return evt.created_at_ticks
+            evts.sort(key=my_sort, reverse=True)
 
         profiles = self.select_profiles()
         """
             now cycle through either adding or inserting only the most recent profile update
         """
         updated = set()
-        evt : Event
+        evt: Event
+        existing_p: Profile
         for evt in evts:
+            # ignore anything other than meta events
+            if evt.kind != Event.KIND_META:
+                continue
+
             p = Profile(pub_k=evt.pub_key,
                         attrs=evt.content,
                         update_at=evt.created_at)
             if p.public_key not in updated:
 
-                exists = profiles.matches('pub_k', p.public_key)
-                if not exists:
+                existing_p = profiles.lookup_pub_key(p.public_key)
+                if not existing_p:
                     self.add(p)
                 else:
-                    if (util_funcs.date_as_ticks(p.update_at) > exists[0]['updated_at']):
+                    if p.update_at > existing_p.update_at:
                         self.update(p)
                     else:
                         logging.debug('Profile:import_from_events %s already up to date, ignored' % p.public_key)
@@ -221,23 +249,25 @@ class ProfileStoreInterface(ABC):
 
     def import_contacts_from_events(self,
                                     event_store: ClientEventStoreInterface,
+                                    evts: [Event] = None,
                                     since=None):
         """
         look other events we have in db and create contacts from these
-        TODO: client currently doesnt delete old contact events like the relay does so it probable that more updates
-                are being done then required..FIX
-                in anycase it's likely we wouldn't normally use this and it'd be done adhoc in the same way we build up
-                profiles as event handler on client
         """
 
         # contact lists from events
-        my_event_filter = {
-            'kinds': Event.KIND_CONTACT_LIST
-        }
-        if since is not None:
-            my_event_filter['since'] = since
+        if evts is None:
+            my_event_filter = {
+                'kinds': Event.KIND_CONTACT_LIST
+            }
+            if since is not None:
+                my_event_filter['since'] = since
 
-        c_list_updates = event_store.get_filter(my_event_filter)
+            evts = event_store.get_filter(my_event_filter)
+        else:
+            def my_sort(evt:Event):
+                return evt.created_at_ticks
+            evts.sort(key=my_sort, reverse=True)
 
         # to check if event is newer than what we already have if any
         existing = self.select_contacts({})
@@ -254,7 +284,9 @@ class ProfileStoreInterface(ABC):
         c_evt: Event
         existing_contact: Contact
 
-        for c_evt in c_list_updates:
+        for c_evt in evts:
+            if c_evt.kind != Event.KIND_CONTACT_LIST:
+                continue
             existing_contact = None
             is_newer = True
             if c_evt.pub_key in lookup:
@@ -273,25 +305,13 @@ class MemoryProfileStore(ProfileStoreInterface):
         in memory profile store - normally we wouldn't use,
         you'd have to request all META, CONTACT_LIST events
         from relays again on start up
+
+        is this almost the samething as ProfileList? merge or
     """
 
     def __init__(self):
         self._profiles = {}
-
-    def add(self, p: Profile):
-        self._profiles[p.public_key] = p
-
-    def update(self, p: Profile):
-        if p.public_key in self._profiles:
-            to_update: Profile = self._profiles[p.public_key]
-            to_update.attrs = p.attrs
-            to_update.update_at = p.update_at
-
-    def update_profile_local(self, p: Profile):
-        if p.public_key in self._profiles:
-            to_update: Profile = self._profiles[p.public_key]
-            to_update.profile_name = p.profile_name
-            to_update.private_key = p.private_key
+        self._contacts = {}
 
     def select_profiles(self, filter={}, profile_type=ProfileType.ANY) -> ProfileList:
         c_p: Profile
@@ -306,13 +326,13 @@ class MemoryProfileStore(ProfileStoreInterface):
                       or len(filter) == 0
 
             if matches:
+                c_p = copy(c_p)
                 if profile_type == ProfileType.ANY:
                     profiles.append(c_p)
                 elif profile_type == ProfileType.LOCAL and c_p.private_key is not None:
                     profiles.append(c_p)
                 elif profile_type == ProfileType.REMOTE and c_p.private_key is None:
                     profiles.append(c_p)
-
         return ProfileList(profiles)
 
     def select_contacts(self, filter):
@@ -320,9 +340,69 @@ class MemoryProfileStore(ProfileStoreInterface):
         :return: contact list that owner_pk is following
         """
         ret = []
+        cl: ContactList
 
-    def set_contacts(self, contacts: ContactList):
-        pass
+        if 'owner' in filter:
+            owner = filter['owner']
+            if not hasattr(owner, '__iter__') or isinstance(owner, str):
+                owner = [owner]
+
+            for c_owner in owner:
+                if c_owner in self._contacts:
+                    cl = self._contacts[c_owner]
+                    ret = ret + cl.contacts
+
+        # look into better way to do this then looking throught who everyone is following
+        if 'contact' in filter:
+            contact = filter['contact']
+            if not hasattr(contact, '__iter__') or isinstance(contact, str):
+                contact = [contact]
+            follow_lookup = {}
+            for i, owner_k in enumerate(self._contacts):
+                cl = self._contacts[owner_k]
+                for f_k in cl.follow_keys():
+                    if f_k not in follow_lookup:
+                        follow_lookup[f_k] = set()
+                    follow_lookup[f_k].add(cl.owner_public_key)
+            now = datetime.now()
+            for c_contact in contact:
+                if c_contact in follow_lookup:
+                    for c_k in follow_lookup[c_contact]:
+                        ret.append(Contact(
+                            owner_pub_k=c_k,
+                            contact_pub_k=c_contact,
+                            updated_at=now
+                        ))
+
+        return ret
+
+    def _put_profile(self, p: Profile, is_local=False):
+        if is_local or not p.public_key in self._profiles:
+            self._profiles[p.public_key] = copy(p)
+        else:
+            o_p: Profile = self._profiles[p.public_key]
+            o_p.attrs = p.attrs
+            o_p.update_at = p.update_at
+
+    def put_profile(self, p: Profile, is_local=False):
+        if hasattr(p, '__iter__'):
+            for c_p in p:
+                self._put_profile(c_p, is_local)
+        else:
+            self._put_profile(p, is_local)
+
+    def _put_contacts(self, contacts: ContactList):
+        # TODO: this is only a shallow copy, changing a contact would change it in the store
+        #  which is not the same as we'd get with an SQL based store... should probably fix this!
+        #  implement deepcopy on contactlist
+        self._contacts[contacts.owner_public_key] = copy(contacts)
+
+    def put_contacts(self, contacts: ContactList):
+        if hasattr(contacts, '__iter__'):
+            for c_c in contacts:
+                self._put_contacts(c_c)
+        else:
+            self.put_contacts(contacts)
 
 
 class SQLProfileStore(ProfileStoreInterface):
@@ -457,49 +537,6 @@ class SQLProfileStore(ProfileStoreInterface):
             'args': args
         }
 
-    def add(self, p: Profile):
-        sql = """
-            insert into 
-                profiles (priv_k, pub_k, profile_name, attrs, name, picture, updated_at) 
-                        values(?,?,?,?,?,?,?)
-            """
-        args = [
-            p.private_key, p.public_key,
-            p.profile_name, json.dumps(p.attrs),
-            p.get_attr('name'), p.get_attr('picture'),
-            util_funcs.date_as_ticks(p.update_at)
-        ]
-
-        self._db.execute_sql(sql, args)
-
-    def update(self, p: Profile):
-        sql = """
-                update profiles 
-                    set attrs=?, name=?, picture=?, updated_at=?
-                    where pub_k=?
-            """
-        args = [
-            json.dumps(p.attrs),
-            p.get_attr('name'), p.get_attr('picture'),
-            util_funcs.date_as_ticks(p.update_at),
-            p.public_key
-        ]
-        logging.debug('SQLProfileStore::update sql: %s args: %s' % (sql, args))
-        self._db.execute_sql(sql, args)
-
-    def update_profile_local(self, p: Profile):
-        sql = """
-                update profiles 
-                    set profile_name=?, priv_k=?
-                    where pub_k=?
-            """
-        args = [
-            p.profile_name, p.private_key,
-            p.public_key
-        ]
-        logging.debug('SQLProfileStore::update_profile_local sql: %s args: %s' % (sql, args))
-        self._db.execute_sql(sql, args)
-
     def _prepare_put_profile(self, p: Profile, is_local=False, batch=None):
         if batch is None:
             batch = []
@@ -547,7 +584,7 @@ class SQLProfileStore(ProfileStoreInterface):
         if hasattr(p, '__iter__'):
             batch = []
             for c_p in p:
-                self._prepare_put_profile(c_p,is_local,batch)
+                self._prepare_put_profile(c_p, is_local, batch)
         else:
             batch = self._prepare_put_profile(p, is_local)
 
@@ -599,33 +636,33 @@ class SQLProfileStore(ProfileStoreInterface):
 
         return ret
 
-    def set_contacts(self, contacts: ContactList):
-        sql_batch = [
-                {
-                    'sql': 'delete from contacts where pub_k_owner=%s' % self._db.placeholder,
-                    'args': [contacts.owner_public_key]
-                }
-            ]
-
-        # if 0 then you're just deleting any contacts that exist
-        if len(contacts) > 0:
-            c_contact: Contact
-            add_data = []
-            for c_contact in contacts:
-                add_data.append([
-                    contacts.owner_public_key,
-                    c_contact.contact_public_key,
-                    contacts.updated_at
-                ])
-            sql_batch.append(
-                {
-                    'sql': """insert into contacts (pub_k_owner, pub_k_contact, updated_at) 
-                                            values (%s)""" % ','.join([self._db.placeholder] * 3),
-                    'args': add_data
-                }
-            )
-
-        return self._db.execute_batch(sql_batch)
+    # def set_contacts(self, contacts: ContactList):
+    #     sql_batch = [
+    #             {
+    #                 'sql': 'delete from contacts where pub_k_owner=%s' % self._db.placeholder,
+    #                 'args': [contacts.owner_public_key]
+    #             }
+    #         ]
+    #
+    #     # if 0 then you're just deleting any contacts that exist
+    #     if len(contacts) > 0:
+    #         c_contact: Contact
+    #         add_data = []
+    #         for c_contact in contacts:
+    #             add_data.append([
+    #                 contacts.owner_public_key,
+    #                 c_contact.contact_public_key,
+    #                 contacts.updated_at
+    #             ])
+    #         sql_batch.append(
+    #             {
+    #                 'sql': """insert into contacts (pub_k_owner, pub_k_contact, updated_at)
+    #                                         values (%s)""" % ','.join([self._db.placeholder] * 3),
+    #                 'args': add_data
+    #             }
+    #         )
+    #
+    #     return self._db.execute_batch(sql_batch)
 
     def _prepare_contacts_put(self, contacts: ContactList, batch=None):
         if batch is None:

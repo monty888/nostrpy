@@ -63,7 +63,7 @@ def create_work_dir():
         logging.info('create_work_dir:: attempting to create %s' % WORK_DIR)
         os.makedirs(WORK_DIR)
 
-def get_sql_store(filename):
+def get_sql_store(filename, is_nip16):
     f = Path(filename)
 
     parent_dir = f.parts[len(f.parts)-2]
@@ -78,7 +78,8 @@ def get_sql_store(filename):
     # if the file doesn't exist it'll be created and we'll create the db struct too
     # if it does we'll assume everything is ok...we could do more
 
-    ret = RelaySQLiteEventStore(filename)
+    ret = RelaySQLiteEventStore(filename,
+                                is_nip16=is_nip16)
     if not ret.exists():
         logging.info('get_sql_store::create new db %s' % filename)
         ret.create()
@@ -142,7 +143,7 @@ def main():
             config_file = a
 
     # set logging level
-    logging.getLogger().setLevel(logging.INFO)
+    logging.getLogger().setLevel(logging.DEBUG)
 
 
     # default config
@@ -210,13 +211,13 @@ def main():
 
     # create storage object which is either to sqllite, posgres or transient
     if config['store'] == 'sqlite':
-        my_store = get_sql_store(config['dbfile'])
+        my_store = get_sql_store(config['dbfile'], config['nip16'])
     elif config['store'] == 'postgres':
         my_store = get_postgres_store(db_name=config['pg_database'],
                                       user=config['pg_user'],
                                       password=config['pg_password'])
     elif config['store'] == 'transient':
-        my_store = RelayMemoryEventStore()
+        my_store = RelayMemoryEventStore(is_nip16=config['nip16'])
     else:
         print('--store most be sqlite, postgres or transient')
         sys.exit(2)
@@ -242,8 +243,7 @@ def main():
     my_relay = Relay(my_store,
                      max_sub=config['maxsub'],
                      accept_req_handler=accept_handlers,
-                     enable_nip15=config['nip15'],
-                     enable_nip16=config['nip16'])
+                     enable_nip15=config['nip15'])
     my_relay.start(config['host'], config['port'], config['endpoint'])
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from nostr.ident.persist import ProfileStoreInterface
 
 import json
+from copy import copy
 from json import JSONDecodeError
 import logging
 from nostr.event.event import Event
@@ -38,7 +39,7 @@ class Profile:
                           update_at=evt.created_at_ticks)
         return ret
 
-    def __init__(self, priv_k=None, pub_k=None, attrs=None, profile_name='', update_at=None):
+    def __init__(self, priv_k=None, pub_k=None, attrs=None, profile_name=None, update_at=None):
         """
             create a new ident/person that posts can be followed etc.
             having the priv key means we can sign and so post (it's us)
@@ -166,7 +167,7 @@ class Profile:
         return self._attrs
 
     @attrs.setter
-    def attrs(self, attrs):
+    def attrs(self, attrs) -> dict:
         self._attrs = attrs
 
     def get_attr(self, name):
@@ -251,6 +252,13 @@ class Profile:
         e.sign(self.private_key)
         return e
 
+    def __copy__(self):
+        return Profile(priv_k=self.private_key,
+                       pub_k=self.public_key,
+                       attrs=self.attrs,
+                       profile_name=self.profile_name,
+                       update_at=self.update_at)
+
 
 class ProfileList:
     """
@@ -282,31 +290,55 @@ class ProfileList:
             if c_p.profile_name:
                 self._pname_lookup[c_p.profile_name] = c_p
 
-    def add(self, profile: Profile):
-        self._profiles.append(profile)
+    # def add(self, profile: Profile):
+    #     self._profiles.append(profile)
+    #     self._pub_key_lookup[profile.public_key] = profile
+    #     self._priv_key_lookup[profile.private_key] = profile
+    #     if profile.profile_name is not None:
+    #         self._pname_lookup[profile.profile_name] = profile
+    #
+    # def update(self, profile: Profile):
+    #     our_p = self.lookup_pub_key(profile.public_key)
+    #     if our_p:
+    #         our_p.attrs = profile.attrs
+    #         our_p.update_at = profile.update_at
+    #
+    #         # this only happens for our local updates, not those that happen because of type 0 meta events
+    #         if profile.profile_name:
+    #             # profile name changed, delete old lookup
+    #             if our_p.profile_name and our_p.profile_name in self._pname_lookup:
+    #                 del self._pname_lookup[our_p.profile_name]
+    #             our_p.profile_name = profile.profile_name
+    #             self._pname_lookup[our_p.profile_name] = our_p
+    #
+    #         # priv key added, its not possible to change a priv k
+    #         # at least it shouldn't be
+    #         if profile.private_key:
+    #             our_p.private_key = profile.private_key
+
+    def put(self, profile: Profile):
+        # replaces both the above
+
+        our_p: Profile = self.lookup_pub_key(profile.public_key)
+        # we don't have, add
+        if our_p is None:
+            self._profiles.append(profile)
+        else:
+            # if we have del old profile_name ref if any as it may have changed
+            if our_p.profile_name:
+                del self._pname_lookup[our_p.profile_name]
+            # if things are being done properly then these shouldn't change but wont
+            # hurt to wipe them...
+            if our_p.private_key is not None:
+                del self._priv_key_lookup[our_p.private_key]
+            del self._pub_key_lookup[our_p.public_key]
+
+        # add/update lookups
         self._pub_key_lookup[profile.public_key] = profile
-        self._priv_key_lookup[profile.private_key] = profile
+        if profile.private_key is not None:
+            self._priv_key_lookup[profile.private_key] = profile
         if profile.profile_name is not None:
             self._pname_lookup[profile.profile_name] = profile
-
-    def update(self, profile: Profile):
-        our_p = self.lookup_pub_key(profile.public_key)
-        if our_p:
-            our_p.attrs = profile.attrs
-            our_p.update_at = profile.update_at
-
-            # this only happens for our local updates, not those that happen because of type 0 meta events
-            if profile.profile_name:
-                # profile name changed, delete old lookup
-                if our_p.profile_name and our_p.profile_name in self._pname_lookup:
-                    del self._pname_lookup[our_p.profile_name]
-                our_p.profile_name = profile.profile_name
-                self._pname_lookup[our_p.profile_name] = our_p
-
-            # priv key added, its not possible to change a priv k
-            # at least it shouldn't be
-            if profile.private_key:
-                our_p.private_key = profile.private_key
 
     # TODO: remove this and see if it breaks anyhting...
     def as_arr(self):
@@ -462,11 +494,18 @@ class Contact:
 
         return ''.join(ret)
 
+    def __copy__(self):
+        return Contact(owner_pub_k=self._owner_pub_k,
+                       updated_at=self._updated_at,
+                       contact_pub_k=self._contact_pub_k,
+                       relay=self._relay,
+                       pet_name=self._petname)
+
 
 class ContactList:
 
     @staticmethod
-    def create_from_event(evt: Event):
+    def from_event(evt: Event):
         """
         makes the contacts from the data in tags, if there are any problems with a particualr tag it's just skipped
         and won't be added
@@ -565,6 +604,10 @@ class ContactList:
                      tags=contacts,
                      pub_key=self.owner_public_key)
 
+    @property
+    def contacts(self):
+        return [copy(c_c) for c_c in self._contacts]
+
     def __len__(self):
         return len(self._contacts)
 
@@ -572,121 +615,123 @@ class ContactList:
         for c in self._contacts:
             yield c
 
+    def __copy__(self):
+        return ContactList(self._contacts, self._owner_pub_k)
 
-class ProfileEventHandler:
-    """
-        access profile, contacts through here rather than via the store, at the moment we keep everything in memory
-        but in future where this might not be possible it should be transparent to caller that we had to fetch from store...
-
-    """
-    def __init__(self,
-                 profile_store: 'ProfileStoreInterface',
-                 on_profile_update=None,
-                 on_contact_update=None):
-
-        self._store = profile_store
-        self._profiles = self._store.select_profiles()
-        self._on_profile_update = on_profile_update
-        self._on_contact_update = on_contact_update
-
-    # update locally rather than via meta 0 event
-    # only used to link prov_k or add/change profile name
-    def do_update_local(self, p: Profile):
-        if self._profiles.lookup_pub_key(p.public_key):
-            self._profiles.update(p)
-            self._store.update_profile_local(p)
-            self._store.update(p)
-        else:
-            self._profiles.add(p)
-            self._store.add(p)
-
-    def do_event(self, sub_id, evt: Event, relay):
-        c_profile: Profile
-        evt_profile: Profile
-        pubkey = evt.pub_key
-
-        if evt.kind == Event.KIND_META:
-
-            c_profile = self._profiles.lookup_pub_key(pubkey)
-            evt_profile = Profile(pub_k=pubkey, attrs=evt.content, update_at=evt.created_at_ticks)
-
-            # we only need to do something if the profile is newer than we already have
-            if c_profile is None or c_profile.update_at < evt_profile.update_at:
-                # not sure about this... probably OK most of the time...
-                if c_profile:
-                    self._store.update(evt_profile)
-                    self._profiles.update(evt_profile)
-                else:
-                    self._store.add(evt_profile)
-                    self._profiles.add(evt_profile)
-
-                # if owner gave us an on_update call with pubkey that has changed, they may want to do something...
-                if self._on_profile_update:
-                    self._on_profile_update(evt_profile, c_profile)
-
-        elif evt.kind == Event.KIND_CONTACT_LIST:
-            # it's not required that we have a profile to import the events
-            # though it might be hard to get to the contacts later if we don't as (until we have a profile)
-            # as it won't be handing off anything
-            existing_contacts = ContactList(contacts=self._store.select_contacts({'owner': pubkey}),
-                                            owner_pub_k=pubkey)
-
-            if existing_contacts.updated_at is None or existing_contacts.updated_at < evt.created_at_ticks:
-                c_profile = self._profiles.lookup_pub_key(pubkey)
-
-                # now update
-                n_contacts = ContactList.create_from_event(evt)
-                self._store.set_contacts(n_contacts)
-
-                # if we do have a profile this will force reload of contacts on next access
-                if c_profile:
-                    c_profile.contacts = None
-
-                # callback that we updated contacts
-                if self._on_contact_update:
-                    self._on_contact_update(n_contacts, existing_contacts)
-
-    @property
-    def profiles(self) -> ProfileList:
-        return self._profiles
-
-    def set_on_update(self, on_update):
-        self._on_update = on_update
-
-    def profile(self, pub_k):
-        ret = self._profiles.lookup_pub_key(pub_k)
-        return ret
-
-    def is_newer_profile(self, p: Profile):
-        # return True if given profile is newer than what we have
-        ret = False
-        c_p = self.profile(p.public_key)
-        if c_p is None or c_p.update_at < p.update_at:
-            ret = True
-        return ret
-
-    def is_newer_contacts(self, contacts: ContactList):
-        # return True if given profile is newer than what we have
-        ret = False
-
-        c_p = self.profile(contacts.owner_public_key)
-        if c_p is None:
-            existing = ContactList(contacts=self._store.select_contacts({'owner': contacts.owner_public_key}),
-                                   owner_pub_k=contacts)
-
-        else:
-            c_p.load_contacts(self._store)
-            existing = c_p.contacts
-
-        if existing is None or existing.updated_at is None or existing.updated_at < contacts.updated_at:
-            if existing.updated_at is None and len(contacts) == 0:
-                # check this... assumed that we have the contact but cant find any contacts for then
-                # which is the same as adding 0 len contacts ie nothing to do
-                pass
-            else:
-                ret = True
-
-        return ret
+# class ProfileEventHandler:
+#     """
+#         access profile, contacts through here rather than via the store, at the moment we keep everything in memory
+#         but in future where this might not be possible it should be transparent to caller that we had to fetch from store...
+#
+#     """
+#     def __init__(self,
+#                  profile_store: 'ProfileStoreInterface',
+#                  on_profile_update=None,
+#                  on_contact_update=None):
+#
+#         self._store = profile_store
+#         self._profiles = self._store.select_profiles()
+#         self._on_profile_update = on_profile_update
+#         self._on_contact_update = on_contact_update
+#
+#     # update locally rather than via meta 0 event
+#     # only used to link prov_k or add/change profile name
+#     def do_update_local(self, p: Profile):
+#         if self._profiles.lookup_pub_key(p.public_key):
+#             self._profiles.update(p)
+#             self._store.update_profile_local(p)
+#             self._store.update(p)
+#         else:
+#             self._profiles.add(p)
+#             self._store.add(p)
+#
+#     def do_event(self, sub_id, evt: Event, relay):
+#         c_profile: Profile
+#         evt_profile: Profile
+#         pubkey = evt.pub_key
+#
+#         if evt.kind == Event.KIND_META:
+#
+#             c_profile = self._profiles.lookup_pub_key(pubkey)
+#             evt_profile = Profile(pub_k=pubkey, attrs=evt.content, update_at=evt.created_at_ticks)
+#
+#             # we only need to do something if the profile is newer than we already have
+#             if c_profile is None or c_profile.update_at < evt_profile.update_at:
+#                 # not sure about this... probably OK most of the time...
+#                 if c_profile:
+#                     self._store.update(evt_profile)
+#                     self._profiles.update(evt_profile)
+#                 else:
+#                     self._store.add(evt_profile)
+#                     self._profiles.add(evt_profile)
+#
+#                 # if owner gave us an on_update call with pubkey that has changed, they may want to do something...
+#                 if self._on_profile_update:
+#                     self._on_profile_update(evt_profile, c_profile)
+#
+#         elif evt.kind == Event.KIND_CONTACT_LIST:
+#             # it's not required that we have a profile to import the events
+#             # though it might be hard to get to the contacts later if we don't as (until we have a profile)
+#             # as it won't be handing off anything
+#             existing_contacts = ContactList(contacts=self._store.select_contacts({'owner': pubkey}),
+#                                             owner_pub_k=pubkey)
+#
+#             if existing_contacts.updated_at is None or existing_contacts.updated_at < evt.created_at_ticks:
+#                 c_profile = self._profiles.lookup_pub_key(pubkey)
+#
+#                 # now update
+#                 n_contacts = ContactList.create_from_event(evt)
+#                 self._store.set_contacts(n_contacts)
+#
+#                 # if we do have a profile this will force reload of contacts on next access
+#                 if c_profile:
+#                     c_profile.contacts = None
+#
+#                 # callback that we updated contacts
+#                 if self._on_contact_update:
+#                     self._on_contact_update(n_contacts, existing_contacts)
+#
+#     @property
+#     def profiles(self) -> ProfileList:
+#         return self._profiles
+#
+#     def set_on_update(self, on_update):
+#         self._on_update = on_update
+#
+#     def profile(self, pub_k):
+#         ret = self._profiles.lookup_pub_key(pub_k)
+#         return ret
+#
+#     def is_newer_profile(self, p: Profile):
+#         # return True if given profile is newer than what we have
+#         ret = False
+#         c_p = self.profile(p.public_key)
+#         if c_p is None or c_p.update_at < p.update_at:
+#             ret = True
+#         return ret
+#
+#     def is_newer_contacts(self, contacts: ContactList):
+#         # return True if given profile is newer than what we have
+#         ret = False
+#
+#         c_p = self.profile(contacts.owner_public_key)
+#         if c_p is None:
+#             existing = ContactList(contacts=self._store.select_contacts({'owner': contacts.owner_public_key}),
+#                                    owner_pub_k=contacts)
+#
+#         else:
+#             c_p.load_contacts(self._store)
+#             existing = c_p.contacts
+#
+#         if existing is None or existing.updated_at is None or existing.updated_at < contacts.updated_at:
+#             if existing.updated_at is None and len(contacts) == 0:
+#                 # check this... assumed that we have the contact but cant find any contacts for then
+#                 # which is the same as adding 0 len contacts ie nothing to do
+#                 pass
+#             else:
+#                 ret = True
+#
+#         return ret
 
 if __name__ == "__main__":
     from nostr.util import util_funcs

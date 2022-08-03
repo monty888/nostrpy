@@ -5,17 +5,26 @@
 
 """
 from __future__ import annotations
+
+import sys
+import time
 from typing import TYPE_CHECKING
+
+import gevent
+
 if TYPE_CHECKING:
     from nostr.ident.persist import ProfileStoreInterface
-    from nostr.ident.profile import Profile, Contact, ProfileEventHandler, ProfileList
 
-from nostr.ident.profile import ProfileList
+from json import JSONDecodeError
+from nostr.ident.profile import ProfileList, Profile, Contact, ContactList
 from abc import ABC, abstractmethod
 import base64
 import logging
 import json
 from collections import OrderedDict
+# from gevent.lock import BoundedSemaphore
+from threading import BoundedSemaphore
+
 # from nostr.client.persist import ClientEventStoreInterface
 from nostr.event.persist import ClientEventStoreInterface
 from nostr.encrypt import SharedEncrypt
@@ -203,23 +212,49 @@ class PersistEventHandler:
         TODO: either add back in persist profile here or move to own handler
     """
 
-    def __init__(self, store: ClientEventStoreInterface):
+    def __init__(self,
+                 store: ClientEventStoreInterface,
+                 max_insert_batch=5000):
         self._store = store
+        self._lock = BoundedSemaphore()
+        self._max_insert_batch = max_insert_batch
         # to check if new or update profile
         # self._profiles = DataSet.from_sqlite(db_file,'select pub_k from profiles')
 
-    def do_event(self, sub_id, evt:Event, relay):
+    def do_event(self, sub_id, evt: Event, relay):
         # store the actual event
+        if not hasattr(evt, '__iter__'):
+            evt = [evt]
+
+        if self._max_insert_batch:
+            evt = [evt[i:i + self._max_insert_batch] for i in range(0, len(evt), self._max_insert_batch)]
+        else:
+            evt = [evt]
+
         try:
-            self._store.add_event_relay(evt, relay)
+            with self._lock:
+                for c_evt_chunk in evt:
+                    try:
+                        self._store.add_event_relay(c_evt_chunk, relay)
+                        if len(evt)>1:
+                            time.sleep(0.1)
+                    except Exception as e:
+                        # nasty but the lock we have only applies to events coming thorught... profiles also might be done via
+                        # batch and could lock the db, (profile backfill done at EOSE too) if we chunk the profiles hopefully
+                        # this wouldn't be needed
+                        if 'locked' in str(e):
+                            print('wait and try once....')
+                            time.sleep(3)
+                            self._store.add_event_relay(c_evt_chunk, relay)
+
+
+                # self._store.add_event_relay(evt, relay)
         except Exception as e:
             id = 'batched events'
             if not hasattr(evt,'__iter__'):
                 id = evt.id
 
             logging.debug('PersistEventHandler::do_event error persisting event %s - %s' % (id, e))
-            # most likely because we already have, we could though add a table that
-            # linking evets with every relay we saw them from
 
 
 class RepostEventHandler:
@@ -236,13 +271,196 @@ class RepostEventHandler:
         self._to_client = to_client
         self._duplicates = OrderedDict()
         self._max_dedup = max_dedup
+        self._lock = BoundedSemaphore()
 
     def do_event(self, sub_id, evt:Event, relay):
-        if evt.id not in self._duplicates:
-            self._duplicates[evt.id] = True
-            if len(self._duplicates) >= self._max_dedup:
-                self._duplicates.popitem(False)
+        do_send = False
+        with self._lock:
+            if evt.id not in self._duplicates:
+                do_send = True
+                self._duplicates[evt.id] = True
+                if len(self._duplicates) >= self._max_dedup:
+                    self._duplicates.popitem(False)
 
-            # evt = Event.create_from_JSON(evt)
+        if do_send:
             self._to_client.publish(evt)
             print('RepostEventHandler::sent event %s to %s' % (evt, self._to_client))
+
+
+class ProfileEventHandler:
+    """
+        access profile, contacts through here rather than via the store, at the moment we keep everything in memory
+        but in future where this might not be possible it should be transparent to caller that we had to fetch from store...
+
+        NOTE locking is only for underlying storage we may(probably) need to have some access locks fothe code too
+        try LOCK_BATCH sqlite, memstore will probably implement are own locking inside it so would be lock NEVER
+
+        NOTE we're using the local cached copy to check if the event is newer... If a db update was done somewhere else
+        and we get sent an older event that is newer then anything we have then that profile/contact will be overwritten
+        atleast until we see a newer event ourself...
+    """
+
+    LOCK_NEVER = 0
+    LOCK_BATCH = 1
+    LOCK_ALWAYS = 2
+
+    def __init__(self,
+                 profile_store: 'ProfileStoreInterface',
+                 on_profile_update=None,
+                 on_contact_update=None):
+
+        self._store = profile_store
+        self._profiles = self._store.select_profiles()
+        self._on_profile_update = on_profile_update
+        self._on_contact_update = on_contact_update
+        self._lock = BoundedSemaphore()
+        lock_mode = ProfileEventHandler.LOCK_BATCH
+
+    # update locally rather than via meta 0 event
+    # only used to link prov_k or add/change profile name
+    def do_update_local(self, p: Profile):
+        self._store.put_profile(p, True)
+        self._profiles.put(p)
+
+    def do_event(self, sub_id, evt: Event, relay):
+        if not hasattr(evt, '__iter__'):
+            evt = [evt]
+
+        # split events
+        c_evt: Event
+        profile_update_events = [c_evt for c_evt in evt if c_evt.kind == Event.KIND_META]
+        contact_update_events = [c_evt for c_evt in evt if c_evt.kind == Event.KIND_CONTACT_LIST]
+        if profile_update_events:
+            try:
+                self._do_profiles_update(profile_update_events)
+            except Exception as e:
+                print('profile update %s '%e )
+        if contact_update_events:
+            try:
+                self._do_contacts_update(contact_update_events)
+            except Exception as e:
+                print('contacts update %s '%e )
+
+    def _get_to_update_profiles(self, evts:[Event]) -> ([Profile], [Profile]):
+        p_e = []
+        p = []
+        for c_evt in evts:
+            c_p = self._profiles.lookup_pub_key(c_evt.pub_key)
+            if c_p is None or c_p.update_at < c_evt.created_at:
+                try:
+                    p_e.append(c_p)
+                    p.append(Profile.from_event(c_evt))
+                except JSONDecodeError as je:
+                    logging.debug('ProfileEventHandler::_do_profiles_update error converting event to profile: %s \nerr: %s' % (c_evt,
+                                                                                                                                je))
+        return p_e, p
+
+    def _do_profiles_update(self, evts: [Event]):
+        c_evt: Event
+        c_p: Profile
+
+        p_e, p = self._get_to_update_profiles(evts)
+
+        with self._lock:
+            self._store.put_profile(p)
+
+        # update local cache
+        for c_p in p:
+            self.profiles.put(c_p)
+
+        # fire update if any, probably change to send as batch too
+        if self._on_profile_update:
+            for i, c_p in enumerate(p):
+                try:
+                    self._on_profile_update(c_p, p_e[i])
+                except Exception as e:
+                    logging.debug('ProfileEventHandler:_do_profiles_update>_on_profile_update error: %s, profile: %s ' % (e,
+                                                                                                                          c_p.public_key))
+
+    def _clear_followers(self):
+        print('to be implemente, clear follows')
+
+    def _get_to_update_contacts(self, evts: [Event]) -> ([ContactList], [ContactList]):
+        c = []
+        c_e = []
+        exist: ContactList
+        for c_evt in evts:
+            exist = ContactList(contacts=self._store.select_contacts({'owner': c_evt.pub_key}),
+                                owner_pub_k=c_evt.pub_key)
+
+            if exist.updated_at is None or exist.updated_at < c_evt.created_at_ticks:
+                c_e.append(exist)
+                c.append(ContactList.from_event(c_evt))
+
+        return c_e, c
+
+    def _do_contacts_update(self, evts: [Event]):
+        c_evt: Event
+        c_c: ContactList
+        c_fl: ContactList
+        c_f: Contact
+        p: Profile
+
+        c_e, c = self._get_to_update_contacts(evts)
+
+        with self._lock:
+            self._store.put_contacts(c)
+
+        # clear contacts of anyone who has been updated
+        for i, c_c in enumerate(c):
+            # FIXME: only null those that don't appear in both current contacts and before update
+            p = self._profiles.lookup_pub_key(c_c.owner_public_key)
+            if p:
+                p.contacts = None
+                p.followed_by = None
+
+        # fire update if any, as profile probably change to send as batch
+        if self._on_contact_update:
+            for i, c_p in enumerate(p):
+                self._on_profile_update(c_p, c_c[i])
+
+    @property
+    def profiles(self) -> ProfileList:
+        return self._profiles
+
+    @property
+    def store(self) -> ProfileStoreInterface:
+        return self._store
+
+    def set_on_update(self, on_update):
+        self._on_update = on_update
+
+    def profile(self, pub_k):
+        ret = self._profiles.lookup_pub_key(pub_k)
+        return ret
+
+    def is_newer_profile(self, p: Profile):
+        # return True if given profile is newer than what we have
+        ret = False
+        c_p = self.profile(p.public_key)
+        if c_p is None or c_p.update_at < p.update_at:
+            ret = True
+        return ret
+
+    def is_newer_contacts(self, contacts: ContactList):
+        # return True if given profile is newer than what we have
+        ret = False
+
+        c_p = self.profile(contacts.owner_public_key)
+        if c_p is None:
+            existing = ContactList(contacts=self._store.select_contacts({'owner': contacts.owner_public_key}),
+                                   owner_pub_k=contacts)
+
+        else:
+            c_p.load_contacts(self._store)
+            existing = c_p.contacts
+
+        if existing is None or existing.updated_at is None or existing.updated_at < contacts.updated_at:
+            if existing.updated_at is None and len(contacts) == 0:
+                # check this... assumed that we have the contact but cant find any contacts for then
+                # which is the same as adding 0 len contacts ie nothing to do
+                pass
+            else:
+                ret = True
+
+        return ret

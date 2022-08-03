@@ -13,10 +13,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import getopt
 from nostr.client.client import ClientPool, Client
-from nostr.client.event_handlers import PersistEventHandler
+from nostr.client.event_handlers import PersistEventHandler, ProfileEventHandler
 from nostr.event.persist import ClientSQLEventStore, Event, ClientSQLiteEventStore, ClientEventStoreInterface, ClientMemoryEventStore
 from nostr.ident.persist import SQLiteProfileStore, ProfileStoreInterface,MemoryProfileStore
-from nostr.ident.profile import ProfileEventHandler
+# from nostr.ident.profile import ProfileEventHandler
 from nostr.util import util_funcs
 from web.web import NostrWeb
 
@@ -88,6 +88,7 @@ def run_tor(clients,
         # the max look back should be an option, maybe the default should just be everything
         # this will do for now
         since = event_store.get_newest(the_client.url)
+        since = util_funcs.date_as_ticks(datetime.now()-timedelta(hours=5))
         # less_30days = util_funcs.date_as_ticks(datetime.now()-timedelta(days=30))
         # if since < less_30days:
         #     since = less_30days
@@ -183,16 +184,21 @@ def run_web(clients,
         # less_30days = util_funcs.date_as_ticks(datetime.now()-timedelta(days=30))
         # if since < less_30days:
         #     since = less_30days
-
         the_client.subscribe(handlers=[evt_persist, my_server], filters={
+            # 'since': util_funcs.date_as_ticks(datetime.now()-timedelta(hours=10)),
             'since': since,
             'kinds': [
+                Event.KIND_RELAY_REC,
                 Event.KIND_TEXT_NOTE, Event.KIND_ENCRYPT,
                 Event.KIND_META, Event.KIND_CONTACT_LIST
             ]
         })
 
-    def my_eose(the_client: Client, sub_id: str, events: []):
+    my_peh = ProfileEventHandler(profile_store)
+
+    def my_eose(the_client: Client, sub_id: str, events):
+        print('eose', the_client.url)
+        my_peh.do_event(sub_id, events, the_client.url)
         evt_persist.do_event(sub_id, events, the_client.url)
 
     # so server can send out client status messages
@@ -209,7 +215,7 @@ def run_web(clients,
 
     my_server = NostrWeb(file_root='%s/web/static/' % web_dir,
                          event_store=event_store,
-                         profile_store=profile_store,
+                         profile_handler=my_peh,
                          client=my_client)
 
     my_client.start()
@@ -228,7 +234,7 @@ def run_web(clients,
 
 
 def run():
-    db_file = WORK_DIR + 'nostr-client-test.db'
+    db_file = WORK_DIR + 'nostr-client-test-d2.db'
     db_type = 'sqlite'
     full_text = True
     is_tor = False
@@ -236,16 +242,16 @@ def run():
 
     # who to attach to
     clients = [
-        # {
-        #     'client': 'wss://nostr-pub.wellorder.net',
-        #     'write': True
-        # },
-        'ws://localhost:8081',
-        # 'ws://localhost:8082',
-        # {
-        #     'client': 'wss://relay.damus.io',
-        #     'write': True
-        # }
+        {
+            'client': 'wss://nostr-pub.wellorder.net',
+            'write': True
+        },
+        # 'ws://localhost:8081',
+        # 'ws://localhost:8083',
+        {
+            'client': 'wss://relay.damus.io',
+            'write': True
+        }
     ]
 
 
@@ -271,9 +277,9 @@ def run():
         event_store = ClientSQLiteEventStore(db_file,
                                              full_text=full_text)
 
-        # event_store = ClientMemoryEventStore()
+        event_store = ClientMemoryEventStore()
         profile_store = SQLiteProfileStore(db_file)
-        # profile_store = MemoryProfileStore()
+        profile_store = MemoryProfileStore()
         # profile_store.import_profiles_from_events(event_store)
         # profile_store.import_contacts_from_events(event_store)
 
@@ -293,7 +299,7 @@ def run():
                 web_dir=web_dir)
 
 if __name__ == "__main__":
-    logging.getLogger().setLevel(logging.DEBUG)
+    # logging.getLogger().setLevel(logging.DEBUG)
 
     run()
     from nostr.client.event_handlers import EventHandler
@@ -325,16 +331,19 @@ if __name__ == "__main__":
     #     })[0]
     #
     #
-    #     while True:
-    #         e = Event(kind=20001,
-    #                   content='replaceme',
-    #                   pub_key=p.public_key)
-    #         e.sign(p.private_key)
-    #         the_client.publish(e)
+    #     e = Event(kind=10000,
+    #               content='this is a replaceable dude bad hombre 3rd!!!',
+    #               pub_key=p.public_key,
+    #               tags=[
+    #                   ['e','5294b71fd914015d07d9fe40ae9bbcd2393cd2a1175ddaa693f55d720fbcbea9']
+    #               ])
+    #     e.sign(p.private_key)
+    #     the_client.publish(e)
     #
-    #         time.sleep(1)
+    #     time.sleep(1)
+    #     # the_client.end()
     #
-    # ClientPool(['ws://localhost:8082',
+    # ClientPool(['ws://localhost:8081',
     #             'ws://localhost:8083'], on_connect=my_post_test).start()
 
 

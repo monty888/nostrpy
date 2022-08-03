@@ -5,7 +5,8 @@ from typing import TYPE_CHECKING
 
 from nostr.event.event import Event
 from app.post import PostApp
-from nostr.ident.profile import ProfileList, ProfileEventHandler, Profile
+from nostr.ident.profile import ProfileList, Profile
+from nostr.client.event_handlers import ProfileEventHandler
 from prompt_toolkit import print_formatted_text
 from prompt_toolkit.formatted_text import FormattedText
 
@@ -109,7 +110,7 @@ class FormattedEventPrinter:
 
     def _get_profile(self, key):
         return self._profile_handler.profiles.get_profile(key,
-                                                        create_type=ProfileList.CREATE_PUBLIC)
+                                                          create_type=ProfileList.CREATE_PUBLIC)
 
     def _is_user(self, key):
         return self._as_user is not None and self._as_user.public_key == key

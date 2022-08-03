@@ -8,11 +8,11 @@ from pathlib import Path
 from datetime import datetime, timedelta
 import getopt
 from db.db import SQLiteDatabase
-from nostr.ident.profile import Profile, ProfileEventHandler, ProfileList, Contact
-from nostr.ident.persist import SQLProfileStore, TransientProfileStore, ProfileStoreInterface
+from nostr.ident.profile import Profile, ProfileList, Contact
+from nostr.ident.persist import SQLProfileStore, MemoryProfileStore, ProfileStoreInterface
 from nostr.client.client import ClientPool, Client
-from nostr.event.persist import ClientSQLEventStore, ClientSQLiteEventStore, ClientMemoryEventStore
-from nostr.client.event_handlers import PrintEventHandler, PersistEventHandler, EventAccepter, DeduplicateAcceptor, LengthAcceptor
+from nostr.event.persist import ClientSQLEventStore, ClientSQLiteEventStore, ClientMemoryEventStore, ClientEventStoreInterface
+from nostr.client.event_handlers import PrintEventHandler, PersistEventHandler, EventAccepter, DeduplicateAcceptor, LengthAcceptor, ProfileEventHandler
 from nostr.util import util_funcs
 from nostr.event.event import Event
 from app.post import PostApp
@@ -24,7 +24,7 @@ DB_FILE = '%s/nostr-client-test.db' % WORK_DIR
 
 # RELAYS = ['wss://rsslay.fiatjaf.com','wss://nostr-pub.wellorder.net']
 # RELAYS = ['wss://rsslay.fiatjaf.com']
-# RELAYS = ['wss://nostr-pub.wellorder.net']
+# RELAYS = ['wss://relay.damus.io']
 RELAYS = ['ws://localhost:8081','wss://nostr-pub.wellorder.net','wss://rsslay.fiatjaf.com','wss://relay.damus.io']
 
 # defaults if not provided at command line or from config file
@@ -173,11 +173,15 @@ class MyAccept(EventAccepter):
 
 def run_watch(config):
     my_db = SQLiteDatabase(DB_FILE)
+    event_store:ClientEventStoreInterface = None
     event_store = ClientSQLiteEventStore(DB_FILE, full_text=True)
     # event_store = ClientMemoryEventStore()
-    my_persist = PersistEventHandler(event_store)
+    # my_persist = PersistEventHandler(event_store)
     profile_store = SQLProfileStore(my_db)
+    # profile_store = MemoryProfileStore()
     profile_handler = ProfileEventHandler(profile_store)
+
+    profiles_init = {}
 
     config = get_from_config(config, profile_store, profile_handler)
     as_user = config['as_user']
@@ -240,41 +244,68 @@ def run_watch(config):
 
     my_printer.display_func = my_display
 
-    def my_connect(the_client: Client):
-        # all metas and contacts ever
-        the_client.subscribe(handlers=[profile_handler], filters={
-            'kind': [Event.KIND_META, Event.KIND_CONTACT_LIST]
-        })
-
+    def start_event_sub(the_client:Client):
         # get events from newest we have for this relay
         # TODO: add kind to get_newest
         evt_filter = {
             # 'since': event_store.get_newest(the_client.url)+1
-            'since': util_funcs.date_as_ticks(since)
+            'since': util_funcs.date_as_ticks(since),
+            'kinds': [Event.KIND_TEXT_NOTE, Event.KIND_ENCRYPT]
         }
         if until:
             evt_filter['until'] = until
-
         # note in the case of wss://rsslay.fiatjaf.com it looks like author is required to receive anything
         if the_client.url == 'wss://rsslay.fiatjaf.com':
             evt_filter['authors'] = [p.public_key for p in view_profiles]
 
-        the_client.subscribe(handlers=[my_persist, my_printer],
+        the_client.subscribe(handlers=[my_printer],
                              filters=evt_filter)
 
-    local_filter = {
-        'kinds': [Event.KIND_TEXT_NOTE, Event.KIND_ENCRYPT, Event.KIND_META, Event.KIND_CONTACT_LIST],
-        'since': util_funcs.date_as_ticks(since)
-    }
+    def my_eose(the_client: Client, sub_id: str, events):
+        nonlocal profiles_init
+        url = the_client.url
+        if url not in profiles_init:
+            profiles_init[url] = False
+
+        if events:
+            evt: Event
+            evt = events[0]
+            if evt.kind in [Event.KIND_META, Event.KIND_CONTACT_LIST]:
+                profile_handler.do_event(sub_id, events, url)
+                if profiles_init[url] is False:
+                    start_event_sub(the_client)
+                    profiles_init[url] = True
+            elif evt.kind in [Event.KIND_TEXT_NOTE, Event.KIND_ENCRYPT]:
+                for c_evt in events:
+                    my_printer.do_event(sub_id, c_evt, url)
+
+    def my_connect(the_client: Client):
+        # all metas and contacts ever
+        p_filter = {
+            'kinds': [Event.KIND_META, Event.KIND_CONTACT_LIST]
+        }
+        # if we have an event_store we shouldn't need to look back further than here
+        # (this assumes when these events came in we did the profile and contact updates)
+        if event_store:
+            p_filter['since'] = event_store.get_newest(the_client.url, {
+                'kinds': [Event.KIND_META, Event.KIND_CONTACT_LIST]
+            })
+
+        the_client.subscribe(handlers=[profile_handler], filters=p_filter)
+
+    # local_filter = {
+    #     'kinds': [Event.KIND_TEXT_NOTE, Event.KIND_ENCRYPT, Event.KIND_META, Event.KIND_CONTACT_LIST],
+    #     'since': util_funcs.date_as_ticks(since)
+    # }
 
     # print events as we have them locally if using persistent event store
-    existing_evts = event_store.get_filter(local_filter)
-    existing_evts.reverse()
-    for c_evt in existing_evts:
-        my_printer.do_event(None, c_evt, None)
-        since = c_evt.created_at - timedelta(hours=1)
+    # existing_evts = event_store.get_filter(local_filter)
+    # existing_evts.reverse()
+    # for c_evt in existing_evts:
+    #     my_printer.do_event(None, c_evt, None)
+    #     since = c_evt.created_at - timedelta(hours=1)
 
-    my_client = ClientPool(RELAYS, on_connect=my_connect).start()
+    my_client = ClientPool(RELAYS, on_connect=my_connect, on_eose=my_eose).start()
 
 
 def run_event_view():

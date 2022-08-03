@@ -135,7 +135,10 @@ class Client:
                                         'Accept': 'application/nostr+json'
                                     })
             if response.status_code == 200:
-                self._relay_info = json.loads(response.content)
+                try:
+                    self._relay_info = json.loads(response.content)
+                except JSONDecodeError as je:
+                    self._relay_info = {}
 
         return self._relay_info
 
@@ -197,8 +200,8 @@ class Client:
                         if (sub_info['last_event'] is not None and now - sub_info['last_event'] > timedelta(seconds=2)) or \
                                 (now - sub_info['start_time'] > timedelta(seconds=2)):
                             is_wait = False
-                            pass
                         time.sleep(1)
+
                     self._on_message(self._ws, json.dumps(['EOSE', sub_id]))
                 Thread(target=my_emulate).start()
 
@@ -335,7 +338,6 @@ class Client:
             self._on_connect(self)
         if self._on_status:
             self._on_status(self.status)
-
 
     def _did_comm(self, ws, data):
         self._reset_status()
@@ -630,6 +632,11 @@ class ClientPool:
                     logging.debug(e)
 
     def do_event(self, sub_id, evt, relay):
+        def get_do_event(handler):
+            def my_func():
+                handler.do_event(sub_id, evt, relay)
+            return my_func
+
         # shouldn't be possible...
         if relay not in self._clients:
             raise Exception('ClientPool::do_event received event from unexpected relay - %s WTF?!?' % relay)
@@ -639,7 +646,8 @@ class ClientPool:
             # note no de-duplication is done here, you might see the same event from mutiple relays
             if sub_id in self._handlers:
                 for c_handler in self._handlers[sub_id]:
-                    c_handler.do_event(sub_id, evt, relay)
+                    # c_handler.do_event(sub_id, evt, relay)
+                    Greenlet(get_do_event(c_handler)).start()
             else:
                 # supose this might happen if unsubscribe then evt comes in...
                 logging.debug(

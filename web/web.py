@@ -22,12 +22,12 @@ from geventwebsocket import WebSocketError
 from geventwebsocket.websocket import WebSocket
 from geventwebsocket.handler import WebSocketHandler
 from nostr.event.event import Event
-from nostr.ident.profile import ProfileEventHandler, ProfileList, Profile, Contact, ContactList
+from nostr.ident.profile import ProfileList, Profile, Contact, ContactList
 from nostr.ident.persist import SQLiteProfileStore, ProfileType
 from nostr.event.persist import ClientEventStoreInterface, SQLiteEventStore
 from nostr.encrypt import Keys
 from nostr.client.client import ClientPool, Client
-from nostr.client.event_handlers import DeduplicateAcceptor
+from nostr.client.event_handlers import DeduplicateAcceptor, ProfileEventHandler
 from nostr.util import util_funcs
 import beaker.middleware
 
@@ -174,14 +174,12 @@ class NostrWeb(StaticServer):
     def __init__(self,
                  file_root,
                  event_store: ClientEventStoreInterface,
-                 profile_store: SQLiteProfileStore,
+                 profile_handler: ProfileEventHandler,
                  client: Client):
 
         self._event_store = event_store
-        self._profile_store = profile_store
-        self._profile_handler: ProfileEventHandler = ProfileEventHandler(self._profile_store,
-                                                                         on_profile_update=self._my_profile_update,
-                                                                         on_contact_update=self._my_contact_update)
+        self._profile_handler = profile_handler
+        self._profile_store = profile_handler.store
 
         self._web_sockets = {}
         super(NostrWeb, self).__init__(file_root)
@@ -207,32 +205,6 @@ class NostrWeb(StaticServer):
             'session.auto': True
         }
         self._app = beaker.middleware.SessionMiddleware(self._app, session_opts)
-
-    def _my_profile_update(self,
-                           new_p: Profile,
-                           old_p: Profile):
-        print('this fuck only went and updated his profile!!!')
-
-    def _my_contact_update(self,
-                           new_c: ContactList,
-                           old_c: ContactList):
-        def null_diff(keys: []):
-            for c_pub_k in keys:
-                c_p = self._profile_handler.profiles.lookup_pub_key(c_pub_k)
-                if c_p:
-                    c_p.followed_by = None
-
-        pub_k = new_c.owner_public_key
-        p: Profile = self._profile_handler.profiles.lookup_pub_key(pub_k)
-        if p is not None:
-            p.contacts = None
-            p.followed_by = None
-            # FIXME: only those that don't appear in both list need to be Noned
-            null_diff(new_c.diff(old_c))
-            # null_diff(new_c)
-            # null_diff(old_c)
-
-        print('mofo contacts shit done')
 
     def _add_routes(self):
         # methods wrapped so that if they raise NostrException it'll be returned as json {error: text}
@@ -442,9 +414,14 @@ class NostrWeb(StaticServer):
             raise NostrWebException('priv_k: %s doesn\'t match supplied pub_k: %s' % (priv_k, pub_k))
 
         the_profile = self._profile_handler.profiles.get_profile(pub_k)
+
+
+
         if the_profile is None:
             raise NostrWebException('no profile found for pub_k - %s' % pub_k)
 
+        from copy import copy
+        the_profile = copy(the_profile)
         the_profile.private_key = priv_k
         self._profile_handler.do_update_local(the_profile)
 
