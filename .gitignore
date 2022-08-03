@@ -9,3 +9,4 @@
 /data/container_file/
 /data/container_file_lock/
 /err.txt
+/__pycache__/
