@@ -3,6 +3,7 @@ import os
 import sys
 from datetime import datetime
 from abc import ABC, abstractmethod
+from collections import Counter
 import json
 from enum import Enum
 from db.db import Database, SQLiteDatabase, PostgresDatabase
@@ -11,7 +12,6 @@ from nostr.event.event import Event
 from nostr.util import util_funcs
 from nostr.exception import NostrCommandException
 from data.data import DataSet
-from collections import Counter
 
 try:
     from psycopg2 import OperationalError
@@ -345,11 +345,6 @@ class ClientMemoryEventStore(MemoryEventStore, ClientEventStoreInterface):
         return ret
 
     def relay_list(self, pub_k: str = None) -> []:
-        """
-            with memory store it's not possible to get ordered for pk as we're unable to look up contacts
-            probably change interface to use passed in list of keys for relavence
-            also write some common code to do name cleaning
-        """
         my_count = Counter()
         evts = self.get_filter({
             'kinds': [Event.KIND_RELAY_REC]
