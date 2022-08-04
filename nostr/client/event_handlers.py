@@ -42,18 +42,20 @@ class EventAccepter(ABC):
 
 class DeduplicateAcceptor(EventAccepter):
 
-    def __init__(self, max_dedup=1000):
+    def __init__(self, max_dedup=10000):
         # de-duplicating of events for when we're connected to multiple relays
         self._duplicates = OrderedDict()
         self._max_dedup = max_dedup
+        self._lock = BoundedSemaphore()
 
     def accept_event(self, evt: Event) -> bool:
         ret = False
-        if evt.id not in self._duplicates:
-            self._duplicates[evt.id] = True
-            if len(self._duplicates) >= self._max_dedup:
-                self._duplicates.popitem(False)
-            ret = True
+        with self._lock:
+            if evt.id not in self._duplicates:
+                self._duplicates[evt.id] = True
+                if len(self._duplicates) >= self._max_dedup:
+                    self._duplicates.popitem(last=False)
+                ret = True
         return ret
 
 

@@ -20,15 +20,13 @@ from cmd_line.util import EventPrinter, FormattedEventPrinter
 
 # TODO: also postgres
 WORK_DIR = '/home/%s/.nostrpy/' % Path.home().name
-DB_FILE = '%s/nostr-client-test.db' % WORK_DIR
+DB_FILE = '%s/nostr-client-event-view.db' % WORK_DIR
 
 # RELAYS = ['wss://rsslay.fiatjaf.com','wss://nostr-pub.wellorder.net']
 # RELAYS = ['wss://rsslay.fiatjaf.com']
 # RELAYS = ['wss://relay.damus.io']
 RELAYS = ['ws://localhost:8081','wss://nostr-pub.wellorder.net','wss://rsslay.fiatjaf.com','wss://relay.damus.io']
 
-# defaults if not provided at command line or from config file
-# RELAYS = ['ws://localhost:8081']
 AS_PROFILE = None
 VIEW_PROFILE = None
 INBOX = None
@@ -45,7 +43,7 @@ usage:
     sys.exit(2)
 
 def get_from_config(config,
-                    profile_store : ProfileStoreInterface,
+                    profile_store: ProfileStoreInterface,
                     profiles: ProfileEventHandler):
     as_user = None
     all_view = []
@@ -181,8 +179,6 @@ def run_watch(config):
     # profile_store = MemoryProfileStore()
     profile_handler = ProfileEventHandler(profile_store)
 
-    profiles_init = {}
-
     config = get_from_config(config, profile_store, profile_handler)
     as_user = config['as_user']
     view_profiles = config['all_view']
@@ -244,54 +240,35 @@ def run_watch(config):
 
     my_printer.display_func = my_display
 
-    def start_event_sub(the_client:Client):
-        # get events from newest we have for this relay
-        # TODO: add kind to get_newest
-        evt_filter = {
+    def my_eose(the_client: Client, sub_id: str, events):
+        profile_handler.do_event(sub_id, events, the_client.url)
+        for c_evt in events:
+            my_printer.do_event(sub_id, c_evt, the_client)
+
+    def my_connect(the_client: Client):
+        # all metas and contacts ever
+        p_filter = {
+            'kinds': [Event.KIND_META, Event.KIND_CONTACT_LIST],
+            'since': event_store.get_newest(the_client.url,{
+                'kinds': [Event.KIND_META, Event.KIND_CONTACT_LIST]
+            })
+        }
+        # events back to since
+        e_filter = {
             # 'since': event_store.get_newest(the_client.url)+1
             'since': util_funcs.date_as_ticks(since),
             'kinds': [Event.KIND_TEXT_NOTE, Event.KIND_ENCRYPT]
         }
         if until:
-            evt_filter['until'] = until
+            e_filter['until'] = until
         # note in the case of wss://rsslay.fiatjaf.com it looks like author is required to receive anything
         if the_client.url == 'wss://rsslay.fiatjaf.com':
-            evt_filter['authors'] = [p.public_key for p in view_profiles]
+            e_filter['authors'] = [p.public_key for p in view_profiles]
 
-        the_client.subscribe(handlers=[my_printer],
-                             filters=evt_filter)
-
-    def my_eose(the_client: Client, sub_id: str, events):
-        nonlocal profiles_init
-        url = the_client.url
-        if url not in profiles_init:
-            profiles_init[url] = False
-
-        if events:
-            evt: Event
-            evt = events[0]
-            if evt.kind in [Event.KIND_META, Event.KIND_CONTACT_LIST]:
-                profile_handler.do_event(sub_id, events, url)
-                if profiles_init[url] is False:
-                    start_event_sub(the_client)
-                    profiles_init[url] = True
-            elif evt.kind in [Event.KIND_TEXT_NOTE, Event.KIND_ENCRYPT]:
-                for c_evt in events:
-                    my_printer.do_event(sub_id, c_evt, url)
-
-    def my_connect(the_client: Client):
-        # all metas and contacts ever
-        p_filter = {
-            'kinds': [Event.KIND_META, Event.KIND_CONTACT_LIST]
-        }
-        # if we have an event_store we shouldn't need to look back further than here
-        # (this assumes when these events came in we did the profile and contact updates)
-        if event_store:
-            p_filter['since'] = event_store.get_newest(the_client.url, {
-                'kinds': [Event.KIND_META, Event.KIND_CONTACT_LIST]
-            })
-
-        the_client.subscribe(handlers=[profile_handler], filters=p_filter)
+        the_client.subscribe(handlers=[profile_handler, my_printer], filters=[
+            p_filter,
+            e_filter
+        ])
 
     # local_filter = {
     #     'kinds': [Event.KIND_TEXT_NOTE, Event.KIND_ENCRYPT, Event.KIND_META, Event.KIND_CONTACT_LIST],
@@ -304,7 +281,6 @@ def run_watch(config):
     # for c_evt in existing_evts:
     #     my_printer.do_event(None, c_evt, None)
     #     since = c_evt.created_at - timedelta(hours=1)
-
     my_client = ClientPool(RELAYS, on_connect=my_connect, on_eose=my_eose).start()
 
 

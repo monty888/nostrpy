@@ -125,7 +125,7 @@ class ProfileStoreInterface(ABC):
         if all.lookup_profilename(name) or all.lookup_priv_key(keys['priv_k']):
             raise Exception('Profile:new_profile %s already exists' % name)
 
-        self.add(p)
+        self.put_profile(p, is_local=True)
 
         return p
 

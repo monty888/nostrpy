@@ -171,7 +171,9 @@ class Client:
         if sub_id is None:
             sub_id = self._get_sub_id()
         the_req.append(sub_id)
-        the_req.append(filters)
+        if isinstance(filters, dict):
+            filters = [filters]
+        the_req = the_req + filters
 
         the_req = json.dumps(the_req)
         logging.debug('Client::subscribe - %s', the_req)

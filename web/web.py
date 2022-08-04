@@ -626,7 +626,7 @@ class NostrWeb(StaticServer):
         if profile is None:
             raise NostrWebException('Profile not found for pub_k: %s' % pub_k)
         if not profile.private_key:
-            raise NostrWebException('don\'t to have the private key to sign for given pub_k: ' % pub_k)
+            raise NostrWebException('don\'t have the private key to sign for given pub_k: ' % pub_k)
 
         if follow != '':
             follow_list = follow.split(',')
@@ -640,7 +640,7 @@ class NostrWeb(StaticServer):
         check_keys(follow_list)
         check_keys(unfollow_list)
 
-        my_contacts = ContactList(contacts=profile.load_contacts(self._profile_store),
+        my_contacts = ContactList(contacts=profile.load_contacts(self._profile_store).contacts,
                                   owner_pub_k=profile.public_key)
 
         con: Contact

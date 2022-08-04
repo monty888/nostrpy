@@ -277,9 +277,9 @@ def run():
         event_store = ClientSQLiteEventStore(db_file,
                                              full_text=full_text)
 
-        event_store = ClientMemoryEventStore()
+        # event_store = ClientMemoryEventStore()
         profile_store = SQLiteProfileStore(db_file)
-        profile_store = MemoryProfileStore()
+        # profile_store = MemoryProfileStore()
         # profile_store.import_profiles_from_events(event_store)
         # profile_store.import_contacts_from_events(event_store)
 

@@ -298,7 +298,7 @@ class Relay:
         # did this because loquaz doesnt supply so assuming this is permited
         filter = {}
         if len(req_json) > 2:
-            filter = req_json[2]
+            filter = req_json[2:]
             # raise NostrCommandException('REQ command missing filter')
 
         # this user already subscribed under same sub_id

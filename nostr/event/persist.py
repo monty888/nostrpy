@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 from datetime import datetime
+from threading import BoundedSemaphore
 from abc import ABC, abstractmethod
 from collections import Counter
 import json
@@ -180,28 +181,29 @@ class MemoryEventStore(EventStoreInterface):
         self._is_nip16 = is_nip16
         self._sort_reversed = sort_reversed
         self._events = {}
+        self._lock = BoundedSemaphore()
 
     def add_event(self, evt: Event):
         if not self.is_ephemeral(evt):
-            self._events[evt.id] = {
-                'is_deleted': False,
-                'evt': evt
-            }
+            with self._lock:
+                self._events[evt.id] = {
+                    'is_deleted': False,
+                    'evt': evt
+                }
 
     def do_delete(self, evt: Event):
         if self._delete_mode == DeleteMode.DEL_NO_ACTION:
             return
-        to_delete = evt.e_tags
-        if self._delete_mode == DeleteMode.DEL_FLAG:
-            for c_id in to_delete:
-                if c_id in self._events:
-                    self._events[c_id]['is_deleted'] = True
-        elif self._delete_mode == DeleteMode.DEL_DELETE:
-            for c_id in to_delete:
-                if c_id in self._events:
-                    # we just leave the is deleted flag in place but get rid of the evt data
-                    # as it's just in memory it wouldn't be easy to get at anyway so really we're just freeing the mem
-                    del self._events[c_id]['evt']
+        else:
+            with self._lock:
+                for c_id in evt.e_tags:
+                    if c_id in self._events:
+                        if self._delete_mode == DeleteMode.DEL_FLAG:
+                            self._events[c_id]['is_deleted'] = True
+                        elif self._delete_mode == DeleteMode.DEL_DELETE:
+                            # we just leave the is deleted flag in place but get rid of the evt data
+                            # as it's just in memory it wouldn't be easy to get at anyway so really we're just freeing the mem
+                            del self._events[c_id]['evt']
 
     def test_event(self, evt:Event, filter):
         return evt.test(filter)
@@ -222,13 +224,14 @@ class MemoryEventStore(EventStoreInterface):
 
         # bit shit as we store unsorted we have to get all then sort and can only cut
         # to limit then
-        for evt_id in self._events:
-            r = self._events[evt_id]
-            if not r['is_deleted']:
-                c_evt = r['evt']
-                for c_filter in filters:
-                    if self.test_event(c_evt, c_filter):
-                        ret.add(c_evt)
+        with self._lock:
+            for evt_id in self._events:
+                r = self._events[evt_id]
+                if not r['is_deleted']:
+                    c_evt = r['evt']
+                    for c_filter in filters:
+                        if self.test_event(c_evt, c_filter):
+                            ret.add(c_evt)
 
         def _updated_sort(evt: Event):
             return evt.created_at
@@ -270,11 +273,12 @@ class ClientMemoryEventStore(MemoryEventStore, ClientEventStoreInterface):
 
             if evt.id not in self._events:
                 self.add_event(evt)
-            e_store = self._events[evt.id]
-            if not 'relays' in e_store:
-                e_store['relays'] = set()
+            with self._lock:
+                e_store = self._events[evt.id]
+                if 'relays' not in e_store:
+                    e_store['relays'] = set()
 
-            self._events[evt.id]['relays'].add(relay_url)
+                self._events[evt.id]['relays'].add(relay_url)
 
         if hasattr(evt, '__iter__'):
             for c_evt in evt:
@@ -298,19 +302,21 @@ class ClientMemoryEventStore(MemoryEventStore, ClientEventStoreInterface):
 
         ret = 0
         evt: Event
-        for i, k in enumerate(self._events):
-            e_store = self._events[k]
-            if for_relay in e_store['relays']:
-                evt = e_store['evt']
-                if evt.created_at_ticks > ret:
-                    ret = evt.created_at_ticks
+        with self._lock:
+            for i, k in enumerate(self._events):
+                e_store = self._events[k]
+                if for_relay in e_store['relays']:
+                    evt = e_store['evt']
+                    if evt.created_at_ticks > ret:
+                        ret = evt.created_at_ticks
 
         return ret
 
     # TODO
     def event_relay(self, event_id: str) -> [str]:
         ret = []
-        evt = self._events[event_id]
+        with self._lock:
+            evt = self._events[event_id]
         if evt:
             # to match sql, should just be [str] as we say!!!
             ret = [{'relay_url': c_r} for c_r in list(evt['relays'])]
