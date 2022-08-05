@@ -9,19 +9,19 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import getopt
 from db.db import SQLiteDatabase
-from nostr.ident.profile import Profile, ProfileEventHandler, ProfileList
-from nostr.ident.persist import SQLProfileStore, TransientProfileStore
+from nostr.ident.profile import Profile, ProfileList
+from nostr.ident.persist import SQLProfileStore, MemoryProfileStore
 from nostr.client.client import ClientPool, Client
 # from nostr.client.persist import SQLEventStore, TransientEventStore
 from nostr.event.persist import ClientSQLEventStore, ClientMemoryEventStore
-from nostr.client.event_handlers import PersistEventHandler
+from nostr.client.event_handlers import PersistEventHandler, ProfileEventHandler
 from nostr.event.event import Event
 from app.post import PostApp
 from cmd_line.post_loop_app import PostAppGui
 from nostr.util import util_funcs
 
 # TODO: also postgres
-WORK_DIR = '/home/%s/.nostrpy/' % Path.home().name
+WORK_DIR = '%s/.nostrpy/' % Path.home()
 DB = SQLiteDatabase('%s/nostr-client-test.db' % WORK_DIR)
 EVENT_STORE = ClientSQLEventStore(DB)
 # EVENT_STORE = ClientMemoryEventStore()
@@ -30,8 +30,8 @@ PROFILE_STORE = SQLProfileStore(DB)
 # RELAYS = ['wss://rsslay.fiatjaf.com','wss://nostr-pub.wellorder.net']
 # RELAYS = ['wss://rsslay.fiatjaf.com']
 # RELAYS = ['ws://localhost:8081']
-# RELAYS = ['ws://localhost:8081','ws://localhost:8082']
-RELAYS = ['wss://nostr-pub.wellorder.net']
+RELAYS = ['ws://localhost:8081','ws://localhost:8082']
+# RELAYS = ['wss://nostr-pub.wellorder.net']
 
 
 def usage():
@@ -42,9 +42,10 @@ usage:
     sys.exit(2)
 
 
-def _get_profile(key, peh, err_str):
+def _get_profile(key, peh, err_str, create_type=ProfileList.CREATE_PRIVATE):
     ret = peh.profiles.get_profile(key,
-                                   create_type=ProfileList.CREATE_PRIVATE)
+                                   create_type=create_type)
+
     if not ret:
         print(err_str)
 
@@ -143,7 +144,8 @@ def run_post():
                 is_encrypt = False
             elif o in ('-t', '--to'):
                 for c_t in a.split(','):
-                    to_add = _get_profile(c_t, peh, 'to profile %s not found' % c_t)
+                    to_add = _get_profile(c_t, peh, 'to profile %s not found' % c_t,
+                                          create_type=ProfileList.CREATE_PUBLIC)
                     if to_add:
                         to_users.append(to_add)
                     elif not ignore_missing:
@@ -195,7 +197,7 @@ def run_post():
                 'kind': [Event.KIND_TEXT_NOTE, Event.KIND_ENCRYPT],
                 'since': util_funcs.date_as_ticks(datetime.now() - timedelta(days=10))
             })
-            local_events.reverse()
+            # local_events.reverse()
 
             for c_evt in local_events:
                 my_post.do_event(None, c_evt, None)

@@ -75,6 +75,10 @@ APP.remote = function(){
         if(data!==undefined){
             call_args['data'] = data;
         }
+        if(args['contentType']!==undefined){
+            call_args['contentType'] = args['contentType'];
+        }
+
 
         if(cache){
             if(force_new!==true){
@@ -278,11 +282,14 @@ APP.remote = function(){
             do_query(args);
         },
         'post_event' : function(args){
+
             args['url'] = _post_event_url;
             args['method'] = 'POST';
             let evt = $.extend({}, args.event);
-            evt.content = encodeURIComponent(evt.content);
+            let content = encodeURIComponent(evt.content);
+            evt.content = '';
             args['data'] = 'event=' + JSON.stringify(evt);
+            args['data'] += '&content='+content;
 
             args['params'] = {
                 'pub_k' : args['pub_k']

@@ -139,8 +139,13 @@ def link_profile(args, profile_store:ProfileStoreInterface):
 
 def view_profiles(profile_store:ProfileStoreInterface):
     profiles = profile_store.select_profiles(profile_type=ProfileType.LOCAL)
+    c_p: Profile
+
     for c_p in profiles:
-        print(c_p)
+        name = c_p.name
+        if name is None:
+            name = '-'
+        print('%s %s [%s]' % (c_p.public_key, name[:15].ljust(15), c_p.profile_name[:20].ljust(20)))
 
 def profile_edit():
     try:

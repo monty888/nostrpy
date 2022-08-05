@@ -234,6 +234,14 @@ class Event:
         """
         return [t[1:] for t in self._tags if len(t) >= 1 and t[0] == tag_name]
 
+    def get_tags_value(self, tag_name):
+        """
+        returns the first val of data for given tags in most cases this would be what we want otherwise use get_tags
+        :param tag_name:
+        :return:
+        """
+        return [t[0] for t in self.get_tags(tag_name)]
+
     @property
     def tags(self):
         return self._tags

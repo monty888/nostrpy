@@ -20,7 +20,7 @@ from cmd_line.util import EventPrinter, FormattedEventPrinter
 
 # TODO: also postgres
 WORK_DIR = '/home/%s/.nostrpy/' % Path.home().name
-DB_FILE = '%s/nostr-client-event-view.db' % WORK_DIR
+DB_FILE = '%s/nostr-client-test.db' % WORK_DIR
 
 # RELAYS = ['wss://rsslay.fiatjaf.com','wss://nostr-pub.wellorder.net']
 # RELAYS = ['wss://rsslay.fiatjaf.com']

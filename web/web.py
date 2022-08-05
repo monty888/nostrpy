@@ -494,7 +494,7 @@ class NostrWeb(StaticServer):
     def _do_post(self):
         pub_k = request.query.pub_k
         event = json.loads(request.forms['event'])
-        content = event['content']
+        content = request.forms.getunicode('content')
 
         tags = event['tags']
         kind = event['kind']
@@ -840,10 +840,13 @@ class NostrWeb(StaticServer):
         dms = self._event_store.direct_messages(pub_k)
         for c_dm in dms:
             filter['ids'].append(c_dm['event_id'])
+        ret = []
+        if dms:
+            ret = self._get_events(filter,
+                                   decrypt_p=decrypt_p)
 
         return {
-            'events': self._get_events(filter,
-                                       decrypt_p=decrypt_p)
+            'events': ret
         }
 
     def _events_text_search_route(self):

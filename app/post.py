@@ -3,6 +3,7 @@
 # # if TYPE_CHECKING:
 import json
 import hashlib
+import logging
 from collections import OrderedDict
 from nostr.encrypt import SharedEncrypt
 from nostr.event.event import Event
@@ -128,18 +129,26 @@ class PostApp:
 
         return self._chat_members == msg_members and is_subject or (self._is_encrypt is False and self._to_users is None)
 
-    def _unwrap_public(self, evt: Event):
-        ret = None
-        shared_tags = evt.get_tags('shared')
-        if shared_tags and shared_tags[0][0] in self._shared_keys:
-            for c_member in self._chat_members:
-                try:
-                    content = evt.decrypted_content(self._as_user.private_key, c_member)
-                    ret = Event.create_from_JSON(json.loads(content))
-                    break
-                except Exception as e:
-                    pass
-        return ret
+    # def _unwrap_public(self, evt: Event):
+    #     print(self._is_encrypt)
+    #     ret = None
+    #     shared_tags = evt.get_tags('shared')
+    #     if self._is_encrypt:
+    #         if shared_tags and shared_tags[0][0] in self._shared_keys:
+    #             for c_member in self._chat_members:
+    #                 try:
+    #                     content = evt.decrypted_content(self._as_user.private_key, c_member)
+    #                     ret = Event.create_from_JSON(json.loads(content))
+    #                     break
+    #                 except Exception as e:
+    #                     pass
+    #     else:
+    #         print('why do you hate me som much?!?!?!')
+    #         # non encrypted wrapped event, anyone who has the mailbox priv _k can see
+    #         content = evt.decrypted_content(self._public_inbox.private_key, self._public_inbox.public_key)
+    #         ret = Event.create_from_JSON(json.loads(content))
+    #
+    #     return ret
 
     def do_event(self, sub_id, evt: Event, relay):
         # we likely to need to do this on all event handlers except those that would be
@@ -154,7 +163,16 @@ class PostApp:
             if self._public_inbox:
                 # evt = self._unwrap_public(evt)
                 if evt.pub_key == self._public_inbox.public_key:
-                    evt = PostApp.clust_unwrap_event(evt, self._as_user, self._shared_keys)
+                    if self._is_encrypt:
+                        evt = PostApp.clust_unwrap_event(evt, self._as_user, self._shared_keys)
+                    else:
+                        try:
+                            se = SharedEncrypt(self._public_inbox.private_key)
+                            se.derive_shared_key(self._public_inbox.public_key)
+                            evt = evt.decrypted_content(self._public_inbox.private_key,se.shared_key())
+                        except:
+                            pass
+
                 else:
                     evt = None
 

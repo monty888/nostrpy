@@ -137,8 +137,14 @@ APP.nostr.gui = function(){
         content = APP.nostr.util.html_escape(content);
         // insert media tags to content
         content = APP.nostr.gui.http_media_tags_into_text(content);
-        // do p tag replacement
-        content = APP.nostr.gui.tag_replacement(content, evt.tags)
+        // do p,e [n] tag replacement
+        content = APP.nostr.gui.tag_replacement(content, evt.tags);
+        // to in text tag replacement (hashtag)
+        try{
+            content = APP.nostr.gui.tag_text_replacement(content, evt.tags);
+        }catch(e){
+            console.log(e);
+        }
         // add line breaks
         content = content.replace(/\n/g,'<br>');
         // fix special characters as we're rendering in html el
@@ -164,12 +170,9 @@ APP.nostr.gui = function(){
     for #p and #e events
     maybe just hand event in?
 */
-APP.nostr.gui.tag_replacement = function (text, tags){
+APP.nostr.gui.tag_replacement = function (){
     // cache of tag replacement regexs
     let _preregex = {},
-        // profile helper for p lookups, note it can only find profiles
-        _profiles,
-        //
         _replacements = {
             'e' : {
                 'prefix' : '&',
@@ -229,6 +232,54 @@ APP.nostr.gui.tag_replacement = function (text, tags){
         });
     return text;
     }
+}();
+
+APP.nostr.gui.tag_text_replacement = function(){
+    /*
+        similar to tag_replacement but simpler as just replacing given text with click to tags in the content
+        (not [n] style)
+        used currently for hashtag
+    */
+    let _preregex = {},
+        _replacements = {
+            'hashtag': {
+                'get_match': function(val){
+                    return get_regex('#'+val);
+                },
+                'get_replacement': function(val){
+                    return '<a href="/html/event_search.html?search_str=%23'+ val +'" style="color:cyan;cursor:pointer;text-decoration: none;">#'+ val +'</a>'
+                }
+            }
+        };
+
+    function get_regex(val){
+        let regex = _preregex[val];
+        if(regex===undefined){
+            regex = new RegExp(val,'g');
+            _preregex[val] = regex;
+        }
+        return regex;
+    }
+
+
+    return function(text, tags){
+        let todo,
+            t_name,
+            t_val;
+        tags.forEach(function(c_tag,i){
+            if(c_tag.length>1){
+                t_name = c_tag[0];
+                todo = _replacements[t_name];
+                if(todo !== undefined){
+                    t_val = c_tag[1];
+                    text = text.replace(todo.get_match(t_val), todo.get_replacement(t_val));
+                }
+            }
+
+
+        });
+        return text;
+    };
 }();
 
 APP.nostr.gui.util = function(){
@@ -2523,33 +2574,40 @@ APP.nostr.gui.post_modal = function(){
         let ret = [],
             to_pub_key = o_event.pubkey,
             to_evt_id = o_event.id,
-            add_pub = true,
-            add_evt = true;
+            t_name,
+            t_val,
+            to_add;
+
+
+        function good_value(t_val){
+            return t_val!==undefined && t_val!==null && t_val!=='';
+        }
+        function our_add(t_name, t_val){
+            return (t_name==='p' && t_val===to_pub_key) ||
+                (t_name==='e' && t_val===to_evt_id);
+        }
+
         // copy all tags, don't thinnk it matters much but also check that
         // we're not going to dupl the p or e tags that we are going to add
         o_event.tags.forEach(function(c_tag,i){
             // tags from the original event that are kept
             const keep = new Set(['p','e']);
-
-            // if it has a val and is a tag that we keep then add
-            if(keep.has(c_tag[0]) && c_tag[1]!==undefined && c_tag[1]!==null && c_tag[1]!==''){
-                ret.push(c_tag);
-                // don't think its a problem but won't duplicate anyhow
-                if((c_tag[0]==='p' && c_tag[1]===to_pub_key)){
-                    add_pub = false;
+            t_name = c_tag[0];
+            t_val = c_tag[1];
+            // its a tag we keep on replies
+            if(keep.has(t_name) && good_value(t_val) && !our_add(t_name, t_val)){
+                to_add = [t_name,t_val];
+                if(t_name==='e' && c_tag[3]==='reply'){
+                    to_add.push('');
+                    to_add.push('root');
                 }
-                if((c_tag[0]==='e' && c_tag[1]===to_evt_id)){
-                    add_evt = false;
-                }
-            }
+                ret.push(to_add);
+            };
         });
 
-        if(add_pub){
-            ret.push(['p', to_pub_key]);
-        }
-        if(add_evt){
-            ret.push(['e', to_evt_id]);
-        }
+        // tags we're specifically adding
+        ret.push(['p', to_pub_key]);
+        ret.push(['e', to_evt_id, '', 'reply']);
 
         return ret;
     }

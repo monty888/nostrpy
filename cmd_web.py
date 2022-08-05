@@ -234,7 +234,7 @@ def run_web(clients,
 
 
 def run():
-    db_file = WORK_DIR + 'nostr-client-test-d2.db'
+    db_file = WORK_DIR + 'nostr-client.db'
     db_type = 'sqlite'
     full_text = True
     is_tor = False
@@ -242,16 +242,16 @@ def run():
 
     # who to attach to
     clients = [
-        {
-            'client': 'wss://nostr-pub.wellorder.net',
-            'write': True
-        },
-        # 'ws://localhost:8081',
+        # {
+        #     'client': 'wss://nostr-pub.wellorder.net',
+        #     'write': True
+        # },
+        'ws://localhost:8081',
         # 'ws://localhost:8083',
-        {
-            'client': 'wss://relay.damus.io',
-            'write': True
-        }
+        # {
+        #     'client': 'wss://relay.damus.io',
+        #     'write': True
+        # }
     ]
 
 
@@ -299,9 +299,13 @@ def run():
                 web_dir=web_dir)
 
 if __name__ == "__main__":
-    # logging.getLogger().setLevel(logging.DEBUG)
+    logging.getLogger().setLevel(logging.DEBUG)
 
     run()
+
+    # my_str="👍"
+    # print(my_str.encode())
+
     from nostr.client.event_handlers import EventHandler
     # is_done = False
     #

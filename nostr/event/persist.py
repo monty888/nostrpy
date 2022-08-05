@@ -734,7 +734,7 @@ class SQLiteEventStore(SQLEventStore):
                 create table event_tags(
                     id int,  
                     type text,  
-                    value text,
+                    value text collate nocase,
                     UNIQUE(id, type, value) ON CONFLICT IGNORE    
                 )
                 """

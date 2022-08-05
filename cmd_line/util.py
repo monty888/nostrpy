@@ -157,6 +157,16 @@ class FormattedEventPrinter:
             txt_arr.append(('', '\n%s-> ' % depth_align, ))
             txt_arr = txt_arr + to_list
 
+        subject_tags = evt.get_tags_value('subject')
+        if subject_tags:
+            txt_arr.append(('', '\n%s' % depth_align))
+            txt_arr.append(('', '[subject - %s]' % ','.join(subject_tags)))
+
+        hash_tags = evt.get_tags_value('hashtag')
+        if hash_tags:
+            txt_arr.append(('', '\n%s' % depth_align))
+            txt_arr.append(('', '[hashtags - %s]' % ','.join(hash_tags)))
+
         # if to_list:
         #     ret_arr.append('%s-> %s' % (depth_align, to_list))
         #
@@ -167,6 +177,8 @@ class FormattedEventPrinter:
         txt_arr.append(('', '%s' % evt.created_at))
 
         print_formatted_text(FormattedText(txt_arr))
+
+
 
     def tag_substitution(self, content: str, tags: []):
         """
@@ -245,4 +257,5 @@ class FormattedEventPrinter:
         print_formatted_text(FormattedText(self.highlight_tags(content=content,
                                                                p_tags=evt.p_tags,
                                                                default_style=style)))
+
 

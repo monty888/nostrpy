@@ -236,21 +236,23 @@ class PersistEventHandler:
         try:
             with self._lock:
                 for c_evt_chunk in evt:
-                    try:
-                        self._store.add_event_relay(c_evt_chunk, relay)
-                        if len(evt)>1:
-                            time.sleep(0.1)
-                    except Exception as e:
-                        # nasty but the lock we have only applies to events coming thorught... profiles also might be done via
-                        # batch and could lock the db, (profile backfill done at EOSE too) if we chunk the profiles hopefully
-                        # this wouldn't be needed
-                        if 'locked' in str(e):
-                            print('wait and try once....')
-                            time.sleep(3)
+                    is_done = False
+                    while not is_done:
+                        try:
                             self._store.add_event_relay(c_evt_chunk, relay)
+                            time.sleep(0.1)
+                            is_done = True
+                        except Exception as be:
+                            # nasty but the lock we have only applies to events coming thorught... profiles also might be done via
+                            # batch and could lock the db, (profile backfill done at EOSE too) if we chunk the profiles hopefully
+                            # this wouldn't be needed
+                            if 'locked' in str(be):
+                                print('wait and continue trying')
+                                time.sleep(3)
+                            else:
+                                is_done = True
 
 
-                # self._store.add_event_relay(evt, relay)
         except Exception as e:
             id = 'batched events'
             if not hasattr(evt,'__iter__'):
