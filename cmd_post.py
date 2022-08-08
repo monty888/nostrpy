@@ -30,7 +30,7 @@ PROFILE_STORE = SQLProfileStore(DB)
 # RELAYS = ['wss://rsslay.fiatjaf.com','wss://nostr-pub.wellorder.net']
 # RELAYS = ['wss://rsslay.fiatjaf.com']
 # RELAYS = ['ws://localhost:8081']
-RELAYS = ['ws://localhost:8081','ws://localhost:8082']
+RELAYS = ['ws://localhost:8081']
 # RELAYS = ['wss://nostr-pub.wellorder.net']
 
 
@@ -257,6 +257,6 @@ def run_post():
 
 
 if __name__ == "__main__":
-    logging.getLogger().setLevel(logging.DEBUG)
+    # logging.getLogger().setLevel(logging.DEBUG)
     run_post()
 

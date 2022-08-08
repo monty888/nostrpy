@@ -15,6 +15,7 @@ from nostr.event.persist import ClientSQLEventStore, ClientSQLiteEventStore, Cli
 from nostr.client.event_handlers import PrintEventHandler, PersistEventHandler, EventAccepter, DeduplicateAcceptor, LengthAcceptor, ProfileEventHandler
 from nostr.util import util_funcs
 from nostr.event.event import Event
+from nostr.encrypt import Keys
 from app.post import PostApp
 from cmd_line.util import EventPrinter, FormattedEventPrinter
 
@@ -25,8 +26,9 @@ DB_FILE = '%s/nostr-client-test.db' % WORK_DIR
 # RELAYS = ['wss://rsslay.fiatjaf.com','wss://nostr-pub.wellorder.net']
 # RELAYS = ['wss://rsslay.fiatjaf.com']
 # RELAYS = ['wss://relay.damus.io']
-RELAYS = ['ws://localhost:8081','wss://nostr-pub.wellorder.net','wss://rsslay.fiatjaf.com','wss://relay.damus.io']
-
+# RELAYS = ['ws://localhost:8081','wss://nostr-pub.wellorder.net','wss://rsslay.fiatjaf.com','wss://relay.damus.io']
+# RELAYS = ['wss://nostr-pub.wellorder.net']
+RELAYS = ['ws://localhost:8081']
 AS_PROFILE = None
 VIEW_PROFILE = None
 INBOX = None
@@ -36,14 +38,18 @@ SINCE = 24
 def usage():
     print("""
 usage:
-
-
+-h, --help                  displays this text
+--as_profile                profile_name, priv_k or pub_k of user to view as. If only created from pub_k then kind 4
+                            encrypted events will be left encrypted.
+--view_profiles             comma seperated list of profile_name or pub_k that will be included for view
+--inbox                     profile_name or priv_k of mailbox to check for CLUST wrapped messages
+--since                     show events n hours previous to running - default 24
+--until                     show events n hours after since    
 
     """)
     sys.exit(2)
 
 def get_from_config(config,
-                    profile_store: ProfileStoreInterface,
                     profiles: ProfileEventHandler):
     as_user = None
     all_view = []
@@ -56,12 +62,22 @@ def get_from_config(config,
     # you specify view_profiles.
     # in either case without as_user it's not possible to decrypt any evts
     if config['as_user'] is not None:
-        as_user = profiles.profiles.get_profile(config['as_user'], create_type='public')
+        as_key = config['as_user']
+        as_user = profiles.profiles.get_profile(as_key)
+
         if not as_user:
-            print('unable to find/create as_user profile - %s' % config['as_user'])
-            sys.exit(2)
+            if Keys.is_key(as_key):
+                # just create a tmp profile using key as pub_key maybe no meta or we just didn't fetch it yet
+                # (which would be case on first run because profile store would be empty)
+                as_user = Profile(pub_k=as_key, attrs={
+                    'name': 'adhoc from pub_k'
+                })
+
+            else:
+                print('unable to find/create as_user profile - %s' % as_key)
+                sys.exit(2)
         c_c: Contact
-        for c_c in as_user.load_contacts(profile_store):
+        for c_c in as_user.load_contacts(profiles.store):
             all_view.append(profiles.profiles.get_profile(c_c.contact_public_key,
                                                           create_type=ProfileList.CREATE_PUBLIC))
 
@@ -93,7 +109,7 @@ def get_from_config(config,
                 inboxes.append(p)
                 inbox_keys.append(p.public_key)
 
-    if as_user is not None:
+    if as_user is not None and as_user.private_key:
         shared_keys = PostApp.get_clust_shared_keymap_for_profile(as_user, all_view)
 
     try:
@@ -172,14 +188,14 @@ class MyAccept(EventAccepter):
 def run_watch(config):
     my_db = SQLiteDatabase(DB_FILE)
     event_store:ClientEventStoreInterface = None
-    event_store = ClientSQLiteEventStore(DB_FILE, full_text=True)
+    # event_store = ClientSQLiteEventStore(DB_FILE, full_text=True)
     # event_store = ClientMemoryEventStore()
     # my_persist = PersistEventHandler(event_store)
     profile_store = SQLProfileStore(my_db)
     # profile_store = MemoryProfileStore()
     profile_handler = ProfileEventHandler(profile_store)
 
-    config = get_from_config(config, profile_store, profile_handler)
+    config = get_from_config(config, profile_handler)
     as_user = config['as_user']
     view_profiles = config['all_view']
     inboxes = config['inboxes']
@@ -189,18 +205,24 @@ def run_watch(config):
     until = config['until']
 
     def print_run_info():
+        c_p: Profile
+        c_c: Contact
+
         extra_view_profiles = config['view_extra']
         # output running info
         if as_user:
             print('events will be displayed as user %s' % as_user.display_name())
             print('--- follows ---')
-            c_c: Contact
+
             for c_c in as_user.load_contacts(profile_store):
-                print(profile_handler.profiles.get_profile(c_c.contact_public_key).display_name())
+                c_p = profile_handler.profiles.get_profile(c_c.contact_public_key)
+                if c_p:
+                    print(c_p.display_name())
+                else:
+                    print(c_c.contact_public_key)
         else:
             print('runnning without a user')
 
-        c_p: Profile
         if extra_view_profiles:
             print('--- extra profiles ---')
             for c_p in extra_view_profiles:
@@ -212,6 +234,8 @@ def run_watch(config):
                 print(c_p.display_name())
 
         print('showing events from now minus %s hours' % since)
+        if until:
+            print('until %s hours from this point' % until)
 
     # show run info
     print_run_info()
@@ -241,6 +265,12 @@ def run_watch(config):
     my_printer.display_func = my_display
 
     def my_eose(the_client: Client, sub_id: str, events):
+        # seems mutiple filters mean we get unpredictable order from the relay
+        # we probably shouldn't rely on order from relay anyhow
+        def my_sort(evt:Event):
+            return evt.created_at_ticks
+        events.sort(key=my_sort)
+
         profile_handler.do_event(sub_id, events, the_client.url)
         for c_evt in events:
             my_printer.do_event(sub_id, c_evt, the_client)
@@ -249,9 +279,7 @@ def run_watch(config):
         # all metas and contacts ever
         p_filter = {
             'kinds': [Event.KIND_META, Event.KIND_CONTACT_LIST],
-            'since': event_store.get_newest(the_client.url,{
-                'kinds': [Event.KIND_META, Event.KIND_CONTACT_LIST]
-            })
+            'since': profile_store.newest
         }
         # events back to since
         e_filter = {

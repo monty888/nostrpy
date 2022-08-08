@@ -68,16 +68,16 @@ class LengthAcceptor(EventAccepter):
     def accept_event(self, evt: Event) -> bool:
         ret = True
         msg_len = len(evt.content)
-        if self._min and msg_len<self._min:
+        if self._min and msg_len < self._min:
             ret = False
-        if self._max and msg_len>self._max:
+        if self._max and msg_len > self._max:
             ret = False
         return ret
 
 
 class EventHandler(ABC):
 
-    def __init__(self, event_acceptors: [EventAccepter]=[]):
+    def __init__(self, event_acceptors: [EventAccepter] = []):
         if not hasattr(event_acceptors, '__iter__'):
             event_acceptors = [event_acceptors]
         self._event_acceptors = event_acceptors
@@ -111,6 +111,7 @@ class PrintEventHandler(EventHandler):
 
         self._view_on = view_on
         self._profile_handler = profile_handler
+        self._lock= BoundedSemaphore()
         super().__init__(event_acceptors)
 
     def view_on(self):
@@ -121,7 +122,8 @@ class PrintEventHandler(EventHandler):
 
     def do_event(self, sub_id, evt: Event, relay):
         if self._view_on and self.accept_event(evt):
-            self.display_func(sub_id, evt, relay)
+            with self._lock:
+                self.display_func(sub_id, evt, relay)
 
     def display_func(self, sub_id, evt: Event, relay):
         # single line basic evt info, override this if you want something more
@@ -218,7 +220,6 @@ class PersistEventHandler:
                  store: ClientEventStoreInterface,
                  max_insert_batch=5000):
         self._store = store
-        self._lock = BoundedSemaphore()
         self._max_insert_batch = max_insert_batch
         # to check if new or update profile
         # self._profiles = DataSet.from_sqlite(db_file,'select pub_k from profiles')
@@ -234,24 +235,20 @@ class PersistEventHandler:
             evt = [evt]
 
         try:
-            with self._lock:
-                for c_evt_chunk in evt:
-                    is_done = False
-                    while not is_done:
-                        try:
-                            self._store.add_event_relay(c_evt_chunk, relay)
-                            time.sleep(0.1)
+            for c_evt_chunk in evt:
+                is_done = False
+                while not is_done:
+                    try:
+                        self._store.add_event_relay(c_evt_chunk, relay)
+                        time.sleep(0.1)
+                        is_done = True
+                    except Exception as de:
+                        # FIXME: we probably should give up eventually!
+                        if 'locked' in str(de):
+                            logging.debug('PersistEventHandler::do_event db locked, waiting to retry - %s' % de)
+                            time.sleep(3)
+                        else:
                             is_done = True
-                        except Exception as be:
-                            # nasty but the lock we have only applies to events coming thorught... profiles also might be done via
-                            # batch and could lock the db, (profile backfill done at EOSE too) if we chunk the profiles hopefully
-                            # this wouldn't be needed
-                            if 'locked' in str(be):
-                                print('wait and continue trying')
-                                time.sleep(3)
-                            else:
-                                is_done = True
-
 
         except Exception as e:
             id = 'batched events'

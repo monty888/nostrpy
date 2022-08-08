@@ -96,6 +96,14 @@ class ProfileStoreInterface(ABC):
         :return:
         """
 
+    @abstractmethod
+    def newest(self):
+        """
+        returns the date of the most recently updated profile...
+        note as this is self reported care should be taken not to accept profiles with update_at set too far in the futre
+        alternatively we can just set any future dated to the date when we receive?
+        :return: time in ticks
+        """
 
     # method below should work as long as the abstract methods have been implemented
     def new_profile(self,
@@ -404,6 +412,13 @@ class MemoryProfileStore(ProfileStoreInterface):
         else:
             self.put_contacts(contacts)
 
+    def newest(self):
+        """
+            TODO: actually implement, though in most cases if we're looking for newest it will be at startup
+             in which case mem store would be empty and so 0 is correct
+        """
+        return 0
+
 
 class SQLProfileStore(ProfileStoreInterface):
     """
@@ -411,6 +426,7 @@ class SQLProfileStore(ProfileStoreInterface):
         NOTE: batch methods are only correct if events are ordered old>newest
 
     """
+
     def __init__(self, db: Database):
         self._db = db
 
@@ -705,6 +721,15 @@ class SQLProfileStore(ProfileStoreInterface):
             batch = self._prepare_contacts_put(contacts)
 
         return self._db.execute_batch(batch)
+
+    @property
+    def newest(self):
+        ret = self._db.select_sql('select updated_at from profiles order by updated_at desc limit 1')[0]
+        if ret:
+            ret = ret[0]
+        else:
+            ret = 0
+        return ret
 
 
 class SQLiteProfileStore(SQLProfileStore):

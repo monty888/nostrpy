@@ -242,6 +242,7 @@ class FormattedEventPrinter:
                         print('wrapped evt-->')
                         self.print_event_header(evt, depth=1)
                         content = '\t' + nip_decode(evt)
+
             except:
                 could_decode = False
 

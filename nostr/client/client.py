@@ -357,7 +357,7 @@ class Client:
                                               on_close=self._on_close,
                                               on_ping=self._did_comm,
                                               on_pong=self._did_comm)
-            self._ws.run_forever(ping_interval=60, ping_timeout=5)  # Set dispatcher to automatic reconnection
+            self._ws.run_forever(ping_interval=60)  # Set dispatcher to automatic reconnection
 
         # def monitor_thread():
         #     while self._run:

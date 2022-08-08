@@ -234,7 +234,7 @@ def run_web(clients,
 
 
 def run():
-    db_file = WORK_DIR + 'nostr-client.db'
+    db_file = WORK_DIR + 'nostr-client-now.db'
     db_type = 'sqlite'
     full_text = True
     is_tor = False
@@ -242,16 +242,16 @@ def run():
 
     # who to attach to
     clients = [
-        # {
-        #     'client': 'wss://nostr-pub.wellorder.net',
-        #     'write': True
-        # },
-        'ws://localhost:8081',
+        {
+            'client': 'wss://nostr-pub.wellorder.net',
+            'write': True
+        },
+        # 'ws://localhost:8081',
         # 'ws://localhost:8083',
-        # {
-        #     'client': 'wss://relay.damus.io',
-        #     'write': True
-        # }
+        {
+            'client': 'wss://relay.damus.io',
+            'write': True
+        }
     ]
 
 
@@ -367,7 +367,8 @@ if __name__ == "__main__":
     #         time.sleep(0.1)
 
 
-    # p_store = SQLiteProfileStore(WORK_DIR + 'nostr-client-test.db')
+    p_store = SQLiteProfileStore(WORK_DIR + 'nostr-client-test.db')
+    print(p_store.newest)
     # e_store = ClientSQLiteEventStore(WORK_DIR + 'nostr-client-test.db')
     #
     # e_store.relay_list(pub_k='40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486')

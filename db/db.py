@@ -5,6 +5,7 @@
 
 """
 import sqlite3
+from threading import BoundedSemaphore
 import time
 from sqlite3 import Error
 try:
@@ -60,6 +61,11 @@ class SQLiteDatabase(Database, ABC):
 
     def __init__(self, f_name):
         self._f_name = f_name
+        # as SQLite locks the entire db at some point during any update we try and manage writes
+        # so we block ourself and make it less likely to get db locked error...
+        # of course if another instance is being used or another python the db could still end up locked and we'd fail
+        # :(. We only put the locks around writes, reads will leave to fail for the caller to deal with...
+        self._lock = BoundedSemaphore()
 
     def _get_con(self):
         return sqlite3.connect(self._f_name)
@@ -80,25 +86,26 @@ class SQLiteDatabase(Database, ABC):
         # e only local
         was_err = None
 
-        try:
-            c = self._get_con()
-            logging.debug('Database::execute_batch SQL: %s\n ARGS: %s' % (sql,
-                                                                          args))
-            # replace to ? as used by sql_lite
-            sql = sql.replace(':?', self.placeholder)
-            # if [[]] then we're doing a multi insert, not sure this is a perfect test...
-            if args and isinstance(args[0], list):
-                c.executemany(sql, args)
-            else:
-                c.execute(sql,args)
-            c.commit()
-            success = True
-        except Error as e:
-            logging.debug('Database::execute_sql error %s' % e)
-            was_err = e
-        finally:
-            if c:
-                c.close()
+        with self._lock:
+            try:
+                c = self._get_con()
+                logging.debug('Database::execute_batch SQL: %s\n ARGS: %s' % (sql,
+                                                                              args))
+                # replace to ? as used by sql_lite
+                sql = sql.replace(':?', self.placeholder)
+                # if [[]] then we're doing a multi insert, not sure this is a perfect test...
+                if args and isinstance(args[0], list):
+                    c.executemany(sql, args)
+                else:
+                    c.execute(sql,args)
+                c.commit()
+                success = True
+            except Error as e:
+                logging.debug('Database::execute_sql error %s' % e)
+                was_err = e
+            finally:
+                if c:
+                    c.close()
 
         if not catch_err and was_err:
             raise was_err
@@ -116,18 +123,18 @@ class SQLiteDatabase(Database, ABC):
 
         # e only local
         was_err = None
-
-        try:
-            c = self._get_con()
-            c.executemany(sql,args)
-            c.commit()
-            ret = True
-        except Error as e:
-            logging.debug('Database::executemany_sql error %s' % e)
-            was_err = e
-        finally:
-            if c:
-                c.close()
+        with self._lock:
+            try:
+                c = self._get_con()
+                c.executemany(sql,args)
+                c.commit()
+                ret = True
+            except Error as e:
+                logging.debug('Database::executemany_sql error %s' % e)
+                was_err = e
+            finally:
+                if c:
+                    c.close()
 
         if not catch_err and was_err:
             raise was_err
@@ -145,34 +152,35 @@ class SQLiteDatabase(Database, ABC):
         ret = False
         was_err = None
         c = None
-        try:
-            c = self._get_con()
-            curs = c.cursor()
-            curs.execute('begin')
-            for c_cmd in batch:
-                args = []
-                sql = c_cmd['sql']
-                if 'args' in c_cmd:
-                    args = c_cmd['args']
-                logging.debug('Database::execute_batch SQL: %s\n ARGS: %s' % (sql,
-                                                                              args))
-                # as execute_sql to do multiple row insert if [[]]
-                if args and isinstance(args[0], list):
-                    curs.executemany(sql, args)
-                else:
-                    curs.execute(sql, args)
+        with self._lock:
+            try:
+                c = self._get_con()
+                curs = c.cursor()
+                curs.execute('begin')
+                for c_cmd in batch:
+                    args = []
+                    sql = c_cmd['sql']
+                    if 'args' in c_cmd:
+                        args = c_cmd['args']
+                    logging.debug('Database::execute_batch SQL: %s\n ARGS: %s' % (sql,
+                                                                                  args))
+                    # as execute_sql to do multiple row insert if [[]]
+                    if args and isinstance(args[0], list):
+                        curs.executemany(sql, args)
+                    else:
+                        curs.execute(sql, args)
 
 
-            c.commit()
-            logging.debug('Database::execute_batch commit done')
-            ret = True
-        except Error as e:
-            was_err = e
-            logging.debug('Database::execute_batch error - not committed %s' % e)
+                c.commit()
+                logging.debug('Database::execute_batch commit done')
+                ret = True
+            except Error as e:
+                was_err = e
+                logging.debug('Database::execute_batch error - not committed %s' % e)
 
-        finally:
-            if c:
-                c.close()
+            finally:
+                if c:
+                    c.close()
 
         if not catch_err and was_err:
             raise was_err
