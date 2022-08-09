@@ -9,6 +9,7 @@ from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
 import secp256k1
+import bech32
 from enum import Enum
 
 
@@ -57,6 +58,12 @@ class Keys:
             except:
                 pass
         return ret
+
+    @staticmethod
+    def bech32(key_str: str, prefix='npub'):
+        as_int = [int(key_str[i:i+2], 16) for i in range(0,len(key_str),2)]
+        data = bech32.convertbits(as_int, 8, 5)
+        return bech32.bech32_encode('npub',data)
 
 
 class SharedEncrypt:

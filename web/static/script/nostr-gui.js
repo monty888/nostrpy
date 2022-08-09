@@ -244,7 +244,7 @@ APP.nostr.gui.tag_text_replacement = function(){
         _replacements = {
             'hashtag': {
                 'get_match': function(val){
-                    return get_regex('#'+val);
+                    return get_regex('#'+val+'($|\\s)');
                 },
                 'get_replacement': function(val){
                     return '<a href="/html/event_search.html?search_str=%23'+ val +'" style="color:cyan;cursor:pointer;text-decoration: none;">#'+ val +'</a>'
@@ -266,17 +266,14 @@ APP.nostr.gui.tag_text_replacement = function(){
         let todo,
             t_name,
             t_val;
+
         tags.forEach(function(c_tag,i){
-            if(c_tag.length>1){
-                t_name = c_tag[0];
-                todo = _replacements[t_name];
-                if(todo !== undefined){
-                    t_val = c_tag[1];
-                    text = text.replace(todo.get_match(t_val), todo.get_replacement(t_val));
-                }
+            t_name = c_tag[0];
+            todo = _replacements[t_name];
+            if(todo){
+                t_val = c_tag[1];
+                text = text.replace(todo.get_match(t_val), todo.get_replacement(t_val+'$1'));
             }
-
-
         });
         return text;
     };
@@ -3358,12 +3355,13 @@ APP.nostr.gui.request_private_key_modal = function(){
 
 
 /*
-    using https://robohash.org/ so we can provide unique profile pictures even where user hasn't set one
-    url route here so that at some point we can use the lib and create local route to do the same
+    using https://robohash.org/ so we can provide unique profile pictures
+    now moved to a local route using code from robohash 1.1
+    https://pypi.org/project/robohash/ which is the source for the website
 */
 APP.nostr.gui.robo_images = function(){
-    let _root_url = 'https://robohash.org/';
-
+//    let _root_url = 'https://robohash.org/';
+    let _root_url = '/robo_images';
     return {
         // change the server that we're getting robos from
         'set_root': function(url){

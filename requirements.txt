@@ -39,7 +39,6 @@ PyNaCl==1.5.0
 pynput==1.7.6
 pyOpenSSL==22.0.0
 python-xlib==0.31
-rel==0.4.7
 requests==2.27.1
 secp256k1==0.14.0
 service-identity==21.1.0

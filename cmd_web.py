@@ -244,13 +244,13 @@ def run():
     clients = [
         {
             'client': 'wss://nostr-pub.wellorder.net',
-            'write': True
+            'write': False
         },
-        # 'ws://localhost:8081',
+        'ws://localhost:8081',
         # 'ws://localhost:8083',
         {
             'client': 'wss://relay.damus.io',
-            'write': True
+            'write': False
         }
     ]
 
@@ -299,7 +299,7 @@ def run():
                 web_dir=web_dir)
 
 if __name__ == "__main__":
-    logging.getLogger().setLevel(logging.DEBUG)
+    # logging.getLogger().setLevel(logging.DEBUG)
 
     run()
 
@@ -367,11 +367,10 @@ if __name__ == "__main__":
     #         time.sleep(0.1)
 
 
-    p_store = SQLiteProfileStore(WORK_DIR + 'nostr-client-test.db')
-    print(p_store.newest)
-    # e_store = ClientSQLiteEventStore(WORK_DIR + 'nostr-client-test.db')
-    #
-    # e_store.relay_list(pub_k='40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486')
+    # pub_k = '32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245'
+    # from nostr.encrypt import Keys
+    # print(Keys.bech32(pub_k))
+
 
 
     #

@@ -8,13 +8,16 @@ if TYPE_CHECKING:
     pass
 
 import json
+from io import BytesIO
 from json import JSONEncoder
 from datetime import datetime
 import re
 from json import JSONDecodeError
 from bottle import request, Bottle, static_file, abort
 from beaker import session
-
+from robohash import Robohash
+from bottle import response
+from functools import lru_cache
 import logging
 from pathlib import Path
 from gevent.pywsgi import WSGIServer
@@ -209,9 +212,9 @@ class NostrWeb(StaticServer):
     def _add_routes(self):
         # methods wrapped so that if they raise NostrException it'll be returned as json {error: text}
         def _get_err_wrapped(method):
-            def _wrapped():
+            def _wrapped(**kargs):
                 try:
-                    return method()
+                    return method(**kargs)
                 except NostrWebException as ne:
                     return {
                         'error' : ne.args[0]
@@ -257,15 +260,16 @@ class NostrWeb(StaticServer):
         self._app.route('/relay_list', callback=_get_err_wrapped(self._relay_list))
 
         self._app.route('/websocket', callback=self._handle_websocket)
-        self._app.route('/count', callback=self._count)
+        # self._app.route('/count', callback=self._count)
+        self._app.route('/robo_images/<hash_str>', callback=_get_err_wrapped(self._get_robohash))
 
 
-    def _count(self):
-        if 'count' not in self.session:
-            self.session['count'] = 0
-
-        self.session['count'] += 1
-        return str(self.session['count'])
+    # def _count(self):
+    #     if 'count' not in self.session:
+    #         self.session['count'] = 0
+    #
+    #     self.session['count'] += 1
+    #     return str(self.session['count'])
 
 
     def _home_route(self):
@@ -1016,6 +1020,19 @@ class NostrWeb(StaticServer):
         return {
             'relays': self._event_store.relay_list(pub_k)
         }
+
+    @lru_cache(maxsize=1000)
+    def _get_robo(self, val):
+        rh = Robohash(val)
+        rh.assemble(roboset='set1')
+        image_buffer = BytesIO()
+        rh.img.save(image_buffer, format='png')
+        image_buffer.seek(0)
+        return image_buffer.read()
+
+    def _get_robohash(self, hash_str):
+        response.set_header('Content-type', 'image/png')
+        return self._get_robo(hash_str)
 
     def do_event(self, sub_id, evt: Event, relay):
         if self._dedup.accept_event(evt):
