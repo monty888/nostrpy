@@ -301,10 +301,6 @@ class ProfileEventHandler:
         atleast until we see a newer event ourself...
     """
 
-    LOCK_NEVER = 0
-    LOCK_BATCH = 1
-    LOCK_ALWAYS = 2
-
     def __init__(self,
                  profile_store: 'ProfileStoreInterface',
                  on_profile_update=None,
@@ -314,8 +310,6 @@ class ProfileEventHandler:
         self._profiles = self._store.select_profiles()
         self._on_profile_update = on_profile_update
         self._on_contact_update = on_contact_update
-        self._lock = BoundedSemaphore()
-        lock_mode = ProfileEventHandler.LOCK_BATCH
 
     # update locally rather than via meta 0 event
     # only used to link prov_k or add/change profile name
@@ -362,12 +356,11 @@ class ProfileEventHandler:
 
         p_e, p = self._get_to_update_profiles(evts)
 
-        with self._lock:
-            self._store.put_profile(p)
+        self._store.put_profile(p)
 
         # update local cache
         for c_p in p:
-            self.profiles.put(c_p)
+            self._profiles.put(c_p)
 
         # fire update if any, probably change to send as batch too
         if self._on_profile_update:

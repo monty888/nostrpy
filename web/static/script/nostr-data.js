@@ -265,6 +265,11 @@ APP.nostr.data.user = function(){
         'enable_media' : function(val){
             return _property('enable_media', val, true);
         },
+        'enable_web_preview': function(){
+            let wp = _property('enable_web_preview', val, true);
+            // media also needs to be enabled
+            return wp && APP.nostr.data.user.enable_media();
+        },
         // prob only for debugging, should be on
         // session store of profiles we've seen
         // NOTE until we get the client to put on seeing meta events
@@ -340,7 +345,7 @@ APP.nostr.data.profiles = function(){
 
     function _get_picture(p){
         let ret;
-        if((!APP.nostr.data.user.enable_media()) || p.attrs.picture===undefined || p.attrs.picture===''){
+        if(p.attrs.picture===undefined || p.attrs.picture===''){
             ret = APP.nostr.gui.robo_images.get_url({
                 'text' : p.pub_k
             });
@@ -556,21 +561,24 @@ APP.nostr.data.profiles = function(){
         return ret;
     }
 
-    function put(p, overwrite){
+    function put(p){
         /* ideally all profiles would be got via search/fetch or we register here to see updates
-            on remote requests. As thats not the case at the moment use the put method to make a profile
-            globally available
+            on remote requests. At the moment all calls to do we profiles are not done through here
+            so we expose a put method. The given profile will alway overwrite anything we have and be marked as loaded
         */
-        overwrite = overwrite|| false;
-        let c_val = _lookup[p.pub_k];
-        // note this is change the obj that we were given... its probably what we want anyway
+
+        // clean the profile obj to what we expect
         _clean_profile(p);
-        if(c_val===undefined||overwrite===true){
-            c_val = _lookup[p.pub_k] = {
-                'state' : 'loaded',
-                'profile' : p
-            };
+
+        c_val = _lookup[p.pub_k] = {
+            'profile' : p,
+            'state': 'loaded'
+        };
+
+        if(_session_cache){
+            APP.nostr.data.state.put('profile-'+p.pub_k, JSON.stringify(p));
         }
+        console.log('put p mofo!!!');
         return c_val;
     }
 
@@ -689,6 +697,9 @@ APP.nostr.data.nostr_event = function(event){
         'get_first_tag_value' : get_first_tag_value,
         'get_first_p_tag_value' : function(test_func){
             return get_first_tag_value('p', test_func);
+        },
+        'copy': function(){
+            return APP.nostr.data.nostr_event($.extend({},_data));
         }
 
     }, _data);

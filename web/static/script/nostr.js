@@ -43,7 +43,7 @@ APP.nostr = {
             });
         },
         'http_matches' : function(txt){
-            const http_regex = /(https?\:\/\/[\w\.\/\-\%\?\=\~\+\@\&\;\#\:]*)/g
+            const http_regex = /(https?\:\/\/[\w\.\/\-\%\?\=\~\+\@\&\;\#\:,]*)|(\s|^)(\w*\.){1,3}\w{2,3}(?=\s|$)/g
             return txt.match(http_regex);
         },
         'copy_clipboard' : function copy_clipboard(value, success_text, fail_text){

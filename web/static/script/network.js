@@ -79,7 +79,6 @@ APP.remote = function(){
             call_args['contentType'] = args['contentType'];
         }
 
-
         if(cache){
             if(force_new!==true){
                 the_cache = _loading_cache[key];
@@ -156,6 +155,14 @@ APP.remote = function(){
 
     }
 
+    function make_events(evt_data){
+        let ret = []
+        evt_data.forEach(function(c_evt){
+            ret.push(APP.nostr.data.nostr_event(c_evt));
+        });
+        return ret
+    }
+
     return {
         'load_profiles' : function(args){
 
@@ -230,22 +237,36 @@ APP.remote = function(){
 //            do_query(args);
 //        },
         'load_notes_from_profile': function(args){
+            let o_success = args.success;
+
             args['url'] = _note_for_profile_url;
             args['params'] = {
                 'pub_k' : args['pub_k']
-            },
+            };
+            args.success = function(data){
+                data.events = make_events(data.events);
+                o_success(data);
+            };
             do_query(args);
         },
         'load_notes_for_profile': function(args){
+            let o_success = args.success;
+
             args['url'] = _note_for_profile_url;
             args['params'] = {
                 'pub_k' : args['pub_k']
+            };
+            args.success = function(data){
+                data.events = make_events(data.events);
+                o_success(data);
             };
 
             do_query(args);
         },
         'load_events' : function(args){
-            let filter = args.filter===undefined ? {'kinds':[1]} : args.filter;
+            let filter = args.filter===undefined ? {'kinds':[1]} : args.filter,
+                o_success = args.success;
+
             args['url'] = _events_by_filter_url;
             args['method'] = 'POST';
             // this should be pub_k of the profile were using and is only required
@@ -256,6 +277,12 @@ APP.remote = function(){
                 };
             }
             args['data'] = 'filter=' + filter.as_str();
+
+            args.success = function (data){
+                data.events = make_events(data.events);
+                o_success(data);
+            };
+
             do_query(args);
         },
         'load_messages' : function(args){
@@ -264,20 +291,22 @@ APP.remote = function(){
                 'pub_k' : args.pub_k
             };
             args['prepare'] = function (data){
-                let ret = []
-                data.events.forEach(function(c_evt){
-                    ret.push(APP.nostr.data.nostr_event(c_evt));
-                });
-                data.events = ret;
-
+                data.events = make_events(data.events);
                 return data;
             };
             do_query(args);
         },
         'text_events_search' : function(args){
+            let o_success = args.success;
+
             args['url'] = _events_by_seach_str;
             args['params'] = {
                 'search_str' : args['search_str']
+            };
+
+            args.success = function (data){
+                data.events = make_events(data.events);
+                o_success(data);
             };
             do_query(args);
         },
@@ -418,7 +447,7 @@ APP.nostr_client = function(){
                 }else{
                     // nostr event
                     if(data.kind!==undefined){
-                        APP.nostr.data.event.fire_event('event', data);
+                        APP.nostr.data.event.fire_event('event', APP.nostr.data.nostr_event(data));
                     }
                 }
             }

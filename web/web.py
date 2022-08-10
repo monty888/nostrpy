@@ -261,8 +261,8 @@ class NostrWeb(StaticServer):
 
         self._app.route('/websocket', callback=self._handle_websocket)
         # self._app.route('/count', callback=self._count)
-        self._app.route('/robo_images/<hash_str>', callback=_get_err_wrapped(self._get_robohash))
-
+        self._app.route('/robo_images/<hash_str>', callback=_get_err_wrapped(self._get_robo_route))
+        self._app.route('/web_preview', callback=_get_err_wrapped(self._get_web_preview_route))
 
     # def _count(self):
     #     if 'count' not in self.session:
@@ -589,7 +589,7 @@ class NostrWeb(StaticServer):
         update_profile = Profile(priv_k=the_profile.private_key,
                                  pub_k=the_profile.public_key,
                                  attrs={
-                                    'picture' : picture,
+                                    'picture': picture,
                                     'name': name,
                                     'about': about
                                  },
@@ -1024,15 +1024,31 @@ class NostrWeb(StaticServer):
     @lru_cache(maxsize=1000)
     def _get_robo(self, val):
         rh = Robohash(val)
-        rh.assemble(roboset='set1')
+        rh.assemble(roboset='set1', sizex=128,sizey=128)
         image_buffer = BytesIO()
         rh.img.save(image_buffer, format='png')
         image_buffer.seek(0)
         return image_buffer.read()
 
-    def _get_robohash(self, hash_str):
+    def _get_robo_route(self, hash_str):
         response.set_header('Content-type', 'image/png')
         return self._get_robo(hash_str)
+
+    @lru_cache()
+    def _get_web_preview(self, for_url):
+        from webpreview import webpreview
+        p = webpreview(for_url)
+        return {
+            'title': p.title,
+            'description': p.description,
+            'img': p.image
+        }
+
+    def _get_web_preview_route(self):
+        for_url = request.query.for_url
+        if not for_url:
+            raise NostrWebException('parameter for_url is required')
+        return self._get_web_preview(for_url)
 
     def do_event(self, sub_id, evt: Event, relay):
         if self._dedup.accept_event(evt):

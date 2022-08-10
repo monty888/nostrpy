@@ -4,7 +4,7 @@ APP.nostr.gui = function(){
     let _id=0,
         // templates for rendering different media
         // external_link
-        _link_tmpl = '<a href="{{url}}">{{url}}</a>',
+        _link_tmpl = '<a href="{{url}}">{{text}}</a>',
         // image types e.g. jpg, png
         _img_tmpl = '<img src="{{url}}" width=100% height=auto style="display:block;border-radius:10px;" />',
         // video
@@ -52,7 +52,7 @@ APP.nostr.gui = function(){
             },
             parts = ref_str.toLowerCase().split('.'),
             ext = parts[parts.length-1],
-            ret = 'external_link';
+            ret = 'external';
 
         if(ext in media_types){
             ret = media_types[ext];
@@ -62,13 +62,18 @@ APP.nostr.gui = function(){
 
     function http_media_tags_into_text(text, tmpl_lookup){
         // first make the text safe
-        let ret = text,
+        let ret = {
+                'text': text,
+                'image': [],
+                'video': [],
+                'external': []
+            },
             // look for link like strs
-            http_matches = APP.nostr.util.http_matches(ret),
+            http_matches = APP.nostr.util.http_matches(text),
             enable_media = APP.nostr.data.user.enable_media();
 
         /* by default everything, if enable_media is false everything will be rendered
-            as external_link, perhaps enable even this level to be turn off
+            as _link, perhaps enable even this level to be turn off
             or just dont call and just make text safe ... maybe enable media should
             be changed from true/false
             0 - no media whatsoever and text rendered unclickable (user has to physically copy paste)
@@ -78,7 +83,7 @@ APP.nostr.gui = function(){
         */
         tmpl_lookup = tmpl_lookup || {
             'image' : _img_tmpl,
-            'external_link' : _link_tmpl,
+            'external' : _link_tmpl,
             'video' : _video_tmpl
         };
 
@@ -88,10 +93,18 @@ APP.nostr.gui = function(){
             http_matches.forEach(function(c_match){
                 // how to render, unless enable media is false in which case just the link is out put
                 // another level of safety would be that these links are rendered inactive and need the user
-                // to perform some action to actaully enable them
-                let media_type = enable_media===true ? APP.nostr.gui.media_lookup(c_match) : 'external_link';
-                ret = ret.replace(c_match,Mustache.render(tmpl_lookup[media_type],{
-                    'url' : c_match
+                // to perform some action to actually enable them
+                let media_type = enable_media===true ? APP.nostr.gui.media_lookup(c_match) : 'external',
+                    url = c_match;
+                // co/com style matches... should we default to https here?
+                if(url.indexOf('http')!=0){
+                    url = 'http://'+url;
+                }
+
+                ret[media_type].push(url);
+                ret.text = ret.text.replace(c_match,Mustache.render(tmpl_lookup[media_type],{
+                    'url': url,
+                    'text': c_match
                 }));
             });
         }
@@ -132,25 +145,27 @@ APP.nostr.gui = function(){
     }
 
     function get_note_content_for_render(evt){
-        let content = evt.content;
+        let content = evt.content,
+            http_data;
+
         // make safe
         content = APP.nostr.util.html_escape(content);
         // insert media tags to content
-        content = APP.nostr.gui.http_media_tags_into_text(content);
+        http_data = APP.nostr.gui.http_media_tags_into_text(content);
+        content = http_data.text;
         // do p,e [n] tag replacement
         content = APP.nostr.gui.tag_replacement(content, evt.tags);
         // to in text tag replacement (hashtag)
-        try{
-            content = APP.nostr.gui.tag_text_replacement(content, evt.tags);
-        }catch(e){
-            console.log(e);
-        }
+        content = APP.nostr.gui.tag_text_replacement(content, evt.tags);
         // add line breaks
         content = content.replace(/\n/g,'<br>');
         // fix special characters as we're rendering in html el
         content = APP.nostr.util.html_unescape(content);
 
-        return content;
+        return {
+            'content': content,
+            'external': http_data.external
+        }
     }
 
     return {
@@ -893,6 +908,7 @@ APP.nostr.gui.event_view = function(){
             p,
             attrs,
             pub_k = the_note['pubkey'],
+            note_content = _gui.get_note_content_for_render(the_note, _enable_media),
             to_add = {
                 'is_parent' : the_note.is_parent,
                 'missing_parent' : the_note.missing_parent,
@@ -901,24 +917,31 @@ APP.nostr.gui.event_view = function(){
                 'evt': the_note,
                 'event_id' : the_note.id,
                 'short_event_id' : APP.nostr.util.short_key(the_note.id),
-                'content' : _gui.get_note_content_for_render(the_note, _enable_media),
+                'content' : note_content.content,
                 'short_key' : APP.nostr.util.short_key(pub_k),
                 'pub_k' : pub_k,
                 'picture' : APP.nostr.gui.robo_images.get_url({
-                    'text' : the_note.pub_k
+                    'text' : pub_k
                 }),
                 'at_time': dayjs.unix(the_note.created_at).fromNow(),
                 'can_reply' : function(){
                     return APP.nostr.data.user.profile().pub_k!==undefined;
-                }
+                },
+                'subject': the_note.get_first_tag_value('subject')
             };
 
+
+            if(note_content.external.length>0){
+                to_add.external = note_content.external[0];
+            }
 
             p = _profiles.lookup(name);
             if(p!==null){
                 attrs = p['attrs'];
                 to_add['name'] = attrs['name'];
-                to_add.picture = p.picture;
+                if(_enable_media){
+                    to_add.picture = p.picture;
+                }
             }
 
             return to_add;
@@ -992,7 +1015,7 @@ APP.nostr.gui.event_view = function(){
                             event_id = parts[0],
                             type = parts[1],
                             evt = _event_map[event_id] !==undefined ? _event_map[event_id].event : null;
-
+                        alert(type)
                         if(type==='expand'){
                             _expand_event(evt);
                         }else if(type==='pt' || type==='pp'){
@@ -1005,6 +1028,10 @@ APP.nostr.gui.event_view = function(){
                                 'event' : _event_map[event_id].event
                             });
                         // anywhere else click to event, to change
+                        }else if(type==='preview'){
+
+
+
                         }else if(evt!==null && type==='content'){
                             _event_clicked(evt);
                         }
@@ -1042,7 +1069,7 @@ APP.nostr.gui.event_view = function(){
                 let tag,j,parent;
                 // everything is done on a copy of the event as we're going to add some of
                 // our own fields
-                c_evt = jQuery.extend({}, c_evt);
+                c_evt = c_evt.copy();
 
                 notes_arr_copy.push(c_evt);
                 parent = get_event_parent(c_evt);
@@ -1905,6 +1932,7 @@ APP.nostr.gui.profile_edit = function(){
                             APP.nostr.gui.notification({
                                 'text' : msg_txt
                             });
+                            APP.nostr.data.profiles.put(data.profile, true);
                             APP.nostr.data.event.fire_event('local_profile_update',{});
                             set_state(data.profile)
                             init_page();
@@ -2107,6 +2135,7 @@ APP.nostr.gui.profile_list = function (){
                     render_profile.about = render_profile.about.replace(/\n/g,'<br>');
                 }
             }
+
             if((render_profile.picture===undefined) ||
                 (render_profile.picture===null) ||
                     (_enable_media===false)){
@@ -2361,7 +2390,7 @@ APP.nostr.gui.dm_list = function (){
                     'uid' : _uid,
                     'event_id' : evt.id,
                     'pub_k' : get_to_pub_k(evt),
-                    'content' : _gui.get_note_content_for_render(evt),
+                    'content' : _gui.get_note_content_for_render(evt).content,
                     'at_time' : dayjs.unix(evt.created_at).fromNow()
                 },
                 to_p = _profiles.lookup(ret.pub_k);
@@ -2588,7 +2617,7 @@ APP.nostr.gui.post_modal = function(){
         // we're not going to dupl the p or e tags that we are going to add
         o_event.tags.forEach(function(c_tag,i){
             // tags from the original event that are kept
-            const keep = new Set(['p','e']);
+            const keep = new Set(['p','e','subject']);
             t_name = c_tag[0];
             t_val = c_tag[1];
             // its a tag we keep on replies
@@ -2749,7 +2778,7 @@ APP.nostr.gui.post_modal = function(){
                 render_obj['event'] = jQuery.extend({}, event);
                 render_obj['event'].uid = uid;
                 add_profile_render(render_obj, event.pubkey);
-                render_obj['content'] = gui.get_note_content_for_render(event);
+                render_obj['content'] = gui.get_note_content_for_render(event).content;
             }
 
 
