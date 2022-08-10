@@ -1015,7 +1015,6 @@ APP.nostr.gui.event_view = function(){
                             event_id = parts[0],
                             type = parts[1],
                             evt = _event_map[event_id] !==undefined ? _event_map[event_id].event : null;
-                        alert(type)
                         if(type==='expand'){
                             _expand_event(evt);
                         }else if(type==='pt' || type==='pp'){
