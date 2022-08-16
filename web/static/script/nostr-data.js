@@ -265,7 +265,7 @@ APP.nostr.data.user = function(){
         'enable_media' : function(val){
             return _property('enable_media', val, true);
         },
-        'enable_web_preview': function(){
+        'enable_web_preview': function(val){
             let wp = _property('enable_web_preview', val, true);
             // media also needs to be enabled
             return wp && APP.nostr.data.user.enable_media();
@@ -578,7 +578,6 @@ APP.nostr.data.profiles = function(){
         if(_session_cache){
             APP.nostr.data.state.put('profile-'+p.pub_k, JSON.stringify(p));
         }
-        console.log('put p mofo!!!');
         return c_val;
     }
 

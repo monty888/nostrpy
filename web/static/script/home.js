@@ -96,7 +96,12 @@
         _main_con.css('overflow-y','scroll');
         _views['global'] = init_view(_main_con, _global_filter);
         do_load(function(data){
-            _views['global'].set_notes(data['events']);
+            try{
+                _views['global'].set_notes(data['events']);
+            }catch(e){
+                console.log(e);
+            }
+
         },_global_filter);
     }
 
@@ -157,7 +162,9 @@
         });
 
         APP.nostr.data.event.add_listener('home',function(of_type, data){
-            _my_tabs.set_selected_tab(1);
+            if(_my_tabs){
+                _my_tabs.set_selected_tab(1);
+            }
         });
 
         // saw a new events

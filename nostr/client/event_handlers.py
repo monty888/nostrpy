@@ -397,8 +397,7 @@ class ProfileEventHandler:
 
         c_e, c = self._get_to_update_contacts(evts)
 
-        with self._lock:
-            self._store.put_contacts(c)
+        self._store.put_contacts(c)
 
         # clear contacts of anyone who has been updated
         for i, c_c in enumerate(c):

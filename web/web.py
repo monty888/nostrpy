@@ -14,6 +14,7 @@ from datetime import datetime
 import re
 from json import JSONDecodeError
 from bottle import request, Bottle, static_file, abort
+from webpreview import webpreview
 from beaker import session
 from robohash import Robohash
 from bottle import response
@@ -857,13 +858,16 @@ class NostrWeb(StaticServer):
         search_str = request.query.search_str
         limit = self._get_query_limit()
 
-        def extract_tag(tag_prefix, text):
-            pat = '\\%s(\w*)' % tag_prefix
-            matches = re.findall(pat, text)
+        def extract_tag(tag_prefix, text, with_pat=None):
+            if with_pat is None:
+                with_pat = '\\%s(\w*)' % tag_prefix
+
+            matches = re.findall(with_pat, text)
             for c_match in matches:
                 text = text.replace(tag_prefix + c_match, '')
 
             return matches, text
+
 
         def find_authors(prefixes):
             c_p: Profile
@@ -902,6 +906,12 @@ class NostrWeb(StaticServer):
 
             search_str = ' '.join(search_str.split())
 
+            # subject search... note if present this is greeding and will take all the rest of the content
+            subject, search_str = extract_tag('$', search_str, with_pat='\$([\s\w\-\.]*)')
+            if subject:
+                filter['#subject'] = subject
+
+            # event id
             ids_pres, search_str = extract_tag('&', search_str)
             if ids_pres:
                 filter['ids'] = ids_pres
@@ -1036,7 +1046,6 @@ class NostrWeb(StaticServer):
 
     @lru_cache()
     def _get_web_preview(self, for_url):
-        from webpreview import webpreview
         p = webpreview(for_url)
         return {
             'title': p.title,

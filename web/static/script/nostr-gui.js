@@ -837,7 +837,8 @@ APP.nostr.gui.list = function(){
 
 APP.nostr.gui.event_view = function(){
         // short ref
-    let _gui = APP.nostr.gui;
+    let _gui = APP.nostr.gui,
+        _data = APP.nostr.data;
 
     function _profile_clicked(pub_k){
         location.href = '/html/profile?pub_k='+pub_k;
@@ -886,7 +887,9 @@ APP.nostr.gui.event_view = function(){
             // interval timer for updating times
             _time_interval,
             // for loading profiles
-            _profiles = APP.nostr.data.profiles;
+            _profiles = APP.nostr.data.profiles,
+            // for preview render external links
+            _web_preview_tmpl = APP.nostr.gui.templates.get('web-preview');
 
         function uevent_id(event_id){
             return _uid+'-'+event_id;
@@ -908,7 +911,9 @@ APP.nostr.gui.event_view = function(){
             p,
             attrs,
             pub_k = the_note['pubkey'],
+            preview_data,
             note_content = _gui.get_note_content_for_render(the_note, _enable_media),
+            preview_url,
             to_add = {
                 'is_parent' : the_note.is_parent,
                 'missing_parent' : the_note.missing_parent,
@@ -930,9 +935,17 @@ APP.nostr.gui.event_view = function(){
                 'subject': the_note.get_first_tag_value('subject')
             };
 
-
+            // should only happen if external media and web preview is allowed
             if(note_content.external.length>0){
-                to_add.external = note_content.external[0];
+                preview_url = note_content.external[0];
+                if(to_add_preview(preview_url)){
+                    to_add.external = preview_url;
+                    preview_data = _data.state.get(note_content.external[0]);
+                    if(preview_data!==null){
+                        preview_data = JSON.parse(preview_data);
+                        add_preview_content(to_add, preview_data);
+                    }
+                }
             }
 
             p = _profiles.lookup(name);
@@ -973,13 +986,73 @@ APP.nostr.gui.event_view = function(){
 
         }
 
+        function to_add_preview(url){
+            let ret = false,
+                url_split = url.split('.'),
+                ignore = ['://twitter.com/'];
+
+            function is_ignore(){
+                let ret = false;
+                for(let i=0;i<ignore.length;i++){
+                    if(url.indexOf(ignore[i])>=0){
+                        ret = true;
+                        break;
+                    }
+                }
+                return ret;
+            }
+
+            if(APP.nostr.data.user.enable_web_preview()){
+
+                // .onions come through are url regex - perhaps we could not match?
+                // anyway we can't preview these so remove...
+                // possubly we're want to not preview others too anyway
+                if((url_split[url_split.length-1].indexOf('onion')!=0) && (!is_ignore())){
+                    ret = true;
+                };
+            }
+            return ret;
+        }
+
+        function _get_preview_event(id){
+            let evt_data = _event_map[id].render_event,
+                url = evt_data.external,
+                my_el = $('#'+_uid+'-'+id+'-preview');
+
+            if(evt_data.preview!==true){
+                APP.remote.web_preview({
+                    'url': url,
+                    'success': function(data){
+                        add_preview_content(evt_data, data);
+                        my_el.html(Mustache.render(_web_preview_tmpl, {
+                            'wp_img': data.img,
+                            'wp_title': data.title,
+                            'wp_description': data.description
+                        }));
+                        _data.state.put(url, JSON.stringify(data));
+                    }
+                });
+            // already showing, clicking goes to
+            }else{
+                window.location=url;
+            }
+        }
+
+        function add_preview_content(r_event, p_data){
+            r_event.preview = true;
+            r_event.wp_img = p_data.img;
+            r_event.wp_title = p_data.title;
+            r_event.wp_description = p_data.description;
+        }
+
         function _row_render(r_obj, i){
             return Mustache.render(_gui.templates.get('event'), r_obj,{
                 'profile' : _gui.templates.get('event-profile'),
                 'path' : _gui.templates.get('event-path'),
                 'content' : _gui.templates.get('event-content'),
-                'actions' : _gui.templates.get('event-actions')
-            })
+                'actions' : _gui.templates.get('event-actions'),
+                'preview' : _web_preview_tmpl
+            });
         }
 
         function _create_contents(){
@@ -1028,9 +1101,7 @@ APP.nostr.gui.event_view = function(){
                             });
                         // anywhere else click to event, to change
                         }else if(type==='preview'){
-
-
-
+                            _get_preview_event(event_id);
                         }else if(evt!==null && type==='content'){
                             _event_clicked(evt);
                         }
@@ -1329,7 +1400,7 @@ APP.nostr.gui.profile_about = function(){
                 _render_obj['name'] = attrs.name;
                 _render_obj['about'] = attrs.about;
                 if(_render_obj.about!==undefined){
-                    _render_obj.about = APP.nostr.gui.http_media_tags_into_text(_render_obj.about, false);
+                    _render_obj.about = APP.nostr.gui.http_media_tags_into_text(_render_obj.about, false).text;
                     _render_obj.about = _render_obj.about.replace().replace(/\n/g,'<br>');
                 }
                 // we'll be able to dm, (mute future?) and follow unfollow
@@ -2130,7 +2201,7 @@ APP.nostr.gui.profile_list = function (){
                 // be better to do this in our data class
                 if(render_profile.about!==undefined && render_profile.about!==null){
 //                    render_profile.about = APP.nostr.util.html_escape(render_profile.about);
-                    render_profile.about = _gui.http_media_tags_into_text(render_profile.about, false);
+                    render_profile.about = _gui.http_media_tags_into_text(render_profile.about, false).text;
                     render_profile.about = render_profile.about.replace(/\n/g,'<br>');
                 }
             }

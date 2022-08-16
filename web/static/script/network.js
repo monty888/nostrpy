@@ -24,6 +24,7 @@ APP.remote = function(){
         _relay_info_url = '/relay_status',
         _relay_list_url = '/relay_list',
         _event_relay_url = '/event_relay',
+        _web_preview_url = '/web_preview',
 
         // to stop making duplicate calls we key here only one call per key will be made
         // either supply a key field else the call_args string is used
@@ -374,6 +375,13 @@ APP.remote = function(){
             args['params'] = {
                 'event_id' : args.event_id
             };
+            do_query(args);
+        },
+        'web_preview' : function(args){
+            args['params'] = {
+                'for_url' : args.url
+            };
+            args['url'] = _web_preview_url;
             do_query(args);
         }
 

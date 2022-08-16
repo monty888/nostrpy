@@ -24,6 +24,24 @@ img{
     max-width:100%;
 }
 
+.web-preview{
+    background-color: #443357;
+    border-radius:10px;
+    height:150px;
+    overflow: hidden;
+    margin:5px;
+}
+
+.web-preview-btn{
+    background-color:#443357;
+}
+
+.web-preview-btn:hover{
+    background-color:#665579;
+    color: white;
+    transition: 1;
+}
+
 .pubkey-text {
     color: cyan;
     font-family : courier;

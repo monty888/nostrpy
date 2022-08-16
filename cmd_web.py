@@ -244,13 +244,13 @@ def run():
     clients = [
         {
             'client': 'wss://nostr-pub.wellorder.net',
-            'write': False
+            'write': True
         },
         'ws://localhost:8081',
         # 'ws://localhost:8083',
         {
             'client': 'wss://relay.damus.io',
-            'write': False
+            'write': True
         }
     ]
 
@@ -302,6 +302,20 @@ if __name__ == "__main__":
     # logging.getLogger().setLevel(logging.DEBUG)
 
     run()
+    # import re
+    # def extract_tag(tag_prefix, text, with_pat=None):
+    #     if with_pat is None:
+    #         with_pat = '\\%s(\w*)' % tag_prefix
+    #
+    #
+    #     matches = re.findall(with_pat, text)
+    #     for c_match in matches:
+    #         text = text.replace(tag_prefix + c_match, '')
+    #
+    #     return matches, text
+    #
+    # print(extract_tag('$', 'test with #hashtag $test ok cool',
+    #                   with_pat='\$([\s\w]*)'))
 
     # my_str="👍"
     # print(my_str.encode())

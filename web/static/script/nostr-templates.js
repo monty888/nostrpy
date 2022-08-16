@@ -284,8 +284,13 @@ APP.nostr.gui.templates = function(){
                 '{{/subject}}',
                 '{{{content}}}',
                 '{{#external}}',
-                    '<div id="{{uid}}-{{event-id}}-preview">',
-                        'PREVIEW',
+                    '<div id="{{uid}}-{{event_id}}-preview">',
+                        '{{#preview}}',
+                            '{{> preview}}',
+                        '{{/preview}}',
+                        '{{^preview}}',
+                            '<button type="button" class="btn btn-block web-preview-btn" >preview</button>',
+                        '{{/preview}}',
                     '</div>',
                 '{{/external}}',
                 '{{> actions}}',
@@ -357,6 +362,20 @@ APP.nostr.gui.templates = function(){
                 '{{> profile}}',
                 // the note content
                 '{{> content}}',
+            '</div>'
+        ],
+        // preview snippets for events
+        'web-preview' : [
+            '<div class="web-preview" >',
+                '{{#wp_img}}',
+                    '<div style="display:table-cell;width:200px" >',
+                        '<img src={{wp_img}} style="border-radius:10px;height:150px;width:auto;min-width:200px;object-fit: cover;" >',
+                    '</div>',
+                '{{/wp_img}}',
+                '<div style="display:table-cell;vertical-align:top;padding-left:10px;">',
+                    '<b>{{wp_title}}</b><br>',
+                    '{{wp_description}}',
+                '</div>',
             '</div>'
         ]
 
