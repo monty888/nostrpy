@@ -18,8 +18,16 @@ from datetime import datetime
 from nostr.util import util_funcs
 from nostr.event.event import Event
 from nostr.client.event_handlers import EventTimeHandler, FileEventHandler
-from threading import Thread
+from threading import Thread, BoundedSemaphore
+from enum import Enum
 
+
+class RunState(Enum):
+    init = -1
+    running = 0
+    starting = 1
+    stopping = 2
+    stopped = 3
 
 class Client:
 
@@ -103,7 +111,7 @@ class Client:
                  emulate_eose=True):
         self._url = relay_url
         self._subs = {}
-        self._run = True
+        self._run = False
         self._ws = None
         self._last_con = None
         self._last_err = None
@@ -117,6 +125,8 @@ class Client:
         self._emulate_eose = emulate_eose
         # NIP11 info for the relay we're connected to
         self._relay_info = None
+
+        self._state = RunState.init
 
     @property
     def url(self):
@@ -344,8 +354,20 @@ class Client:
     def _did_comm(self, ws, data):
         self._reset_status()
 
+    @property
+    def running(self):
+        return self._state == RunState.running
+
+    @property
+    def run_state(self):
+        return self._state
+
     def start(self):
-        # should probably check self._run and error if already true
+        # we should probably error if not correct init or stopped
+        if self._state not in (RunState.init, RunState.stopped):
+            return
+        self._state = RunState.starting
+        self._run = True
 
         # not sure about this at all!?...
         # rel.signal(2, rel.abort)  # Keyboard Interrupt
@@ -370,7 +392,7 @@ class Client:
 
         def my_thread():
             # Thread(target=monitor_thread).start()
-
+            self._state = RunState.running
             while self._run:
                 try:
                     get_con()
@@ -384,6 +406,8 @@ class Client:
                 self._ws = None
                 self._con_fail_count += 1
                 self._is_connected = False
+
+            self._state = RunState.stopped
 
         Thread(target=my_thread).start()
 
@@ -410,6 +434,7 @@ class Client:
         }
 
     def end(self):
+        self._state = RunState.stopping
         self._run = False
         if self._ws:
             self._ws.close()
@@ -478,14 +503,21 @@ class ClientPool:
             where read/write not passed in they'll be True
 
     """
+
     def __init__(self, clients,
                  on_connect=None,
                  on_status=None,
                  on_eose=None):
         # Clients (Relays) we connecting to
         self._clients = {}
+        # guards access to self._clients
+        self._clients_lock = BoundedSemaphore()
         # subscription event handlers keyed on sub ids
         self._handlers = {}
+
+        self._on_connect = on_connect
+        self._on_eose = on_eose
+        self._state = RunState.init
 
         # merge of status from pool, for example a single client connected means we consider connected to be True
         # last con will be newest of any relay we have etc....
@@ -501,43 +533,92 @@ class ClientPool:
         if isinstance(clients, str):
             clients = [clients]
 
+        for c_client in clients:
+            try:
+                the_client = self.add(c_client)
+            except Exception as e:
+                logging.debug('ClientPool::__init__ - %s' % e)
+
+    def add(self, client, auto_start=True) -> Client:
+        """
+        :param auto_start: start the client if the pool is started
+        :param client: client, url str or {
+            'client': url
+            read: true/false
+            write: true/false
+        }
+        :return: Client
+        """
+        ret: Client = None
+        if isinstance(client, str):
+            # read/write default True
+            ret = Client(client,
+                         on_connect=self._on_connect,
+                         on_eose=self._on_eose)
+        elif isinstance(client, Client):
+            ret = client
+            ret.set_on_connect(self._on_connect)
+            ret.set_end_stored_events(self._on_eose)
+        elif isinstance(client, dict):
+            read = True
+            if 'read' in client:
+                read = client['read']
+            write = True
+            if 'write' in client:
+                write = client['write']
+
+            client_url = client['client']
+            ret = Client(client_url,
+                         on_connect=self._on_connect,
+                         on_eose=self._on_eose,
+                         read=read,
+                         write=write)
+
+        if ret.url in self._clients:
+            raise Exception('ClientPool::add - %s attempted to add Client that already exists' % ret.url)
+
+        # error if trying to add when we're stopped or stopping
+        if self._state in (RunState.stopping, RunState.stopped):
+            raise Exception('ClientPool::add - can\'t add new client to pool that is stopped or stoping url - %s' % ret.url)
+
+        # TODO: here we should go through handlers and add any subscriptions if they have be added via subscribe
+        #  method. Need to cahnge the subscrbe to keep a copy of the filter.. NOTE that normally it's better
+        #  to do subscriptions in the on connect method anyhow when using a pool
+
+        # we're started so start the new client
+        if auto_start is True and self._state in (RunState.starting, RunState.running):
+            # starts it if not already running, if it's started and we're not should we do anything?
+            ret.start()
+
+        # for monitoring the relay connection
         def get_on_status(relay_url):
             def on_status(status):
                 self._on_pool_status(relay_url, status)
             return on_status
 
-        for c_client in clients:
-            try:
-                if isinstance(c_client, str):
-                    # read/write default True
-                    the_client = self._clients[c_client] = Client(c_client,
-                                                                  on_connect=on_connect,
-                                                                  on_eose=on_eose)
-                elif isinstance(c_client, Client):
-                    the_client = self._clients[c_client.url] = c_client
-                    the_client.set_on_connect(on_connect)
-                    the_client.set_end_stored_events(on_eose)
-                elif isinstance(c_client, dict):
-                    read = True
-                    if 'read' in c_client:
-                        read = c_client['read']
-                    write = True
-                    if 'write' in c_client:
-                        write = c_client['write']
+        with self._clients_lock:
+            self._clients[ret.url] = ret
+            ret.set_status_listener(get_on_status(ret.url))
 
-                    client_url = c_client['client']
-                    the_client = self._clients[client_url] = Client(client_url,
-                                                                    on_connect=on_connect,
-                                                                    on_eose=on_eose,
-                                                                    read=read,
-                                                                    write=write)
+        return ret
 
-                self._clients[the_client.url].set_status_listener(get_on_status(the_client.url))
-            except Exception as e:
-                logging.debug('ClientPool::__init__ - %s' % e)
+    def remove(self, client_url: str, auto_stop=True):
+        if client_url not in self._clients:
+            raise Exception('ClientPool::remove attempt to remove client that hasn\'t been added')
+
+        the_client: Client = self._clients[client_url]
+        if auto_stop:
+            the_client.end()
+
+        with self._clients_lock:
+            the_client.set_status_listener(None)
+            del self._status['relays'][client_url]
+            del self._clients[client_url]
+
+        return the_client
 
     def set_on_connect(self, on_connect):
-        for c_client in self._clients:
+        for c_client in self._clients_copy():
             the_client = self._clients[c_client]['client']
             the_client.set_on_connect(on_connect)
 
@@ -559,7 +640,10 @@ class ClientPool:
         # connected, fail_count, last_connect, last_err merged
         # as long as any single relay is connected all will look ood unless you look at
         # the relay/connect count
-        for c_relay in self._status['relays']:
+        with self._clients_lock:
+            relays = [c_relay for c_relay in self._status['relays']]
+
+        for c_relay in relays:
             r_status = self._status['relays'][c_relay]
             n_status['relay_count'] += 1
             if r_status['connected']:
@@ -581,9 +665,11 @@ class ClientPool:
                 n_status['last_connect'] = r_status['last_connect']
 
         # hopefully this is safe... self._status will be getting hit by mutiple threads so...
-        status_copy = self._status.copy()
-        status_copy.update(n_status)
-        self._status = status_copy
+        # status_copy = self._status.copy()
+        # status_copy.update(n_status)
+        # self._status = status_copy
+        with self._clients_lock:
+            self._status.update(n_status)
 
         if self._on_status:
             self._on_status(self._status)
@@ -601,18 +687,34 @@ class ClientPool:
 
     # methods work on all but we'll probably want to be able to name on calls
     def start(self):
-        for c_client in self._clients:
+        self._state = RunState.starting
+
+        for c_client in self._clients_copy():
             the_client = self._clients[c_client]
             the_client.start()
 
+        self._state = RunState.running
+
     def end(self):
-        for c_client in self._clients:
+        self._state = RunState.stopping
+        for c_client in self._clients_copy():
             the_client = self._clients[c_client]
             the_client.end()
 
-    def subscribe(self, sub_id=None, handlers=None, filters={}):
+        self._state = RunState.stopping
 
-        for c_client in self._clients:
+    def _clients_copy(self):
+        """
+        if looping through clients use this rather then self._clients directly to minimise
+        the time we lock
+        :return:
+        """
+        with self._clients_lock:
+            ret = [c_client for c_client in self._clients]
+        return ret
+
+    def subscribe(self, sub_id=None, handlers=None, filters={}):
+        for c_client in self._clients_copy():
             the_client = self._clients[c_client]
             sub_id = the_client.subscribe(sub_id, self, filters)
 
@@ -627,7 +729,8 @@ class ClientPool:
     def publish(self, evt: Event):
         logging.debug('ClientPool::publish - %s', evt.event_data())
         c_client: Client
-        for c_client in self._clients:
+
+        for c_client in self._clients_copy():
             c_client = self._clients[c_client]
             if c_client.write:
                 try:

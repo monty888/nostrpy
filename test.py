@@ -351,6 +351,52 @@ def backfill_test():
             print('client is busy')
             time.sleep(1)
 
+def pool_testing():
+    from nostr.client.client import ClientPool
+    from threading import Thread
+    from nostr.client.event_handlers import ProfileEventHandler
+    from nostr.ident.persist import SQLiteProfileStore
+
+    def my_connect(the_client:Client):
+        print('hi there! from %s' % the_client.url)
+
+    c = ClientPool(clients=[], on_connect=my_connect)
+    print(len(c))
+
+    peh = ProfileEventHandler(SQLiteProfileStore(nostr_db_file))
+    my_profile = peh.profiles.lookup_profilename('scarjo')
+
+
+
+
+    def my_thread():
+
+        i = 0
+        while True:
+            n_evt = Event(kind=Event.KIND_TEXT_NOTE,
+                          content='test event: %s' % i,
+                          pub_key=my_profile.public_key)
+            n_evt.sign(my_profile.private_key)
+
+            print('thread runs')
+            time.sleep(2)
+            print('adding a client')
+            c.add('ws://localhost:8081')
+            c.add('ws://localhost:8082')
+            time.sleep(2)
+            c.publish(n_evt)
+            time.sleep(1)
+
+            c.remove('ws://localhost:8081')
+            c.remove('ws://localhost:8082')
+            print(len(c))
+            i+=1
+
+
+    Thread(target=my_thread).start()
+
+    c.start()
+
 
 if __name__ == "__main__":
     # logging.getLogger().setLevel(logging.DEBUG)
@@ -368,7 +414,8 @@ if __name__ == "__main__":
     # command_line(relay_url, nostr_db_file)
     # test_encrypt()
 
-    backfill_test()
+    # backfill_test()
+    pool_testing()
 
     # from nostr.ident.profile import Profile,ProfileEventHandler
     # from nostr.ident.persist import SQLiteProfileStore

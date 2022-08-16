@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import beaker.middleware
+import bottle
 import cryptography.x509
 
 if TYPE_CHECKING:
@@ -179,7 +180,7 @@ class NostrWeb(StaticServer):
                  file_root,
                  event_store: ClientEventStoreInterface,
                  profile_handler: ProfileEventHandler,
-                 client: Client):
+                 client: ClientPool):
 
         self._event_store = event_store
         self._profile_handler = profile_handler
@@ -259,6 +260,8 @@ class NostrWeb(StaticServer):
         self._app.route('/relay_status', callback=_get_err_wrapped(self._relay_status))
         # list of relays we can connect to, with some basic order of those we think are better at the top
         self._app.route('/relay_list', callback=_get_err_wrapped(self._relay_list))
+        self._app.route('/relay_add', callback=_get_err_wrapped(self._add_relay_route))
+        self._app.route('/relay_remove', callback=_get_err_wrapped(self._remove_relay_route))
 
         self._app.route('/websocket', callback=self._handle_websocket)
         # self._app.route('/count', callback=self._count)
@@ -1018,6 +1021,7 @@ class NostrWeb(StaticServer):
         }
 
     def _relay_status(self):
+        response.set_header('Content-type', 'application/json')
         return DateTimeEncoder().encode(self._client.status)
 
     def _relay_list(self):
@@ -1030,6 +1034,40 @@ class NostrWeb(StaticServer):
         return {
             'relays': self._event_store.relay_list(pub_k)
         }
+
+    def _check_relay_url(self, url):
+        if url == '':
+            raise NostrWebException('url is required')
+
+        if url.find('ws://') != 0 and url.find('wss://') != 0:
+            raise NostrWebException('%s doesn\'t look like a websocket url' % url)
+
+    def _add_relay_route(self):
+        url = request.query.url.lstrip()
+        self._check_relay_url(url)
+
+        try:
+            self._client.add(url)
+        except Exception as e:
+            raise NostrWebException(str(e))
+
+        return {
+            'success': 'relay %s added' % url
+        }
+
+    def _remove_relay_route(self):
+        url = request.query.url.lstrip()
+        self._check_relay_url(url)
+
+        try:
+            self._client.remove(url)
+        except Exception as e:
+            raise NostrWebException(str(e))
+
+        return {
+            'success': 'relay %s removed' % url
+        }
+
 
     @lru_cache(maxsize=1000)
     def _get_robo(self, val):

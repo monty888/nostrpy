@@ -361,9 +361,7 @@ if __name__ == "__main__":
     #     time.sleep(1)
     #     # the_client.end()
     #
-    # ClientPool(['ws://localhost:8081',
-    #             'ws://localhost:8083'], on_connect=my_post_test).start()
-
+    #
     # complete = False
     # my_store = ClientMemoryEventStore()
     # def my_eose(the_client: Client, sub_id: str, events):
