@@ -163,7 +163,7 @@ class Client:
     def set_status_listener(self, on_status):
         self._on_status = on_status
 
-    def subscribe(self, sub_id=None, handlers=None, filters={}, wait_connect=False):
+    def subscribe(self, sub_id=None, handlers=None, filters={}, wait_connect=False, eose_func=None):
         """
         :param sub_id: if none a rndish 4digit hex sub_id will be given
         :param handler: single or [] of handlers that'll get called for events on sub
@@ -195,7 +195,8 @@ class Client:
             'handlers': handlers,
             # if we have eose function then the caller will receive all stored events via the EOSE func
             # and this will be set True when done. If not the events will look like they come in 1 by 1
-            'is_eose': self._eose_func is None,
+            'is_eose': eose_func is None and self._eose_func is None,
+            'eose_func': eose_func,
             'events': [],
             'start_time': datetime.now(),
             'last_event': None
@@ -256,8 +257,7 @@ class Client:
 
         self._reset_status()
 
-    @staticmethod
-    def query(url: str, filters=[]):
+    def query(self, url: str, filters=[]):
         """
             do simple one of queries to a given relay
         """
@@ -270,13 +270,13 @@ class Client:
             ret = events
             is_done = True
 
-        with Client(relay_url=url,on_eose=my_done) as c:
-            sub_id = c.subscribe(filters=filters, wait_connect=True)
-            while is_done is False:
-                time.sleep(0.1)
-                if c.connected is False:
-                    print('raise an error here?!?!?!?')
-            c.unsubscribe(sub_id)
+        sub_id = self.subscribe(filters=filters, wait_connect=True, eose_func=my_done)
+        while is_done is False:
+            time.sleep(0.1)
+            if self.connected is False:
+                print('raise an error here?!?!?!?')
+
+        self.unsubscribe(sub_id)
 
         return ret
 
@@ -302,7 +302,11 @@ class Client:
             if not self._have_sub(sub_id):
                 logging.debug('Client::_on_message EOSE event for unknown sub_id?!??!! - %s' % sub_id)
 
-            if self._eose_func:
+            # eose defined for this sub
+            if self._subs[sub_id]['eose_func'] is not None:
+                self._subs[sub_id]['eose_func'](self, sub_id, self._subs[sub_id]['events'])
+            #client level eose
+            elif self._eose_func:
                 self._eose_func(self, sub_id, self._subs[sub_id]['events'])
 
             # no longer needed

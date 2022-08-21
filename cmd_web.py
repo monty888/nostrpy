@@ -320,11 +320,12 @@ if __name__ == "__main__":
     # my_str="👍"
     # print(my_str.encode())
 
-    events = Client.query(url='wss://relay.damus.io',
-                          filters=[{
-                              'since': util_funcs.date_as_ticks(datetime.now()-timedelta(days=10)),
-                              'kinds': [Event.KIND_META]
-                          }])
+    with Client('wss://relay.damus.io') as c:
+        events = c.query(url='wss://relay.damus.io',
+                         filters=[{
+                             'since': util_funcs.date_as_ticks(datetime.now()-timedelta(days=10)),
+                             'kinds': [Event.KIND_META]
+                         }])
     c_evt: Event
     from nostr.ident.profile import Profile,ValidatedProfile
     for c_evt in events:
