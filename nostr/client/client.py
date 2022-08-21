@@ -256,6 +256,30 @@ class Client:
 
         self._reset_status()
 
+    @staticmethod
+    def query(url: str, filters=[]):
+        """
+            do simple one of queries to a given relay
+        """
+        is_done = False
+        ret = None
+
+        def my_done(the_client: Client, sub_id: str, events):
+            nonlocal is_done
+            nonlocal ret
+            ret = events
+            is_done = True
+
+        with Client(relay_url=url,on_eose=my_done) as c:
+            sub_id = c.subscribe(filters=filters, wait_connect=True)
+            while is_done is False:
+                time.sleep(0.1)
+                if c.connected is False:
+                    print('raise an error here?!?!?!?')
+            c.unsubscribe(sub_id)
+
+        return ret
+
     def set_end_stored_events(self, eose_func=None):
         self._eose_func = eose_func
 

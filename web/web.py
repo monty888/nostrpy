@@ -859,7 +859,6 @@ class NostrWeb(StaticServer):
 
     def _events_text_search_route(self):
         search_str = request.query.search_str
-        limit = self._get_query_limit()
 
         def extract_tag(tag_prefix, text, with_pat=None):
             if with_pat is None:
@@ -870,7 +869,6 @@ class NostrWeb(StaticServer):
                 text = text.replace(tag_prefix + c_match, '')
 
             return matches, text
-
 
         def find_authors(prefixes):
             c_p: Profile

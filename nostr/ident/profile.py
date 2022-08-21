@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from nostr.ident.persist import ProfileStoreInterface
 
 import json
+import re
 from copy import copy
 from json import JSONDecodeError
 import logging
@@ -31,7 +32,7 @@ class UnknownProfile(Exception):
 class Profile:
 
     @staticmethod
-    def from_event(evt:Event):
+    def from_event(evt: Event):
         ret = None
         if evt.kind == Event.KIND_META:
             ret = Profile(pub_k=evt.pub_key,
@@ -258,6 +259,47 @@ class Profile:
                        attrs=self.attrs,
                        profile_name=self.profile_name,
                        update_at=self.update_at)
+
+
+class ValidatedProfile(Profile):
+
+    @staticmethod
+    def from_event(evt: Event):
+        ret = None
+        if evt.kind == Event.KIND_META:
+            ret = ValidatedProfile(pub_k=evt.pub_key,
+                                   attrs=evt.content,
+                                   update_at=evt.created_at_ticks)
+            ret.fit_fields()
+            if not ret.valid_name():
+                print('warning invalid profile name:%s' % ret.name)
+
+        return ret
+
+    def __init__(self, priv_k=None, pub_k=None, attrs=None, profile_name=None, update_at=None,
+                 # set to None if not restricting
+                 name_max=50, about_max=200):
+        super().__init__(priv_k=priv_k, pub_k=pub_k, attrs=attrs, profile_name=profile_name, update_at=update_at)
+        self._name_max = name_max
+        self._about_max = about_max
+
+    def valid_name(self):
+        ret = True
+        if self.name:
+        # call this to check name actually is valid... what to do if not is up to you....
+            ret = re.match('\\w+', self.name)
+        return ret
+
+    def fit_fields(self):
+        """
+            after calling this fields will have been cut to fit in given sizes if required
+        """
+        if self.name and self._name_max:
+            self.name = self.name[:self._name_max]
+
+        about = self.get_attr('about')
+        if about and self._about_max:
+            self.set_attr('about', about[:self._about_max])
 
 
 class ProfileList:

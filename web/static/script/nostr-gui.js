@@ -3128,9 +3128,38 @@ APP.nostr.gui.relay_list = function(){
                         {
                             'con-status' :  sum_con_status_tmpl
                         });
+                },
+                'click': function(id){
+                    let parts = id.replace(uid+'-','').split('-'),
+                        relay_uid,
+                        action,
+                        relay;
+                    if(parts.length===3){
+                        relay_uid = parts[0]+'-'+parts[1];
+                        action = parts[2];
+                        relay = get_relay_with_uid(relay_uid);
+                        alert(action);
+                        if(action==='remove'){
+                            alert('do delete '+ relay.data.url);
+                        }
+
+                    }
                 }
             });
             my_list.draw();
+        }
+
+        // why have we only mapped on url?
+        function get_relay_with_uid(uid){
+            let relay;
+            for(let k in relay_map){
+                relay = relay_map[k];
+                if(relay.uid===uid){
+                    return relay;
+                }
+            }
+            // not found?!?
+            return null;
         }
 
         function get_mode_text(r_status){
@@ -3266,9 +3295,8 @@ APP.nostr.gui.relay_edit = function(){
                 'edit' : true
             });
 
+
         }
-
-
 
         init();
 

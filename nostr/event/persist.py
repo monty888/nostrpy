@@ -1110,7 +1110,7 @@ class ClientSQLiteEventStore(SQLiteEventStore, ClientSQLEventStore,  ClientEvent
         {
         'sql': """
             create table event_relay(
-                id int,  
+                id int NOT NULL ON CONFLICT IGNORE,  
                 relay_url text,
                 UNIQUE(id, relay_url) ON CONFLICT IGNORE
                 )

@@ -299,9 +299,9 @@ def run():
                 web_dir=web_dir)
 
 if __name__ == "__main__":
-    # logging.getLogger().setLevel(logging.DEBUG)
+    logging.getLogger().setLevel(logging.DEBUG)
 
-    run()
+    # run()
     # import re
     # def extract_tag(tag_prefix, text, with_pat=None):
     #     if with_pat is None:
@@ -320,6 +320,16 @@ if __name__ == "__main__":
     # my_str="👍"
     # print(my_str.encode())
 
+    events = Client.query(url='wss://relay.damus.io',
+                          filters=[{
+                              'since': util_funcs.date_as_ticks(datetime.now()-timedelta(days=10)),
+                              'kinds': [Event.KIND_META]
+                          }])
+    c_evt: Event
+    from nostr.ident.profile import Profile,ValidatedProfile
+    for c_evt in events:
+        p = ValidatedProfile.from_event(c_evt)
+        print(p)
     from nostr.client.event_handlers import EventHandler
     # is_done = False
     #
