@@ -25,7 +25,7 @@ APP.nostr.data.relay_status = function(){
         _state = JSON.parse(APP.nostr.data.server_state.relay_status);
         // watch for changes, to start watching for changes you need to make a get request...
         APP.nostr.data.event.add_listener('relay_status', function(type, data){
-            _state = data[1];
+            _state = data;
         });
     };
 

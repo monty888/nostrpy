@@ -23,6 +23,8 @@ APP.remote = function(){
         _post_event_url = '/post_event',
         _relay_info_url = '/relay_status',
         _relay_list_url = '/relay_list',
+        _relay_remove_url = '/relay_remove',
+        _relay_add_url = '/relay_add',
         _event_relay_url = '/event_relay',
         _web_preview_url = '/web_preview',
 
@@ -71,6 +73,7 @@ APP.remote = function(){
             // by default gets are cached, not posts unless cache is set true
             cache = args.cache===undefined ? call_args.method.toLowerCase()==='get' : args.cache,
             the_cache,
+            //TODO: remove this - why not just set cache false?
             force_new = args.force_new===undefined ? false : args.force_new;
 
         if(data!==undefined){
@@ -368,6 +371,22 @@ APP.remote = function(){
                     'pub_k' : args.pub_k
                 };
             };
+            do_query(args);
+        },
+        'relay_remove': function(args){
+            args['params'] = {
+                'url' : args.url
+            };
+            args['url'] = _relay_remove_url;
+            args.cache = false;
+            do_query(args);
+        },
+        'relay_add': function(args){
+            args['params'] = {
+                'url' : args.url
+            };
+            args['url'] = _relay_add_url;
+            args.cache = false;
             do_query(args);
         },
         'event_relay' : function(args){

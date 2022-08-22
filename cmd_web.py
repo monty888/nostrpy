@@ -301,7 +301,7 @@ def run():
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
 
-    # run()
+    run()
     # import re
     # def extract_tag(tag_prefix, text, with_pat=None):
     #     if with_pat is None:

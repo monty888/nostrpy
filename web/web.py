@@ -1019,8 +1019,8 @@ class NostrWeb(StaticServer):
         }
 
     def _relay_status(self):
-        response.set_header('Content-type', 'application/json')
-        return DateTimeEncoder().encode(self._client.status)
+        # response.set_header('Content-type', 'application/json')
+        return json.loads(DateTimeEncoder().encode(self._client.status))
 
     def _relay_list(self):
         pub_k = request.query.pub_k

@@ -3123,6 +3123,7 @@ APP.nostr.gui.relay_list = function(){
             my_list = _gui.list.create({
                 'con' : list_con,
                 'data' : list_data(),
+                'empty_message': 'no relays connected!',
                 'row_render' : function(r){
                     return Mustache.render(row_tmpl,r,
                         {
@@ -3138,9 +3139,22 @@ APP.nostr.gui.relay_list = function(){
                         relay_uid = parts[0]+'-'+parts[1];
                         action = parts[2];
                         relay = get_relay_with_uid(relay_uid);
-                        alert(action);
                         if(action==='remove'){
-                            alert('do delete '+ relay.data.url);
+                            APP.remote.relay_remove({
+                                'url': relay.data.url,
+                                'success': function(data){
+                                    if(data.error!==undefined){
+                                        APP.nostr.gui.notification({
+                                            'text': 'Error removing relay - '+data.error,
+                                            'type': 'warning'
+                                        });
+                                    }else{
+                                        APP.nostr.gui.notification({
+                                            'text': 'Relay removed - '+relay.data.url
+                                        });
+                                    }
+                                }
+                            });
                         }
 
                     }
@@ -3181,16 +3195,20 @@ APP.nostr.gui.relay_list = function(){
 
         function draw(){
             set_summary();
-            // we need to be able to partial update if editing so we'll live it for now TODO: FIXME
-            let data = list_data();
-            data.forEach(function(c_relay){
-               $('#'+c_relay.relay_uid+"-con-status").html(Mustache.render(sum_con_status_tmpl, c_relay));
-            });
+            my_list.set_data(list_data());
+            my_list.draw();
+
+//            data.forEach(function(c_relay){
+//               $('#'+c_relay.relay_uid+"-con-status").html(Mustache.render(sum_con_status_tmpl, c_relay));
+//            });
         }
 
         function my_listener(of_type, data){
-            c_relay_status = data;
-            draw();
+            console.log('saw relay event!!!!');
+            if(of_type==='relay_status'){
+                c_relay_status = data;
+                draw();
+            }
         }
 
         function init(){
@@ -3221,10 +3239,10 @@ APP.nostr.gui.relay_select = function(){
             '<label for="relays-search">relays</label>',
             '<div style="display:table-row" >',
                 '<div style="display:table-cell;">',
-                    '<input style="min-width:280px;" type="text" class="form-control" id="relays-search" aria-describedby="available relays" placeholder="search relays" list="relay-options" />',
+                    '<input type="url" id="relay-add_text" style="min-width:280px;" type="text" class="form-control" id="relays-search" aria-describedby="available relays" placeholder="search relays" list="relay-options" />',
                 '</div>',
                 '<div style="display:table-cell;vertical-align:top;" >',
-                    '<button type="button" class="btn btn-primary">+</button>',
+                    '<button id="relay-add-but" type="button" class="btn btn-primary">+</button>',
                 '</div>',
             '</div>',
             '<datalist id="relay-options">',
@@ -3237,14 +3255,35 @@ APP.nostr.gui.relay_select = function(){
             search_in,
             my_list,
             list_con,
+            add_but,
+            add_text,
+            on_select = args.on_select,
             current_user = APP.nostr.data.user.profile();
 
         function draw(){
             con.html(my_html);
             search_in = $('#relays-search');
             list_con = $('#relay-options');
+            add_but = $('#relay-add-but');
+            add_text = $('#relay-add_text');
             search_in.focus();
+            add_events();
         }
+
+        // only allow add when valid ws/s:://url
+        function valid_url(){
+            return true;
+        }
+
+        function add_events(){
+            add_but.on('click', function(){
+                let url = add_text.val();
+                if(on_select){
+                    on_select(url);
+                }
+            });
+        }
+
 
         function load_relays(){
             APP.remote.relay_list({
@@ -3278,8 +3317,8 @@ APP.nostr.gui.relay_edit = function(){
     function create(args){
         let con = args.con,
             relay_con,
-            select_con;
-
+            select_con,
+            relay_list;
 
         function init(){
             con.html(APP.nostr.gui.templates.get('screen-relay-edit-struct'));
@@ -3287,10 +3326,27 @@ APP.nostr.gui.relay_edit = function(){
             select_con = $('#edit-con');
 
             _gui.relay_select.create({
-                'con' : select_con
+                'con' : select_con,
+                'on_select': function(url){
+                    APP.remote.relay_add({
+                        'url': url,
+                        'success': function(data){
+                            if(data.error!==undefined){
+                                APP.nostr.gui.notification({
+                                    'text': 'Error adding relay - ' + data.error,
+                                    'type': 'danger'
+                                });
+                            }else{
+                                APP.nostr.gui.notification({
+                                    'text': 'Relay added - ' + url
+                                });
+                            }
+                        }
+                    });
+                }
             });
 
-            _gui.relay_list.create({
+            relay_list = _gui.relay_list.create({
                 'con' : relay_con,
                 'edit' : true
             });

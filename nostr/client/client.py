@@ -643,6 +643,10 @@ class ClientPool:
             del self._status['relays'][client_url]
             del self._clients[client_url]
 
+        self._update_pool_status()
+        if self._on_status:
+            self._on_status(self._status)
+
         return the_client
 
     def set_on_connect(self, on_connect):
@@ -653,7 +657,11 @@ class ClientPool:
     def _on_pool_status(self, relay_url, status):
         # the status we return gives each individual relay status at ['relays']
         self._status['relays'][relay_url] = status
+        self._update_pool_status()
+        if self._on_status:
+            self._on_status(self._status)
 
+    def _update_pool_status(self):
         # high level to mimic single relay, any single relay connected counts as connected
         # we also add a count/connected count for use by caller
         n_status = {
@@ -698,9 +706,6 @@ class ClientPool:
         # self._status = status_copy
         with self._clients_lock:
             self._status.update(n_status)
-
-        if self._on_status:
-            self._on_status(self._status)
 
     def set_status_listener(self, on_status):
         self._on_status = on_status
