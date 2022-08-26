@@ -48,11 +48,136 @@ APP.remote = function(){
         return ret;
     }
 
+//    function do_query(args){
+//        let url = args['url'],
+//            params = make_params(args['params']),
+//            method = args['method'] || 'GET',
+//            data = args['data'],
+//            success = args['success'] || function(data){
+//                console.log('load notes success');
+//                console.log(data)
+//            },
+//            error = args['error'] || function(ajax, textstatus, errorThrown){
+//                console.log('error loading remote' + url);
+//                console.log(ajax.responseText);
+//                console.log(errorThrown);
+//            },
+//            prepare = args.prepare,
+//            call_args = {
+//                method : method,
+//                url: url+params,
+//                error: error,
+//                success: success
+//            },
+//            key = args.key!==undefined ? args.key : call_args.method.toLowerCase()==='get' ? call_args.url : data,
+//            // by default gets are cached, not posts unless cache is set true
+//            cache = args.cache===undefined ? call_args.method.toLowerCase()==='get' : args.cache,
+//            the_cache,
+//            //TODO: remove this - why not just set cache false?
+//            force_new = args.force_new===undefined ? false : args.force_new;
+//
+//        if(data!==undefined){
+//            call_args['data'] = data;
+//        }
+//        if(args['contentType']!==undefined){
+//            call_args['contentType'] = args['contentType'];
+//        }
+//
+//        if(cache){
+//            if(force_new!==true){
+//                the_cache = _loading_cache[key];
+//            }
+//
+//            // just add to the queue and return
+//            if(the_cache!==undefined){
+//                // load started but not returned, queue
+//                if(the_cache.is_loaded===false){
+//                    the_cache.success.push(success);
+//                    the_cache.error.push(error);
+//                // load has already been done, call either error or success method straight away
+//                }else{
+//                    try{
+//                        if(the_cache.data!==undefined){
+//                            success(the_cache.data);
+//                        }else{
+//                            error(the_cache.ajax, the_cache.textstatus, the_cache.errorThrown);
+//                        }
+//                    }catch(e){
+//                        console.log(e);
+//                    }
+//
+//                }
+//                return;
+//            }
+//
+//            // init a cache and put our success and error in place
+//            the_cache = _loading_cache[key] = {
+//                'success' : [],
+//                'error' : [],
+//                'is_loaded' : false
+//            };
+//            the_cache.success.push(success);
+//            the_cache.error.push(error);
+//
+//            // intercept success/error with are own methods so that multiple calls can be reduced to single ajax req
+//            // out success and error that call back everyone in the queue
+//            call_args.success = function(my_cache){
+//                return function(data){
+//                    if(typeof(prepare)==='function'){
+//                        data = prepare(data);
+//                    }
+//
+//                    my_cache.success.forEach(function(cSuccess){
+//                        try{
+//                            cSuccess(data);
+//                        }catch(e){};
+//                    });
+//                    // so late calls will just get run straight away rather than called
+//                    my_cache.is_loaded = true;
+//                    my_cache.data = data;
+//                };
+//            }(the_cache);
+//            call_args.error = function(my_cache){
+//                return function(ajax, textstatus, errorThrown){
+//                    my_cache.error.forEach(function(cError){
+//                        try{
+//                            cError(ajax, textstatus, errorThrown);
+//                        }catch(e){};
+//                    });
+//                    // as success but for immidiate error
+//                    my_cache.is_loaded = true;
+//                    my_cache.ajax = ajax;
+//                    my_cache.textstatus = textstatus;
+//                    my_cache.errorThrown = errorThrown;
+//                }
+//            }(the_cache);
+//
+//        };
+//
+//        // make the call
+//        $.ajax(call_args)
+//
+////        fetch(call_args.url, {
+////            'filter': [{"kinds":[1]}]
+////        }, {
+////            'method': call_args.method
+////        })
+////        .then((response) => response.json())
+////        .then((data) => {
+////            if(call_args.success!==undefined){
+////                call_args.success(data);
+////            };
+////        });
+//
+//
+//    }
+
     function do_query(args){
         let url = args['url'],
             params = make_params(args['params']),
-            method = args['method'] || 'GET',
-            data = args['data'],
+            query_str = url+params,
+            method = args['method'] || 'get',
+            data = args['data'] || {},
             success = args['success'] || function(data){
                 console.log('load notes success');
                 console.log(data)
@@ -64,30 +189,31 @@ APP.remote = function(){
             },
             prepare = args.prepare,
             call_args = {
-                method : method,
-                url: url+params,
                 error: error,
                 success: success
             },
-            key = args.key!==undefined ? args.key : call_args.method.toLowerCase()==='get' ? call_args.url : data,
+            // internal cache so multiple request don't make multiple fetchs... test browser header level cache
+            // it might achive the same
+            key,
             // by default gets are cached, not posts unless cache is set true
-            cache = args.cache===undefined ? call_args.method.toLowerCase()==='get' : args.cache,
-            the_cache,
-            //TODO: remove this - why not just set cache false?
-            force_new = args.force_new===undefined ? false : args.force_new;
+            cache,
+            the_cache;
 
-        if(data!==undefined){
-            call_args['data'] = data;
+        method = method.toLowerCase();
+        key = args.key!==undefined ? args.key : method==='get' ? query_str : data;
+        cache = args.cache===undefined ? method==='get' : args.cache;
+
+        function init_cache(key){
+            return _loading_cache[key] = {
+                'success' : [],
+                'error' : [],
+                'is_loaded' : false
+            };
         }
-        if(args['contentType']!==undefined){
-            call_args['contentType'] = args['contentType'];
-        }
 
-        if(cache){
-            if(force_new!==true){
-                the_cache = _loading_cache[key];
-            }
-
+        function get_data_cache(key){
+            let ret = false;
+            the_cache = _loading_cache[key];
             // just add to the queue and return
             if(the_cache!==undefined){
                 // load started but not returned, queue
@@ -97,25 +223,35 @@ APP.remote = function(){
                 // load has already been done, call either error or success method straight away
                 }else{
                     try{
+                        ret = true
                         if(the_cache.data!==undefined){
                             success(the_cache.data);
                         }else{
-                            error(the_cache.ajax, the_cache.textstatus, the_cache.errorThrown);
+                            // TODO have cache but error
+                            //error(the_cache.ajax, the_cache.textstatus, the_cache.errorThrown);
                         }
                     }catch(e){
                         console.log(e);
                     }
 
                 }
+            }
+            return ret;
+        }
+
+
+        if(data!==undefined){
+            call_args['data'] = data;
+        }
+
+        if(cache){
+
+            if(get_data_cache(key)){
                 return;
             }
 
             // init a cache and put our success and error in place
-            the_cache = _loading_cache[key] = {
-                'success' : [],
-                'error' : [],
-                'is_loaded' : false
-            };
+            the_cache = init_cache(key);
             the_cache.success.push(success);
             the_cache.error.push(error);
 
@@ -137,27 +273,47 @@ APP.remote = function(){
                     my_cache.data = data;
                 };
             }(the_cache);
-            call_args.error = function(my_cache){
-                return function(ajax, textstatus, errorThrown){
-                    my_cache.error.forEach(function(cError){
-                        try{
-                            cError(ajax, textstatus, errorThrown);
-                        }catch(e){};
-                    });
-                    // as success but for immidiate error
-                    my_cache.is_loaded = true;
-                    my_cache.ajax = ajax;
-                    my_cache.textstatus = textstatus;
-                    my_cache.errorThrown = errorThrown;
-                }
-            }(the_cache);
+// TODO: error handling will be different than before
+//            call_args.error = function(my_cache){
+//                return function(ajax, textstatus, errorThrown){
+//                    my_cache.error.forEach(function(cError){
+//                        try{
+//                            cError(ajax, textstatus, errorThrown);
+//                        }catch(e){};
+//                    });
+//                    // as success but for immediate error
+//                    my_cache.is_loaded = true;
+//                    my_cache.ajax = ajax;
+//                    my_cache.textstatus = textstatus;
+//                    my_cache.errorThrown = errorThrown;
+//                }
+//            }(the_cache);
 
         };
 
-        // make the call
-        $.ajax(call_args)
+        let request_obj = {
+            'method': method
+        };
+        if(method==='post'){
+            request_obj['body'] = data;
+        }
+
+        // actually make a request
+        fetch(url+params, request_obj)
+        .then((response) => response.json())
+        .then((data) => {
+            if(call_args.success!==undefined){
+                call_args.success(data);
+            };
+        }).catch((error)=>{
+            alert(error);
+        });
+
 
     }
+
+
+
 
     function make_events(evt_data){
         let ret = []
@@ -268,7 +424,7 @@ APP.remote = function(){
             do_query(args);
         },
         'load_events' : function(args){
-            let filter = args.filter===undefined ? {'kinds':[1]} : args.filter,
+            let filter = args.filter===undefined ? APP.nostr.data.filter.create({'kinds':[1]}) : args.filter,
                 o_success = args.success;
 
             args['url'] = _events_by_filter_url;
@@ -280,13 +436,12 @@ APP.remote = function(){
                     'pub_k' : args.pub_k
                 };
             }
-            args['data'] = 'filter=' + filter.as_str();
+            args['data'] = 'filter='+filter.as_str()
 
             args.success = function (data){
                 data.events = make_events(data.events);
                 o_success(data);
             };
-
             do_query(args);
         },
         'load_messages' : function(args){
@@ -318,7 +473,7 @@ APP.remote = function(){
 
             args['url'] = _post_event_url;
             args['method'] = 'POST';
-            let evt = $.extend({}, args.event);
+            let evt = _.extend({}, args.event);
             let content = encodeURIComponent(evt.content);
             evt.content = '';
             args['data'] = 'event=' + JSON.stringify(evt);

@@ -50,6 +50,10 @@ APP.nostr.gui = function(){
                 'webm' : 'video',
                 'mkv' : 'video'
             },
+            url_types = [
+                ['https://pbs.twimg.com/media/', 'image']
+            ],
+            c_uobj,
             parts = ref_str.toLowerCase().split('.'),
             ext = parts[parts.length-1],
             ret = 'external';
@@ -57,6 +61,22 @@ APP.nostr.gui = function(){
         if(ext in media_types){
             ret = media_types[ext];
         }
+
+        // media url e..g twitter twimg.com... this is to simple
+        // probably have to do further look at the url to determine type
+        // in any case there is probably a lib for this which might be worth looking at in
+        // the longer term...
+        if(ret==='external'){
+            for(let i=0;i<url_types.length;i++){
+                c_uobj = url_types[i];
+                if(ref_str.indexOf(c_uobj[0])>=0){
+                    ret = c_uobj[1];
+                    break;
+                }
+            }
+        }
+
+
         return ret;
     }
 
@@ -121,7 +141,7 @@ APP.nostr.gui = function(){
             _tmpl = APP.nostr.gui.templates.get('notification');
         function do_notification(){
             let _id = APP.nostr.gui.uid();
-            _notifications_con.prepend(Mustache.render(_tmpl, {
+            _notifications_con.insertAdjacentHTML('beforeend',Mustache.render(_tmpl, {
                 'text' : _text,
                 'type' : _type,
                 'id' : _id
@@ -129,16 +149,17 @@ APP.nostr.gui = function(){
 
             setTimeout(function(){
 
-                let el = $('#'+_id);
+                let el = _('#'+_id);
                 el.fadeOut(function(){
                     el.remove();
                 });
-            },5000);
+
+            },2000);
         }
         // first notification
         if(_notifications_con===undefined){
-            $(document.body).prepend(APP.nostr.gui.templates.get('notification-container'));
-            _notifications_con = $('#notifications');
+            _(document.body).insertAdjacentHTML('beforebegin',APP.nostr.gui.templates.get('notification-container'));
+            _notifications_con = _('#notifications');
         }
 
         do_notification();
@@ -160,7 +181,7 @@ APP.nostr.gui = function(){
         // add line breaks
         content = content.replace(/\n/g,'<br>');
         // fix special characters as we're rendering in html el
-        content = APP.nostr.util.html_unescape(content);
+//        content = APP.nostr.util.html_unescape(content);
 
         return {
             'content': content,
@@ -361,7 +382,7 @@ APP.nostr.gui.header = function(){
     function watch_relay(){
         // look for future updates
         APP.nostr.data.event.add_listener('relay_status',function(of_type, data){
-            _relay_but.css('background-color', relay_color(data));
+            _relay_but.css('backgroundColor', relay_color(data));
 //            if(data.connected){
 //                if(data.connect_count===data.relay_count){
 //                    _relay_but.css('background-color', 'green');
@@ -392,10 +413,10 @@ APP.nostr.gui.header = function(){
         let url;
         if(_current_profile.pub_k===undefined){
             _profile_but.html(APP.nostr.gui.templates.get('no_user_profile_button'));
-            _profile_but.css('background-image','');
+            _profile_but.css('backgroundImage','');
         }else{
             _profile_but.html('');
-            _profile_but.css('background-size',' cover');
+            _profile_but.css('backgroundSize',' cover');
 //            if(_current_profile.attrs && _current_profile.attrs.picture && _enable_media){
 //                url = _current_profile.attrs.picture;
 //            }else{
@@ -404,7 +425,7 @@ APP.nostr.gui.header = function(){
 //                });
 //            }
             url = APP.nostr.gui.util.profile_picture_url(_current_profile);
-            _profile_but.css('background-image','url("'+url+'")');
+            _profile_but.css('backgroundImage','url("'+url+'")');
         }
     }
 
@@ -435,18 +456,18 @@ APP.nostr.gui.header = function(){
 
     function create(args){
         args = args || {};
-        _con = args.con || $('#header-con');
+        _con = args.con || _('#header-con');
         _current_profile = APP.nostr.data.user.profile();
         _enable_media = APP.nostr.data.user.enable_media(),
         // draw the header bar
         render_head();
         // grab buttons
-        _profile_but = $('#profile-but');
-        _home_but = $('#home-but');
-        _event_search_but = $('#event-search-but');
-        _profile_search_but = $('#profile-search-but');
-        _message_but = $('#message-but');
-        _relay_but = $('#relay-but');
+        _profile_but = _('#profile-but');
+        _home_but = _('#home-but');
+        _event_search_but = _('#event-search-but');
+        _profile_search_but = _('#profile-search-but');
+        _message_but = _('#message-but');
+        _relay_but = _('#relay-but');
 
         set_profile_button();
         watch_profile();
@@ -508,17 +529,17 @@ APP.nostr.gui.post_button = function(){
 
     function check_show(p){
         if(p.pub_k===undefined){
-            _post_el.hide();
+            _post_el.css('display','none')
         }else{
-            _post_el.show();
+            _post_el.css('display','block')
         }
     }
 
     function create(){
         // should only ever be called once anyway but just incase
         if(_post_el===undefined){
-            $(document.body).prepend(_post_html);
-            _post_el = $('#post-button');
+            _(document.body).insertAdjacentHTML('afterbegin',_post_html);
+            _post_el = _('#post-button');
             _post_el.on('click', function(){
                 APP.nostr.gui.post_modal.show();
             });
@@ -545,9 +566,11 @@ APP.nostr.gui.tabs = function(){
         but otherwise caller can deal with rendering the content
     */
     let _head_tmpl = [
-        '<ul class="nav nav-tabs" style="overflow:hidden;height:32px;" >',
+        '<ul id="{{id}}-tab" class="nav nav-tabs" style="overflow:hidden;height:32px;" >',
             '{{#tabs}}',
-                '<li class="{{active}}" ><a style="padding:3px;" data-toggle="tab" href="#{{tab-ref}}">{{tab-title}}</a></li>',
+                '<li class="nav-item">',
+                    '<a class="nav-link {{active}}" style="padding:3px;" data-bs-toggle="tab" data-bs-target="#{{tab-ref}}" href="#{{tab-ref}}" >{{tab-title}}</a>',
+                '</li>',
             '{{/tabs}}',
             // extra area for e.g. search field,
             '<span id="{{id}}-tool-con" class="tab-tool-area" >',
@@ -557,7 +580,7 @@ APP.nostr.gui.tabs = function(){
         _body_tmpl = [
             '<div class="tab-content" style="overflow-y:auto;height:calc(100% - 32px);padding-right:5px;" >',
             '{{#tabs}}',
-                '<div id="{{tab-ref}}" class="tab-pane {{transition}} {{active}}">',
+                '<div id="{{tab-ref}}" class="tab-pane {{transition}} {{active}}" role="tabpanel" >',
                     '<div id="{{tab-ref}}-con">{{content}}</div>',
                 '</div>',
             '{{/tabs}}',
@@ -595,7 +618,7 @@ APP.nostr.gui.tabs = function(){
                 to_add['content'] = c_tab.content!==undefined ? c_tab.content : _default_content;
                 if(c_tab.active===true){
                     to_add['active'] = 'active';
-                    to_add['transition'] = 'fade in';
+                    to_add['transition'] = 'fade show';
                     _cur_index = i;
                 }else{
                     to_add['transition'] = 'fade';
@@ -606,7 +629,7 @@ APP.nostr.gui.tabs = function(){
             // no active tab given we'll set to 0
             if(_tabs.length>0 && _cur_index===undefined){
                 _render_obj.tabs[0]['active'] = 'active';
-                _render_obj.tabs[0]['transition'] = 'fade in';
+                _render_obj.tabs[0]['transition'] = 'fade show';
                 _cur_index = 0;
             }
 
@@ -623,14 +646,14 @@ APP.nostr.gui.tabs = function(){
             // get the content objects and put in render_obj so we don't have to go through the
             // dom again
             _render_obj.tabs.forEach(function(c_tab){
-                c_tab['tab_content_con'] = $('#'+c_tab['tab-ref']+'-con');
+                c_tab['tab_content_con'] = _('#'+c_tab['tab-ref']+'-con');
             });
             // and the tool area
-            _tool_con = $("#"+_id+"-tool-con");
+            _tool_con = _("#"+_id+"-tool-con");
 
             // before anims
-            $('.nav-tabs a').on('show.bs.tab', function(e){
-                let id = e.currentTarget.href.split('#')[1];
+            _('.nav-tabs a').on('show.bs.tab', function(e){
+                let id = e.currentTarget.getAttribute('data-bs-target').split('#')[1];
                 for(var i=0;i<_render_obj.tabs.length;i++){
                     if(_render_obj.tabs[i]['tab-ref']===id){
                         _cur_index = i;
@@ -644,7 +667,7 @@ APP.nostr.gui.tabs = function(){
             });
 
             // after anims
-            $('.nav-tabs a').on('shown.bs.tab', function(e){
+            _('.nav-tabs a').on('shown.bs.tab', function(e){
             });
 
             // not sure we should count this as a change??
@@ -672,9 +695,11 @@ APP.nostr.gui.tabs = function(){
 
         function set_tab(ident){
             let tab_obj = _render_obj.tabs[ident],
-                tab_a = $('a[href="#'+ tab_obj['tab-ref'] +'"]');
+                selector = '#'+_id+'-tab a[href="#'+ tab_obj['tab-ref'] +'"]',
+                tab_a = _(selector),
+                the_tab = new bootstrap.Tab(tab_a[0]);
 
-            tab_a.tab('show');
+            the_tab.show();
             _cur_index = ident;
 
         }
@@ -788,7 +813,8 @@ APP.nostr.gui.list = function(){
                 }
             }
 //            console.log(draw_arr);
-            _con.append(draw_arr.join(''));
+//            _con.append(draw_arr.join(''));
+            _con.insertAdjacentHTML('beforeend',draw_arr.join(''));
 
             return pos;
         }
@@ -809,7 +835,7 @@ APP.nostr.gui.list = function(){
 
         // add click to con
         if(_click!==undefined){
-            $(_con).on('click', function(e){
+            _con.on('click', function(e){
                 _click(APP.nostr.gui.get_clicked_id(e));
             });
         };
@@ -964,9 +990,9 @@ APP.nostr.gui.event_view = function(){
             let evt_id = e_data.id,
             con;
             if(_expand_state[evt_id]===undefined){
-                con = $('#'+uevent_id(evt_id)+'-expandcon');
+                con = _('#'+uevent_id(evt_id)+'-expandcon');
                 _expand_state[evt_id] = {
-                    'is_expanded' : true,
+                    'is_expanded' : false,
                     'con' : con,
                     'event_info' : APP.nostr.gui.event_detail.create({
                         'con' : con,
@@ -974,15 +1000,13 @@ APP.nostr.gui.event_view = function(){
                     })
                 };
                 _expand_state[evt_id].event_info.draw();
-                con.fadeIn();
-            }else{
-                if(_expand_state[evt_id].is_expanded){
-                    _expand_state[evt_id].con.fadeOut();
-                }else{
-                    _expand_state[evt_id].con.fadeIn();
-                }
-                _expand_state[evt_id].is_expanded = !_expand_state[evt_id].is_expanded;
             }
+
+            _expand_state[evt_id].is_expanded ?
+                _expand_state[evt_id].con.css('display','none') : _expand_state[evt_id].con.css('display','block');
+
+            _expand_state[evt_id].is_expanded = !_expand_state[evt_id].is_expanded;
+
 
         }
 
@@ -1017,7 +1041,7 @@ APP.nostr.gui.event_view = function(){
         function _get_preview_event(id){
             let evt_data = _event_map[id].render_event,
                 url = evt_data.external,
-                my_el = $('#'+_uid+'-'+id+'-preview');
+                my_el = _('#'+_uid+'-'+id+'-preview');
 
             if(evt_data.preview!==true){
                 APP.remote.web_preview({
@@ -1258,7 +1282,7 @@ APP.nostr.gui.event_view = function(){
                 // update in render obj, at the moment it never gets reused anyhow
                 c['at_time'] = ntime;
                 // actually update onscreen
-                $('#'+id+'-time').html(ntime);
+                _('#'+id+'-time').html(ntime);
             });
         }
 
@@ -1423,8 +1447,8 @@ APP.nostr.gui.profile_about = function(){
             create_render_obj();
             _con.html(Mustache.render(_tmpl, _render_obj));
             // grab the follow and contact areas
-            _contact_con = $('#contacts-con');
-            _follow_con = $('#followers-con');
+            _contact_con = _('#contacts-con');
+            _follow_con = _('#followers-con');
             // wait for follower/contact info to be loaded
             if(_show_follow_section){
                 render_followers();
@@ -1441,7 +1465,7 @@ APP.nostr.gui.profile_about = function(){
                 // we don't reget followed by so we just do a base off if we follow or not +/- 1
                 let ret = [];
                 if(_current_profile.contacts && _current_profile.contacts.includes(_profile.pub_k)){
-                    ret.push($.extend({},_current_profile));
+                    ret.push(_.extend({},_current_profile));
                 }
 
                 followed_by.forEach(function(c_f){
@@ -1515,7 +1539,7 @@ APP.nostr.gui.profile_about = function(){
         }
 
         function add_events(){
-            $(_con).on('click', function(e){
+            _(_con).on('click', function(e){
                 let id = APP.nostr.gui.get_clicked_id(e);
                 if(id!==null){
                     if(id.indexOf('-dm')>=0){
@@ -1727,8 +1751,7 @@ APP.nostr.gui.event_detail = function(){
             render_fields();
             render_raw();
 
-
-            $(_con).on('click', function(e){
+            _(_con).on('click', function(e){
                 let id = APP.nostr.gui.get_clicked_id(e);
                 if(id.indexOf(_uid)>=0){
                     id = id.replace(_uid+'-','');
@@ -1827,12 +1850,12 @@ APP.nostr.gui.profile_edit = function(){
                 'view_priv' : mode==='edit'
             }));
             // grab screen widgets
-            pic_con = $('#picture-con');
-            edit_con = $('#edit-con');
-            save_but = $('#save-button');
-            publish_but = $('#publish-button');
+            pic_con = _('#picture-con');
+            edit_con = _('#edit-con');
+            save_but = _('#save-button');
+            publish_but = _('#publish-button');
             // action of this button depends on mode
-            key_but = $('#private_key');
+            key_but = _('#private_key');
 
             set_r_obj();
             draw();
@@ -1871,7 +1894,7 @@ APP.nostr.gui.profile_edit = function(){
             };
 
             o_str = JSON.stringify(o_profile);
-            e_profile = $.extend({}, o_profile);
+            e_profile = _.extend({}, o_profile);
 
         }
 
@@ -1898,7 +1921,7 @@ APP.nostr.gui.profile_edit = function(){
             render_head();
 
             // add events
-            $(":input").on('keyup', function(e){
+            _("input").on('keyup', function(e){
                 let id = e.target.id,
                     val = e.target.value;
 
@@ -1939,9 +1962,14 @@ APP.nostr.gui.profile_edit = function(){
                 if((o_str!==JSON.stringify(e_profile) && e_profile.can_sign===true) ||
                     (e_profile.profile_name!=='' && e_profile.private_key!=='') ||
                     (e_profile.profile_name!=='' && e_profile.pub_k==='') ){
-                    save_but.show();
-                }else{
-                    save_but.hide();
+
+                    if(save_but.showing!==true){
+                        save_but.fadeIn();
+                        save_but.showing = true;
+                    }
+                }else if(save_but.showing===true){
+                    save_but.fadeOut();
+                    save_but.showing = false;
                 }
             });
 
@@ -2130,7 +2158,7 @@ APP.nostr.gui.profile_list = function (){
         }
 
         function update_follow(pub_k){
-            let el = $('#'+_uid+'-'+pub_k+'-profile-fol'),
+            let el = _('#'+_uid+'-'+pub_k+'-profile-fol'),
                 follow = _current_profile.contacts.includes(pub_k),
                 html = follow===true ? '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#star-fill"/>' :
                 '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#star"/>';
@@ -2429,7 +2457,6 @@ APP.nostr.gui.dm_list = function (){
                 ret = evt.pubkey;
             // most recent event was sent buy us
             }else{
-                console.log(evt);
                 tags = evt.get_first_p_tag_value(function(val){
                     return val!==_current_profile.pub_k;
                 });
@@ -2520,12 +2547,12 @@ APP.nostr.gui.dm_list = function (){
 */
 APP.nostr.gui.modal = function(){
     let _modal_html = [
-            '<div style="color:black;height:100%" id="nostr-modal" class="modal fade" role="dialog">',
+            '<div style="color:black;height:100%" id="nostr-modal" class="modal fade" role="dialog" tabindex"-1">',
                 '<div class="modal-dialog">',
                     '<div class="modal-content">',
                         '<div class="modal-header">',
-                            '<button type="button" class="close" data-dismiss="modal" style="opacity:1;color:white;" >&times;</button>',
                             '<h4 class="modal-title" id="nostr-modal-title"></h4>',
+                            '<button type="button" class="btn btn-close" data-bs-dismiss="modal" aria-label="Close" style="opacity:1;"></button>',
                         '</div>',
                         '<div class="modal-body" id="nostr-modal-content" >',
                         '</div>',
@@ -2537,6 +2564,7 @@ APP.nostr.gui.modal = function(){
                 '</div>',
             '</div>'
         ].join(''),
+        _modal_el,
         _my_modal,
         _my_title,
         _my_content,
@@ -2568,27 +2596,29 @@ APP.nostr.gui.modal = function(){
 
         // make sure we only ever create one
         if(_my_modal===undefined){
-            $(document.body).prepend(_modal_html);
-            _my_modal = $('#nostr-modal');
-            _my_title = $('#nostr-modal-title');
-            _my_content = $('#nostr-modal-content');
-            _my_ok_button = $('#nostr-modal-ok-button');
-            _my_foot_con = $('#nostr-modal-footer');
+            _('#main_container').insertAdjacentHTML('beforeend',_modal_html);
+            _modal_el = _('#nostr-modal');
+            _my_modal = new bootstrap.Modal(_modal_el[0]);
+            _my_title = _('#nostr-modal-title');
+            _my_content = _('#nostr-modal-content');
+            _my_ok_button = _('#nostr-modal-ok-button');
+            _my_foot_con = _('#nostr-modal-footer');
+
 
             // escape to hide
-            $(document).on('keydown', function(e){
-                if(e.key==='Escape' && _my_modal.hasClass('in')){
-                    hide();
+            _(document).on('keydown', function(e){
+                if(e.key==='Escape'){
+                    _my_modal.hide();
                 }
             });
 
-            _my_modal.on('shown.bs.modal', function () {
+            _modal_el.on('shown.bs.modal', function(){
                 if(typeof(_on_show)==='function'){
                     _on_show();
-                }
+                };
             });
 
-            _my_modal.on('hidden.bs.modal', function () {
+            _modal_el.on('hidden.bs.modal', function () {
                 if(typeof(_on_hide)==='function'){
                     _on_hide();
                 }
@@ -2596,6 +2626,7 @@ APP.nostr.gui.modal = function(){
 
             _my_ok_button.on('click', function(){
                 _was_ok = true;
+                hide();
                 if(typeof(_on_ok)==='function'){
                     _on_ok();
                 }
@@ -2603,6 +2634,7 @@ APP.nostr.gui.modal = function(){
 
         }
         _my_title.html(_title);
+
         _my_content.html(_content);
         _my_ok_button.html(_ok_text);
         if(_footer_content!==undefined){
@@ -2621,12 +2653,11 @@ APP.nostr.gui.modal = function(){
     }
 
     function show(){
-        // create must have been called before calling show
-        _my_modal.modal();
+        _my_modal.show();
     }
 
     function hide(){
-        _my_modal.modal('hide');
+        _my_modal.hide();
     }
 
     function set_content(content){
@@ -2833,34 +2864,37 @@ APP.nostr.gui.post_modal = function(){
                         note_text_area.focus();
                     }
                 });
+
             }
 
             if(type==='post'){
                 title = get_post_title();
                 if(pub_k!==undefined){
                     // hacky but required to get render at mo
-                    render_obj['event'] = jQuery.extend({}, event);
+                    render_obj['event'] = _.extend({}, event);
                     add_profile_render(render_obj, pub_k);
                 }
             } else if(type==='reply'){
                 title = get_reply_title();
                 // because we're going to give another id just so we don't get mutiple els with same id in dom
-                render_obj['event'] = jQuery.extend({}, event);
-                render_obj['event'].uid = uid;
+                render_obj['event'] = _.extend({}, event);
+                render_obj.uid = uid;
+                render_obj.event_id = event.id;
                 add_profile_render(render_obj, event.pubkey);
                 render_obj['content'] = gui.get_note_content_for_render(event).content;
             }
 
-
-
-        // nothing is clickable!
-        if(type==='reply'){
-            $('#'+uid+'-'+render_obj.event.event_id+'-pp').css('cursor','default');
-            $('#'+uid+'-'+render_obj.event.event_id-'content').css('cursor','default !important');
-        }
         create();
-        note_text_area = $('#nostr-post-text');
+
+        //nothing is clickable!
+        if(type==='reply'){
+            _('#'+uid+'-'+render_obj.event_id+'-pp').css('cursor','default');
+            _('#'+uid+'-'+render_obj.event_id+'-content').css('cursor','default');
+        }
+
+        note_text_area = _('#nostr-post-text');
         APP.nostr.gui.modal.show();
+
 
     }
 
@@ -2938,7 +2972,7 @@ APP.nostr.gui.profile_select_modal = function(){
 
     function create_list(){
         _list = APP.nostr.gui.list.create({
-            'con' : $('#'+_uid),
+            'con' : _('#'+_uid),
             'data' : _list_data,
             'row_tmpl': _row_tmpl,
             'click' : function(id){
@@ -2989,11 +3023,11 @@ APP.nostr.gui.profile_select_modal = function(){
             'footer_content' : footer_html
         });
 
-        $('#nostr-profile_select-new-button').on('click', function(){
+        _('#nostr-profile_select-new-button').on('click', function(){
             window.location = '/html/edit_profile';
         });
 
-        $('#nostr-profile_select-ok-button').on('click', function(){
+        _('#nostr-profile_select-ok-button').on('click', function(){
             if(_current_profile.pub_k!==_selected_profile){
                 APP.nostr.data.user.profile(_selected_profile);
 //                window.location = '/';
@@ -3118,8 +3152,8 @@ APP.nostr.gui.relay_list = function(){
                     'status' : list_con_status_tmpl
                 }
             ));
-            summary_con = $('#'+uid+'-header');
-            list_con = $('#'+uid+"-list");
+            summary_con = _('#'+uid+'-header');
+            list_con = _('#'+uid+"-list");
             my_list = _gui.list.create({
                 'con' : list_con,
                 'data' : list_data(),
@@ -3239,7 +3273,7 @@ APP.nostr.gui.relay_select = function(){
             '<label for="relays-search">relays</label>',
             '<div style="display:table-row" >',
                 '<div style="display:table-cell;">',
-                    '<input type="url" id="relay-add_text" style="min-width:280px;" type="text" class="form-control" id="relays-search" aria-describedby="available relays" placeholder="search relays" list="relay-options" />',
+                    '<input type="url" style="min-width:280px;" type="text" class="form-control" id="relays-search" aria-describedby="available relays" placeholder="search relays" list="relay-options" />',
                 '</div>',
                 '<div style="display:table-cell;vertical-align:top;" >',
                     '<button id="relay-add-but" type="button" class="btn btn-primary">+</button>',
@@ -3262,10 +3296,9 @@ APP.nostr.gui.relay_select = function(){
 
         function draw(){
             con.html(my_html);
-            search_in = $('#relays-search');
-            list_con = $('#relay-options');
-            add_but = $('#relay-add-but');
-            add_text = $('#relay-add_text');
+            search_in = _('#relays-search');
+            list_con = _('#relay-options');
+            add_but = _('#relay-add-but');
             search_in.focus();
             add_events();
         }
@@ -3277,7 +3310,7 @@ APP.nostr.gui.relay_select = function(){
 
         function add_events(){
             add_but.on('click', function(){
-                let url = add_text.val();
+                let url = search_in.val();
                 if(on_select){
                     on_select(url);
                 }
@@ -3288,7 +3321,6 @@ APP.nostr.gui.relay_select = function(){
         function load_relays(){
             APP.remote.relay_list({
                 'success' : function(data){
-                    list_con.html('loaded!');
                     my_list = APP.nostr.gui.list.create({
                         'con': list_con,
                         'data' : data.relays,
@@ -3317,16 +3349,21 @@ APP.nostr.gui.relay_edit = function(){
     function create(args){
         let con = args.con,
             relay_con,
-            select_con,
-            relay_list;
+            relay_sel_con,
+            rw_sel_con,
+            relay_list,
+            screen_tmpl = APP.nostr.gui.templates.get('screen-relay-edit-struct'),
+            select_tmpl =  APP.nostr.gui.templates.get('bs-select');
 
         function init(){
-            con.html(APP.nostr.gui.templates.get('screen-relay-edit-struct'));
-            relay_con = $('#current-con');
-            select_con = $('#edit-con');
+            con.html(screen_tmpl);
+            relay_con = _('#current-con');
+            relay_sel_con = _('#relay-select-con');
+            rw_sel_con = _('#rw-select-con');
+
 
             _gui.relay_select.create({
-                'con' : select_con,
+                'con' : relay_sel_con,
                 'on_select': function(url){
                     APP.remote.relay_add({
                         'url': url,
@@ -3345,6 +3382,20 @@ APP.nostr.gui.relay_edit = function(){
                     });
                 }
             });
+
+            rw_sel_con.html(Mustache.render(select_tmpl,{
+                'options':[
+                    {
+                        'text': 'read/write'
+                    },
+                    {
+                        'text': 'read only'
+                    },
+                    {
+                        'text': 'write only'
+                    }
+                ]
+            }));
 
             relay_list = _gui.relay_list.create({
                 'con' : relay_con,
@@ -3370,7 +3421,7 @@ APP.nostr.gui.relay_view_modal = function(){
     function show(){
         let footer_html = [
             '<button id="relay-view-edit-button" type="button" class="btn btn-default" >edit</button>',
-            '<button id="relay_view-ok-button" type="button" class="btn btn-default" data-dismiss="modal">ok</button>'
+            '<button id="relay-view-ok-button" type="button" class="btn btn-default" data-dismiss="modal">ok</button>'
         ].join(''),
         relay_list;
 
@@ -3381,17 +3432,20 @@ APP.nostr.gui.relay_view_modal = function(){
             'footer_content' : footer_html,
             'on_hide' : function(){
                 relay_list.stop();
-            },
-            'click' : function(id){
-                alert(id);
             }
-
         });
-        // show it
-        $('#relay-view-edit-button').on('click', function(){
+
+        // goto edit relays
+        _('#relay-view-edit-button').on('click', function(){
             window.location = '/html/edit_relays';
         });
 
+        // exit modal
+        _('#relay-view-ok-button').on('click', function(){
+            _gui.modal.hide();
+        });
+
+        // create list and show
         relay_list = _gui.relay_list.create({
             'con': _gui.modal.get_container()
         });
@@ -3464,7 +3518,7 @@ APP.nostr.gui.request_private_key_modal = function(){
                             data.name = data.attrs.name;
                             data.about = data.attrs.about;
                             data.priv_k = key;
-                            $('#'+uid+'-'+'pk-modal-profile').html(Mustache.render(APP.nostr.gui.templates.get('profile-list'),data));
+                            _('#'+uid+'-'+'pk-modal-profile').html(Mustache.render(APP.nostr.gui.templates.get('profile-list'),data));
                             APP.nostr.gui.modal.show_ok();
                         }
                     }
@@ -3472,7 +3526,7 @@ APP.nostr.gui.request_private_key_modal = function(){
             };
 
         // set the modal as we want it
-        let render_obj = $.extend({
+        let render_obj = _.extend({
                 'uid' : uid,
             },link_profile);
         if(render_obj.pub_k===undefined){
@@ -3498,8 +3552,8 @@ APP.nostr.gui.request_private_key_modal = function(){
         APP.nostr.gui.modal.show();
 
         // grab el
-        priv_in = $('#private-key');
-        error_con = $('#pk_modal_error_con');
+        priv_in = _('#private-key');
+        error_con = _('#pk_modal_error_con');
 
         priv_in.on('keyup', function(e){
             let val = e.target.value,

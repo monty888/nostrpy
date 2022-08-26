@@ -87,15 +87,15 @@
     // create screen, grabing various els as needed along the way
     function create_screen(){
         // main page struc
-        $('#main_container').html(APP.nostr.gui.templates.get('screen'));
+        _('#main_container').html(APP.nostr.gui.templates.get('screen'));
         APP.nostr.gui.header.create();
         // add specifc page scafold
-        _main_con = $('#main-con');
+        _main_con = _('#main-con');
         _main_con.html(APP.nostr.gui.templates.get('screen-profile-view'));
 
         // this should now exist
-        _profile_con = $('#about-pane');
-        _tab_con = $('#tab-pane');
+        _profile_con = _('#about-pane');
+        _tab_con = _('#tab-pane');
 
         // profile about head
         _my_head = APP.nostr.gui.profile_about.create({
@@ -159,7 +159,7 @@
 
 
     // start when everything is ready
-    $(document).ready(function() {
+    document.addEventListener('DOMContentLoaded', () => {
         create_screen();
 
         // start client for future notes....

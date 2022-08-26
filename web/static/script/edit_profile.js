@@ -15,13 +15,13 @@
 
 
     // start when everything is ready
-    $(document).ready(function() {
+    document.addEventListener('DOMContentLoaded', ()=> {
 
         // main page struc
-        $('#main_container').html(APP.nostr.gui.templates.get('screen'));
+        _('#main_container').html(APP.nostr.gui.templates.get('screen'));
         APP.nostr.gui.header.create();
         // main container where we'll draw out the events
-        _main_con = $('#main-con');
+        _main_con = _('#main-con');
 
         APP.nostr.gui.profile_edit.create({
             'con' : _main_con,

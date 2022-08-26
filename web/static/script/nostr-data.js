@@ -50,11 +50,11 @@ APP.nostr.data.filter = function(){
         // make so we have arr of filters
         if(typeof(filter.forEach)==='function'){
             filter.forEach(function(c_filter){
-                _my_filter.push($.extend({},c_filter));
+                _my_filter.push(_.extend({},c_filter));
             });
 
         }else{
-            _my_filter.push($.extend({},filter));
+            _my_filter.push(_.extend({},filter));
         }
 
         // str version
@@ -249,7 +249,7 @@ APP.nostr.data.user = function(){
             }
 
             // caller doesn't have the same obj
-            return $.extend({},_user);
+            return _.extend({},_user);
         },
         'get_client' : function(){
             return CLIENT;
@@ -685,7 +685,7 @@ APP.nostr.data.nostr_event = function(event){
 
     // not sure if i like this... does mean we can access the evt fields like it was just the normal
     // {} obj though
-    _data = $.extend({
+    _data = _.extend({
         'is_encrypt' : function(){
             return _data.kind === ENCRYPT;
         },
@@ -698,7 +698,7 @@ APP.nostr.data.nostr_event = function(event){
             return get_first_tag_value('p', test_func);
         },
         'copy': function(){
-            return APP.nostr.data.nostr_event($.extend({},_data));
+            return APP.nostr.data.nostr_event(_.extend({},_data));
         }
 
     }, _data);

@@ -32,14 +32,26 @@ img{
     margin:5px;
 }
 
+.btn{
+    background-color:#443357;
+    color: white;
+    margin-left: 5px;
+    margin-right: 5px;
+}
+
+.btn:hover{
+    background-color:#665579;
+    color: black;
+}
+
 .web-preview-btn{
     background-color:#443357;
+    width: 100%;
 }
 
 .web-preview-btn:hover{
     background-color:#665579;
     color: white;
-    transition: 1;
 }
 
 .pubkey-text {
@@ -125,15 +137,9 @@ img{
   padding: 0 !important; // override inline padding-right added from js
 }
 
+
 .modal .modal-dialog {
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  padding: 0;
-/*  padding-left: 10%;
-  padding-right: 10%;
-  margin-left: 10%;
-  margin-right: 10%;*/
+  min-width:50%;
 }
 
 .modal .modal-content {
@@ -230,6 +236,7 @@ img{
     display: inline-block;
     magin-left : 8px;
     margin-right: 8px;
+    vertical-align: top;
 }
 
 .profile-view-about-pane{

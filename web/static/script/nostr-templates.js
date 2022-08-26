@@ -72,7 +72,7 @@ APP.nostr.gui.templates = function(){
             '<div>'
         ],
         'screen-relay-edit-struct' : [
-            '<div id="edit-con"></div>',
+            '<div id="relay-select-con"></div>',
             '<div id="current-con"></div>'
         ],
         'head' : [
@@ -187,7 +187,7 @@ APP.nostr.gui.templates = function(){
         // container area for notifications, top of screen
         'notification-container' : '<div id="notifications" style="position:absolute;opacity:0.9;z-index:100;width:100%"></div>',
         // notification content
-        'notification' : ['<div id="{{id}}" class="alert alert-{{type}}" role="alert" style="margin-bottom:2px;overflow-wrap:anywhere;" >',
+        'notification' : ['<div id="{{id}}" class="alert alert-{{type}} fade show" role="alert" style="margin-bottom:2px;overflow-wrap:anywhere;" >',
                             '{{text}}',
                         '</div>'],
         // used on contacts page, searching profiles and selected profile to use
@@ -331,7 +331,10 @@ APP.nostr.gui.templates = function(){
                         '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#three-dots-vertical"/>',
                     '</svg>',
                 '</span>',
-                '<div style="border:1px dashed gray;display:none; cursor:default;" id="{{uid}}-{{event_id}}-expandcon" style="display:none">event detail...</div>',
+                '<div',
+                        'style="border:1px dashed gray;display:none; cursor:default;" id="{{uid}}-{{event_id}}-expandcon" style="display:none">',
+                        'event detail...',
+                    '</div>',
             '</div>'
         ],
         // attempts to give some visual info about linkage of this event to others if any...
@@ -380,6 +383,13 @@ APP.nostr.gui.templates = function(){
                     '{{wp_description}}',
                 '</div>',
             '</div>'
+        ],
+        'bs-select': [
+            '<select class="form-select" aria-label="{{description}}"',
+                '{{#options}}',
+                    '<option {{selected}} value="{{value}}" >{{text}}</option>',
+                '{{/options}}',
+            '</select>'
         ]
 
     };

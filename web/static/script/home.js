@@ -86,14 +86,14 @@
                 'tabs' : tabs_objs
             });
 
-        _main_con.css('overflow-y','hidden');
+        _main_con.css('overflowY', 'hidden');
         _my_tabs.draw();
     }
 
     // when using lurker
     function global_only_view(){
         _views = {};
-        _main_con.css('overflow-y','scroll');
+        _main_con.css('overflowY', 'scroll');
         _views['global'] = init_view(_main_con, _global_filter);
         do_load(function(data){
             try{
@@ -128,14 +128,13 @@
         });
     }
 
-
-    // start when everything is ready
-    $(document).ready(function() {
+    document.addEventListener('DOMContentLoaded', ()=> {
         // main page struc
-        $('#main_container').html(APP.nostr.gui.templates.get('screen'));
+        _('#main_container').html(APP.nostr.gui.templates.get('screen'));
+
         APP.nostr.gui.header.create();
         // main container where we'll draw out the events
-        _main_con = $('#main-con');
+        _main_con = _('#main-con');
 //        _main_con.css('height','100%');
 
 //        _main_con.css('max-height','100%');
@@ -178,4 +177,5 @@
         APP.nostr_client.create();
 
     });
+
 }();

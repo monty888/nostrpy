@@ -301,7 +301,7 @@ def run():
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
 
-    run()
+    # run()
     # import re
     # def extract_tag(tag_prefix, text, with_pat=None):
     #     if with_pat is None:
@@ -324,13 +324,15 @@ if __name__ == "__main__":
         events = c.query(url='wss://relay.damus.io',
                          filters=[{
                              'since': util_funcs.date_as_ticks(datetime.now()-timedelta(days=10)),
-                             'kinds': [Event.KIND_META]
+                             'kinds': [40]
                          }])
     c_evt: Event
     from nostr.ident.profile import Profile,ValidatedProfile
     for c_evt in events:
-        p = ValidatedProfile.from_event(c_evt)
-        print(p)
+        print(c_evt.content,c_evt.tags, c_evt.id)
+        # if 'f06a690997a1b7d8283c90a7224eb8b7fe96b7c3d3d8cc7b2e7f743532c02b42' in c_evt.e_tags:
+        #     print(c_evt.content)
+
     from nostr.client.event_handlers import EventHandler
     # is_done = False
     #

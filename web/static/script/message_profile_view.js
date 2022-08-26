@@ -33,19 +33,18 @@
     }
 
     // start when everything is ready
-    $(document).ready(function() {
+    document.addEventListener('DOMContentLoaded', ()=> {
         if(_pub_k===null){
             alert('pub_k is required');
             return;
         }
 
         // main page struc
-        $('#main_container').html(APP.nostr.gui.templates.get('screen'));
+        _('#main_container').html(APP.nostr.gui.templates.get('screen'));
         APP.nostr.gui.header.create();
         // main container where we'll draw out the events
-        _main_con = $('#main-con');
+        _main_con = _('#main-con');
         _main_con.css('overflow-y','auto');
-
 
         _my_filter = APP.nostr.data.filter.create([
             {

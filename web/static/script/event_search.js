@@ -44,18 +44,18 @@
     }
 
     // start when everything is ready
-    $(document).ready(function() {
+    document.addEventListener('DOMContentLoaded', () => {
         // main page struc
-        $('#main_container').html(APP.nostr.gui.templates.get('screen'));
+        _('#main_container').html(APP.nostr.gui.templates.get('screen'));
         APP.nostr.gui.header.create({});
         // add specifc page scafold
-        _main_con = $('#main-con');
+        _main_con = _('#main-con');
         _main_con.html(APP.nostr.gui.templates.get('screen-events-search'));
 
-        _search_in = $('#search-in');
+        _search_in = _('#search-in');
         _search_in.val(_search_str);
         _search_in.focus();
-        _list_con = $('#list-con');
+        _list_con = _('#list-con');
         _my_event_view = APP.nostr.gui.event_view.create({
             'con' : _list_con
         });

@@ -59,7 +59,7 @@
     }
 
     // start when everything is ready
-    $(document).ready(function() {
+    document.addEventListener('DOMContentLoaded', ()=> {
         if(_event_id===''){
             alert('no event id!!!');
             return;
@@ -67,11 +67,11 @@
         create_filter();
 
         // main page struc
-        $('#main_container').html(APP.nostr.gui.templates.get('screen'));
+        _('#main_container').html(APP.nostr.gui.templates.get('screen'));
         APP.nostr.gui.header.create();
         // main container where we'll draw out the events
-        _main_con = $('#main-con');
-        _main_con.css('overflow-y','auto');
+        _main_con = _('#main-con');
+        _main_con.css('overflowY','auto');
         _my_event_view = APP.nostr.gui.event_view.create({
             'con' : _main_con,
             'filter' : _my_filter

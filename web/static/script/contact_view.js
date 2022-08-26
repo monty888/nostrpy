@@ -43,7 +43,7 @@
 //    }
 
     function create_tabs(){
-        _contacts_con = $('#contact-tabs');
+        _contacts_con = _('#contact-tabs');
         _my_tab = APP.nostr.gui.tabs.create({
             'con' : _contacts_con,
             'default_content' : 'loading...',
@@ -61,21 +61,15 @@
                 }
             ]
         });
+        _my_tab.draw();
     }
 
     function add_search(){
         let tool_html = [
-//            '<div style="display:table-row">',
-//                '<input style="display:table-cell;width:8em;"  placeholder="search" type="text" class="form-control" id="search-in">',
-//                '<button id="full_search_but" style="display:table-cell;" type="button" class="btn btn-primary" >' +
-//                '<svg class="bi" >',
-//                    '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#person-plus-fill"/>',
-//                '</svg>',
-//                '</button>',
-//            '</div>'
-            '<span style="max-height:100%;float:right;">',
+            '<span style="vertical-align:top">',
+
                 '<input style="display:table-cell;width:8em;"  placeholder="search" type="text" class="form-control" id="search-in">',
-                '<button id="full_search_but" style="display:table-cell;" type="button" class="btn btn-primary" >' +
+                '<button id="full_search_but" style="display:table-cell;valign:top" type="button" class="btn btn-primary" >' +
                 '<svg class="bi" >',
                     '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#person-plus-fill"/>',
                 '</svg>',
@@ -86,7 +80,7 @@
             ].join('');
 
         _my_tab.get_tool_con().html(tool_html);
-        _search_in = $('#search-in');
+        _search_in = _('#search-in');
         _search_in.focus();
 
         _search_in.on('keyup', function(e){
@@ -97,7 +91,7 @@
         });
 
         // takes us to a page where we can search for all profiles not just currently looking at profile
-        $('#full_search_but').on('click', function(){
+        _('#full_search_but').on('click', function(){
             location.href = '/html/profile_search.html';
         });
     }
@@ -110,7 +104,7 @@
     };
 
     // start when everything is ready
-    $(document).ready(function() {
+    document.addEventListener('DOMContentLoaded', ()=> {
         if(_pub_k===null){
             alert('no pub_k supplied');
             return;
@@ -120,12 +114,12 @@
         _view_type = _view_type===undefined ? 'contacts' : _view_type;
 
         // main page struc
-        $('#main_container').html(APP.nostr.gui.templates.get('screen'));
+        _('#main_container').html(APP.nostr.gui.templates.get('screen'));
         APP.nostr.gui.header.create({});
         // get the main con and render page specific scafold
-        _main_con = $('#main-con');
+        _main_con = _('#main-con');
         _main_con.html(APP.nostr.gui.templates.get('screen-contact-view'));
-        _profile_con = $('#about-con');
+        _profile_con = _('#about-con');
 
         // create follow/ers tabs
         create_tabs();
@@ -147,11 +141,8 @@
                 _profile.contacts.forEach(function(c_p){
                     APP.nostr.data.profiles.put(c_p);
                 })
-                //
 
-                _my_tab.draw();
                 add_search();
-
                 let contact_tab = _my_tab.get_tab(0),
                     follow_tab= _my_tab.get_tab(1);
 
@@ -166,6 +157,7 @@
                     'profiles': _profile.followed_by,
                     'view_type': 'followers'
                 });
+
 
             }
         });

@@ -30,22 +30,22 @@
     }
 
     // start when everything is ready
-    $(document).ready(function() {
+    document.addEventListener('DOMContentLoaded', () => {
         // main page struc
-        $('#main_container').html(APP.nostr.gui.templates.get('screen'));
+        _('#main_container').html(APP.nostr.gui.templates.get('screen'));
         APP.nostr.gui.header.create();
         // add specifc page scafold
-        _main_con = $('#main-con');
+        _main_con = _('#main-con');
         _main_con.html(APP.nostr.gui.templates.get('screen-profiles-search'));
         // grab the search button
-        _search_in = $('#search-in');
+        _search_in = _('#search-in');
 
         try{
             APP.nostr.data.profiles.search({
                 'on_load' : function(data){
                     _profiles = data.profiles;
                     _profiles_list = APP.nostr.gui.profile_list.create({
-                        'con': $('#list-con'),
+                        'con': _('#list-con'),
                         'profiles' : _profiles
                     });
                     // finally draw
