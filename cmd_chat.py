@@ -25,7 +25,8 @@ def run_chat_app():
     # my_client = Client('wss://nostr-pub.wellorder.net')
     # my_client = Client('wss://nostr-pub.wellorder.net')
     my_client = Client('ws://localhost:8081')
-    ChatApp('5c7102135378a5223d74ce95f11331a8282ea54905d61018c7f1bc166994a1d9', my_client, DB).start()
+
+    ChatApp('test_chat', my_client, DB).start()
     my_client.end()
 
 

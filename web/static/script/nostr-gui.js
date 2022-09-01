@@ -7,11 +7,18 @@ APP.nostr.gui = function(){
         _link_tmpl = '<a href="{{url}}">{{text}}</a>',
         // image types e.g. jpg, png
         _img_tmpl = '<img src="{{url}}" width=100% height=auto style="display:block;border-radius:10px;" />',
+        // where media not enabled this is the replacmenet for markdown images
+        _md_img_tmpl = '![{{text}}]<a href="{{url}}">{{url}}</a> ',
         // video
         _video_tmpl = '<video width=100% height=auto style="display:block" controls>' +
         '<source src="{{url}}" >' +
         'Your browser does not support the video tag.' +
         '</video>',
+        // google just have to be cun***s
+        _youtube_tmpl = '<iframe width="100%" height=auto ' +
+            'src="{{url}}"' +
+            'frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"' +
+            ' allowfullscreen></iframe>',
         _notifications_con;
 
     // return a unique id in page
@@ -51,7 +58,9 @@ APP.nostr.gui = function(){
                 'mkv' : 'video'
             },
             url_types = [
-                ['https://pbs.twimg.com/media/', 'image']
+                ['https://pbs.twimg.com/media/', 'image'],
+                ['https://media.discordapp.net/attachments/', 'image'],
+                ['https://www.youtube.com/watch', 'youtube']
             ],
             c_uobj,
             parts = ref_str.toLowerCase().split('.'),
@@ -76,59 +85,35 @@ APP.nostr.gui = function(){
             }
         }
 
-
         return ret;
     }
 
-    function http_media_tags_into_text(text, tmpl_lookup){
+    /*
+        given text is returned with any media links rendered as a tags and sanitised for render
+    */
+    function insert_links(text){
         // first make the text safe
-        let ret = {
-                'text': text,
-                'image': [],
-                'video': [],
-                'external': []
-            },
+        let ret = text,
             // look for link like strs
-            http_matches = APP.nostr.util.http_matches(text),
-            enable_media = APP.nostr.data.user.enable_media();
+            http_matches = APP.nostr.util.http_matches(text);
 
-        /* by default everything, if enable_media is false everything will be rendered
-            as _link, perhaps enable even this level to be turn off
-            or just dont call and just make text safe ... maybe enable media should
-            be changed from true/false
-            0 - no media whatsoever and text rendered unclickable (user has to physically copy paste)
-            1 - no media but hrefs are still rendered
-            2 - external media rendered where wee can, links otherwise
-            (0 could also just give yes/no alert?)
-        */
-        tmpl_lookup = tmpl_lookup || {
-            'image' : _img_tmpl,
-            'external' : _link_tmpl,
-            'video' : _video_tmpl
-        };
 
         // and do replacements in the text
         // do inline media and or link replacement
         if(http_matches!==null){
-            http_matches.forEach(function(c_match){
-                // how to render, unless enable media is false in which case just the link is out put
-                // another level of safety would be that these links are rendered inactive and need the user
-                // to perform some action to actually enable them
-                let media_type = enable_media===true ? APP.nostr.gui.media_lookup(c_match) : 'external',
-                    url = c_match;
+            http_matches.forEach(function(url){
                 // co/com style matches... should we default to https here?
                 if(url.indexOf('http')!=0){
                     url = 'http://'+url;
                 }
 
-                ret[media_type].push(url);
-                ret.text = ret.text.replace(c_match,Mustache.render(tmpl_lookup[media_type],{
+                ret = ret.replace(url,Mustache.render(_link_tmpl,{
                     'url': url,
-                    'text': c_match
+                    'text': url
                 }));
             });
         }
-        return ret;
+        return DOMPurify.sanitize(ret, {ALLOWED_TAGS: ['a']});
     }
 
     function notification(args){
@@ -165,27 +150,97 @@ APP.nostr.gui = function(){
         do_notification();
     }
 
-    function get_note_content_for_render(evt){
+    function get_note_content_for_render(evt, enable_media){
         let content = evt.content,
-            http_data;
+            http_data,
+            tmpl_lookup = {
+                'image' : _img_tmpl,
+                'external' : _link_tmpl,
+                'video' : _video_tmpl,
+                'youtube': _youtube_tmpl
+            },
+            external = [];
 
         // make safe
-        content = APP.nostr.util.html_escape(content);
-        // insert media tags to content
-        http_data = APP.nostr.gui.http_media_tags_into_text(content);
-        content = http_data.text;
+//        content = APP.nostr.util.html_escape(content);
+        content = DOMPurify.sanitize(content, {ALLOWED_TAGS: []});
+
+        const renderer = {
+            text(text){
+                let media = 'external';
+                // this deals with media not defined via markup...
+                // we'll also need to intercept the markup to make sure it honours users enable media
+                // for now meida off == no preview also
+                if(enable_media && text.indexOf('http')==0){
+                    media = media_lookup(text);
+                    if(media!=='external'){
+                        // looks like markup has escape the text so we need to unescape or
+                        // links might break, probably need more chars then amp
+                        if(media==='youtube'){
+                            text = text.replace(/watch\?.*=/,'embed/');
+                        }
+
+                        text = Mustache.render(tmpl_lookup[media],{
+                            'url': APP.nostr.util.html_unescape(text, {amp: '&'})
+                        });
+
+                    }else{
+                        external.push(text);
+                    }
+                }
+               return text;
+            },
+            image(href, title, text){
+                if(enable_media){
+                    return false;
+                }else{
+                    return Mustache.render(_md_img_tmpl, {
+                        'text': text,
+                        'url': href
+                    });
+                }
+            }
+        };
+//        tokenizer = {
+//            text(text) {
+//                'type': 'text',
+//                'raw': text,
+//                'text': text
+//            }
+//           }
+//        },
+//        walkTokens = (token) => {
+//            let type = token.type,
+//                text = token.text;
+//        };
+
+        marked.use({
+            renderer
+        });
+
+        // to in text tag replacement (hashtag)
+
+
         // do p,e [n] tag replacement
         content = APP.nostr.gui.tag_replacement(content, evt.tags);
-        // to in text tag replacement (hashtag)
+
+        // parse the raw content to html for any markup and http links
+        // links dependent on users media options
+        content = marked.parse(content);
+
+        // tag replacement not dependent on event tags
         content = APP.nostr.gui.tag_text_replacement(content, evt.tags);
-        // add line breaks
-        content = content.replace(/\n/g,'<br>');
+        // insert media tags to content
+//        http_data = APP.nostr.gui.http_media_tags_into_text(content);
+//        content = http_data.text;
+
+//        content = content.replace(/\n/g,'<br>');
         // fix special characters as we're rendering in html el
 //        content = APP.nostr.util.html_unescape(content);
 
         return {
             'content': content,
-            'external': http_data.external
+            'external': external
         }
     }
 
@@ -193,7 +248,7 @@ APP.nostr.gui = function(){
         'uid' : uid,
         'get_clicked_id': get_clicked_id,
         'media_lookup' : media_lookup,
-        'http_media_tags_into_text' : http_media_tags_into_text,
+        'insert_links': insert_links,
         'notification' : notification,
         'get_note_content_for_render' : get_note_content_for_render
     }
@@ -1330,7 +1385,9 @@ APP.nostr.gui.profile_about = function(){
               //  '<span style="display:table-cell;width:128px; background-color:#111111;padding-right:10px;" >',
                     // TODO: do something if unable to load pic
                     '{{#picture}}',
-                        '<img style="display:inline-block;float:left;" id="{{pub_k}}-pp" src="{{picture}}" class="{{profile_pic_class}}" />',
+                        '<a href="{{picture}}" >',
+                            '<img style="display:inline-block;float:left;" id="{{pub_k}}-pp" src="{{picture}}" class="{{profile_pic_class}}" />',
+                        '</a>',
                     '{{/picture}}',
                     '<div style="text-align: justify; vertical-align:top;word-break: break-all;">',
                         '{{#name}}',
@@ -1401,7 +1458,8 @@ APP.nostr.gui.profile_about = function(){
             _enable_media = APP.nostr.data.user.enable_media(),
             _show_follow_section = args.show_follows!=undefined ? args.show_follows : true,
             _current_profile = APP.nostr.data.user.profile(),
-            _render_obj;
+            _render_obj,
+            _gui = APP.nostr.gui;
 
         // called when one of our profiles either from follower or contact is clicked
         function _profile_clicked(pub_k){
@@ -1424,8 +1482,7 @@ APP.nostr.gui.profile_about = function(){
                 _render_obj['name'] = attrs.name;
                 _render_obj['about'] = attrs.about;
                 if(_render_obj.about!==undefined){
-                    _render_obj.about = APP.nostr.gui.http_media_tags_into_text(_render_obj.about, false).text;
-                    _render_obj.about = _render_obj.about.replace().replace(/\n/g,'<br>');
+                    _render_obj.about = _gui.insert_links(_render_obj.about);
                 }
                 // we'll be able to dm, (mute future?) and follow unfollow
                 if(_current_profile.pub_k!==undefined && _current_profile.pub_k!==_profile.pub_k){
@@ -1437,7 +1494,7 @@ APP.nostr.gui.profile_about = function(){
             if((_render_obj.picture===undefined) || (_render_obj.picture==='') ||
                 (_render_obj.picture===null) ||
                     (_enable_media===false)){
-                _render_obj.picture = APP.nostr.gui.robo_images.get_url({
+                _render_obj.picture = _gui.robo_images.get_url({
                     'text' : _pub_k
                 });
             }
@@ -1921,7 +1978,7 @@ APP.nostr.gui.profile_edit = function(){
             render_head();
 
             // add events
-            _("input").on('keyup', function(e){
+            _("input, textarea").on('keyup', function(e){
                 let id = e.target.id,
                     val = e.target.value;
 
@@ -2228,9 +2285,7 @@ APP.nostr.gui.profile_list = function (){
                 render_profile['about'] = attrs.about;
                 // be better to do this in our data class
                 if(render_profile.about!==undefined && render_profile.about!==null){
-//                    render_profile.about = APP.nostr.util.html_escape(render_profile.about);
-                    render_profile.about = _gui.http_media_tags_into_text(render_profile.about, false).text;
-                    render_profile.about = render_profile.about.replace(/\n/g,'<br>');
+                    render_profile.about = _gui.insert_links(render_profile.about);
                 }
             }
 
@@ -2487,7 +2542,7 @@ APP.nostr.gui.dm_list = function (){
                     'uid' : _uid,
                     'event_id' : evt.id,
                     'pub_k' : get_to_pub_k(evt),
-                    'content' : _gui.get_note_content_for_render(evt).content,
+                    'content' : _gui.get_note_content_for_render(evt, _enable_media).content,
                     'at_time' : dayjs.unix(evt.created_at).fromNow()
                 },
                 to_p = _profiles.lookup(ret.pub_k);
@@ -2881,7 +2936,7 @@ APP.nostr.gui.post_modal = function(){
                 render_obj.uid = uid;
                 render_obj.event_id = event.id;
                 add_profile_render(render_obj, event.pubkey);
-                render_obj['content'] = gui.get_note_content_for_render(event).content;
+                render_obj['content'] = gui.get_note_content_for_render(event, enable_media).content;
             }
 
         create();
@@ -3050,6 +3105,8 @@ APP.nostr.gui.profile_select_modal = function(){
     }
 }();
 
+APP.nostr.data.relay_rw_options =
+
 APP.nostr.gui.relay_list = function(){
     const _gui = APP.nostr.gui;
 
@@ -3066,6 +3123,7 @@ APP.nostr.gui.relay_list = function(){
             row_tmpl = _gui.templates.get('modal-relay-list-row'),
             list_con_status_tmpl = _gui.templates.get('relay_list-status'),
             sum_con_status_tmpl = _gui.templates.get('relay-con-status'),
+            rw_select_tmpl = _gui.templates.get('bs-select'),
             relay_map = {};
 
         function get_last_connect_str(r_status){
@@ -3096,21 +3154,35 @@ APP.nostr.gui.relay_list = function(){
             let r_status,
                 ret = [],
                 relay_uid,
-                relay_data;
+                relay_data,
+                rw_mode;
 
+            function get_option(text, rw_mode){
+                return {
+                    'text': text,
+                    'value': text,
+                    'selected': rw_mode===text ? 'selected': false
+                };
+            }
 
             for(let relay in c_relay_status.relays){
                 r_status = c_relay_status.relays[relay];
                 relay_uid = relay_map[relay]===undefined ? _gui.uid() : relay_map[relay].uid;
-
+                rw_mode = get_mode_text(r_status);
                 relay_data = {
                     'url' : relay,
                     'connected' : r_status.connected,
                     'last_err' : r_status.last_err,
                     'last_connect' : get_last_connect_str(r_status),
-                    'mode_text' : get_mode_text(r_status),
+                    'mode_text' : rw_mode,
                     'is_mode_edit' : is_edit,
-                    'relay_uid' : relay_uid
+                    'relay_uid' : relay_uid,
+                    'id' : relay_uid+'-rw-select',
+                    'options': [
+                        get_option('read/write', rw_mode),
+                        get_option('read only', rw_mode),
+                        get_option('write only', rw_mode)
+                    ]
                 };
                 ret.push(relay_data);
 
@@ -3121,28 +3193,6 @@ APP.nostr.gui.relay_list = function(){
 
             }
             return ret;
-        }
-
-        function add_relay(url){
-            let data = my_list.data();
-            data.unshift({
-                'url' : url,
-                'last_err' : '',
-                'is_edit_mode' : is_edit
-            });
-            my_list.data(data);
-            my_list.draw();
-        }
-        function remove_relay(url){
-            let data= my_list.data();
-            for(let i=0;i<data.length;i++){
-                if(data[i].url===url){
-                    data.splice(i,1);
-                    break;
-                }
-            }
-            my_list.data(data);
-            my_list.draw();
         }
 
         function init_draw(){
@@ -3161,7 +3211,8 @@ APP.nostr.gui.relay_list = function(){
                 'row_render' : function(r){
                     return Mustache.render(row_tmpl,r,
                         {
-                            'con-status' :  sum_con_status_tmpl
+                            'con-status' :  sum_con_status_tmpl,
+                            'select' : rw_select_tmpl
                         });
                 },
                 'click': function(id){
@@ -3195,6 +3246,32 @@ APP.nostr.gui.relay_list = function(){
                 }
             });
             my_list.draw();
+
+            // change of relay rw mode
+            document.addEventListener('change', function(e){
+                let relay_uid = e.target.id.replace('-rw-select',''),
+                    relay = get_relay_with_uid(relay_uid);
+                    if(relay!==null){
+                        APP.remote.relay_update_mode({
+                            'url': relay.data.url,
+                            'mode': e.target.value,
+                            'success': function(data){
+                                if(data.error!==undefined){
+                                    APP.nostr.gui.notification({
+                                        'text': 'Error removing relay - '+data.error,
+                                        'type': 'warning'
+                                    });
+                                }else{
+                                    APP.nostr.gui.notification({
+                                        'text': 'Relay update - '+relay.data.url+' to ' +e.target.value
+                                    });
+                                }
+                            }
+                        });
+                    }
+
+            }, true);
+
         }
 
         // why have we only mapped on url?
@@ -3231,17 +3308,33 @@ APP.nostr.gui.relay_list = function(){
             set_summary();
             my_list.set_data(list_data());
             my_list.draw();
+        }
 
-//            data.forEach(function(c_relay){
-//               $('#'+c_relay.relay_uid+"-con-status").html(Mustache.render(sum_con_status_tmpl, c_relay));
-//            });
+        function state_str(state){
+            let ret=[],
+                r;
+            for(var url in state.relays){
+                r = state.relays[url];
+                ret.push(url);
+                ret.push(r.connected);
+                ret.push(r.read);
+                ret.push(r.write);
+            }
+
+            return ret.join(';');
         }
 
         function my_listener(of_type, data){
-            console.log('saw relay event!!!!');
-            if(of_type==='relay_status'){
-                c_relay_status = data;
-                draw();
+            if(of_type==='relay_status' && c_relay_status!==data){
+                // good enough for now...
+                if(state_str(c_relay_status) !== state_str(data)){
+                    c_relay_status = data;
+                    draw();
+                }
+//                if(data.relay_count+data.connect_count!==c_relay_status.relay_count+c_relay_status.connect_count){
+//                    c_relay_status = data;
+//                    draw();
+//                }
             }
         }
 
@@ -3269,19 +3362,13 @@ APP.nostr.gui.relay_list = function(){
 APP.nostr.gui.relay_select = function(){
 
     const my_html = [
-        '<div style="height:100%">',
-            '<label for="relays-search">relays</label>',
-            '<div style="display:table-row" >',
-                '<div style="display:table-cell;">',
+            '<div class="input-group mb-3" >',
                     '<input type="url" style="min-width:280px;" type="text" class="form-control" id="relays-search" aria-describedby="available relays" placeholder="search relays" list="relay-options" />',
-                '</div>',
-                '<div style="display:table-cell;vertical-align:top;" >',
                     '<button id="relay-add-but" type="button" class="btn btn-primary">+</button>',
-                '</div>',
             '</div>',
             '<datalist id="relay-options">',
-            '</datalist>',
-        '</div>'
+            '</datalist>'
+
     ].join('');
 
     function create(args){
@@ -3343,6 +3430,63 @@ APP.nostr.gui.relay_select = function(){
     };
 }();
 
+APP.nostr.gui.select = function(){
+    function create(args){
+        const select_tmpl =  APP.nostr.gui.templates.get('bs-select');
+
+        let con = args.con,
+            options = get_options(),
+            id = args.id,
+            html = get_render(),
+            my_el;
+
+            if(con!==undefined){
+                con.html(html);
+                my_el = _('#'+id);
+            }
+
+        function get_render(){
+            return Mustache.render(select_tmpl,{
+                'id': id,
+                'options': options
+            });
+        };
+
+        function get_options(){
+            let ret = args.options || [];
+            ret.forEach((c_opt,i) => {
+                if(c_opt.value===undefined){
+                    c_opt.value = c_opt.text;
+                }
+            });
+
+            return ret;
+        };
+
+        function link(){
+            if(my_el===undefined){
+                my_el = _('#'+id);
+            }
+        };
+
+        return {
+            'val' : function(){
+                link();
+                return my_el.val();
+            },
+            'html' : function(){
+                return html;
+            }
+        };
+    };
+
+
+    return {
+        'create' : create
+    }
+}();
+
+
 APP.nostr.gui.relay_edit = function(){
     const _gui = APP.nostr.gui;
 
@@ -3352,6 +3496,7 @@ APP.nostr.gui.relay_edit = function(){
             relay_sel_con,
             rw_sel_con,
             relay_list,
+            rw_sel,
             screen_tmpl = APP.nostr.gui.templates.get('screen-relay-edit-struct'),
             select_tmpl =  APP.nostr.gui.templates.get('bs-select');
 
@@ -3367,6 +3512,7 @@ APP.nostr.gui.relay_edit = function(){
                 'on_select': function(url){
                     APP.remote.relay_add({
                         'url': url,
+                        'mode': rw_sel.val(),
                         'success': function(data){
                             if(data.error!==undefined){
                                 APP.nostr.gui.notification({
@@ -3383,7 +3529,9 @@ APP.nostr.gui.relay_edit = function(){
                 }
             });
 
-            rw_sel_con.html(Mustache.render(select_tmpl,{
+            rw_sel = APP.nostr.gui.select.create({
+                'con' : rw_sel_con,
+                'id': 'relay-rw-select',
                 'options':[
                     {
                         'text': 'read/write'
@@ -3395,7 +3543,7 @@ APP.nostr.gui.relay_edit = function(){
                         'text': 'write only'
                     }
                 ]
-            }));
+            });
 
             relay_list = _gui.relay_list.create({
                 'con' : relay_con,

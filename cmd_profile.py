@@ -13,7 +13,7 @@ from nostr.encrypt import Keys
 
 # TODO: also postgres
 WORK_DIR = '%s/.nostrpy/' % Path.home()
-DB_FILE = 'nostr-client-test.db'
+DB_FILE = 'nostr-client.db'
 
 def usage():
     print("""

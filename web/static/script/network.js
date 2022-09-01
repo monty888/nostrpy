@@ -25,6 +25,7 @@ APP.remote = function(){
         _relay_list_url = '/relay_list',
         _relay_remove_url = '/relay_remove',
         _relay_add_url = '/relay_add',
+        _relay_update_mode_url = '/relay_update_mode',
         _event_relay_url = '/event_relay',
         _web_preview_url = '/web_preview',
 
@@ -312,9 +313,6 @@ APP.remote = function(){
 
     }
 
-
-
-
     function make_events(evt_data){
         let ret = []
         evt_data.forEach(function(c_evt){
@@ -536,9 +534,19 @@ APP.remote = function(){
             args.cache = false;
             do_query(args);
         },
+        'relay_update_mode': function(args){
+            args['params'] = {
+                'url' : args.url,
+                'mode' : args.mode
+            };
+            args['url'] = _relay_update_mode_url;
+            args.cache = false;
+            do_query(args);
+        },
         'relay_add': function(args){
             args['params'] = {
-                'url' : args.url
+                'url' : args.url,
+                'mode' : args.mode
             };
             args['url'] = _relay_add_url;
             args.cache = false;

@@ -72,7 +72,10 @@ APP.nostr.gui.templates = function(){
             '<div>'
         ],
         'screen-relay-edit-struct' : [
-            '<div id="relay-select-con"></div>',
+            '<div class="input-group mb-2" >',
+                '<span id="relay-select-con"></span>',
+                '<span id="rw-select-con"></span>',
+            '</div>',
             '<div id="current-con"></div>'
         ],
         'head' : [
@@ -125,7 +128,7 @@ APP.nostr.gui.templates = function(){
                 '<div id="{{uid}}-header" style="background-color:#221124;" >',
                     '{{>status}}',
                 '</div>',
-                '<div id="{{uid}}-list" style="min-width:100%;width:100%" >loading</div>',
+                '<div id="{{uid}}-list" style="min-width:100%;width:100%" >loading...</div>',
             '</div>'
         ],
         'relay_list-status' :[
@@ -146,10 +149,15 @@ APP.nostr.gui.templates = function(){
                             '{{mode_text}}',
                         '{{/is_mode_edit}}',
                         '{{#is_mode_edit}}',
-                            'dropdown',
-                            '<svg id="{{relay_uid}}-remove" class="bi" style="color:red;">',
-                                '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#x-circle-fill"/>',
-                            '</svg>',
+                            '<div class="input-group mb-2" >',
+                                '{{> select}}',
+                                '<button id="{{relay_uid}}-remove" type="button" class="btn btn-primary">',
+                                    '-',
+//                                    '<svg class="bi" >',
+//                                        '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#x-square-fill"/>',
+//                                    '</svg>',
+                                '</button>',
+                            '</div>',
                         '{{/is_mode_edit}}',
                     '</span>',
                 '</span>',
@@ -385,7 +393,7 @@ APP.nostr.gui.templates = function(){
             '</div>'
         ],
         'bs-select': [
-            '<select class="form-select" aria-label="{{description}}"',
+            '<select id="{{id}}" class="form-select" aria-label="{{description}}">',
                 '{{#options}}',
                     '<option {{selected}} value="{{value}}" >{{text}}</option>',
                 '{{/options}}',

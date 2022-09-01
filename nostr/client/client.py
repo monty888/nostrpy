@@ -498,9 +498,21 @@ class Client:
     def read(self):
         return self._read
 
+    @read.setter
+    def read(self, is_read):
+        self._read = is_read
+        if self._on_status:
+            self._on_status(self.status)
+
     @property
     def write(self):
         return self._write
+
+    @write.setter
+    def write(self, is_write):
+        self._write = is_write
+        if self._on_status:
+            self._on_status(self.status)
 
     @property
     def last_connected(self):
@@ -642,6 +654,22 @@ class ClientPool:
             the_client.set_status_listener(None)
             del self._status['relays'][client_url]
             del self._clients[client_url]
+
+        self._update_pool_status()
+        if self._on_status:
+            self._on_status(self._status)
+
+        return the_client
+
+    def set_read_write(self, client_url, read=None, write=None):
+        if client_url not in self._clients:
+            raise Exception('ClientPool::remove attempt to set read/write for client that hasn\'t been added')
+
+        the_client: Client = self._clients[client_url]
+        if read is not None:
+            the_client.read = read
+        if write is not None:
+            the_client.write = write
 
         self._update_pool_status()
         if self._on_status:

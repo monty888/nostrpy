@@ -145,25 +145,6 @@ APP.nostr = {
         'short_key': function (key){
             return key.substring(0, 3) + '...' + key.substring(key.length-4)
         },
-        // probably we should use a lib
-//        'html_escape': function (in_str, ignore){
-//            let _replacements = [
-//                [/\&/g,'&amp'],
-//                [/\</g,'&lt;'],
-//                [/\>/g,'&gt;'],
-//                [/\\"/g,'&quot;'],
-//                [/\\'/g,'&#39;']
-//            ];
-//            _replacements.forEach(function(c_rep,i){
-//                let val = c_rep[0],
-//                    rep = c_rep[1];
-//                if(ignore===undefined || ignore[val]===undefined){
-//                    in_str = in_str.replace(val, rep);
-//                }
-//            });
-//            return in_str;
-//        },
-
         'html_escape': function (in_str, ignore){
             let _replacements = [
                 [/\<script\>/g,'&ltscript&gt'],
@@ -184,10 +165,9 @@ APP.nostr = {
         // copied from https://stackoverflow.com/questions/17678694/replace-html-entities-e-g-8217-with-character-equivalents-when-parsing-an
         // for text that is going to be rendered into page as html
         // {{{}}} in Mustache templates
-        'html_unescape' : function (str) {//modified from underscore.string and string.js
-//            var escapeChars = { lt: '<', gt: '>', quot: '"', apos: "'", amp: '&' };
-            // reduced to just &n; style replacements, will need to come back and think about this properly
-            var escapeChars = {amp: '&' };
+        'html_unescape' : function (str, escapeChars) {//modified from underscore.string and string.js
+            escapeChars = escapeChars || { lt: '<', gt: '>', quot: '"', apos: "'", amp: '&' };
+
             return str.replace(/\&([^;]+);/g, function(entity, entityCode) {
                 var match;if ( entityCode in escapeChars) {
                     return escapeChars[entityCode];

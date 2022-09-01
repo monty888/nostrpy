@@ -1,5 +1,6 @@
 from datetime import datetime
 import base64
+from enum import Enum
 import json
 from json import JSONDecodeError
 import secp256k1
@@ -21,6 +22,13 @@ class Event:
     KIND_CONTACT_LIST = 3
     KIND_ENCRYPT = 4
     KIND_DELETE = 5
+    # NIP 28 events for group chat
+    # https://github.com/nostr-protocol/nips/blob/af6893145f9a4a63be3d90beffbcfd4d90e872ae/28.md
+    KIND_CHANNEL_CREATE = 40
+    KIND_CHANNEL_META = 41
+    KIND_CHANNEL_MESSAGE = 42
+    KIND_CHANNEL_HIDE = 43
+    KIND_CHANNEL_MUTE = 44
 
     @staticmethod
     def create_from_JSON(evt_json):

@@ -14,8 +14,9 @@ from pathlib import Path
 import getopt
 from nostr.client.client import ClientPool, Client
 from nostr.client.event_handlers import PersistEventHandler, ProfileEventHandler
-from nostr.event.persist import ClientSQLEventStore, Event, ClientSQLiteEventStore, ClientEventStoreInterface, ClientMemoryEventStore
-from nostr.ident.persist import SQLiteProfileStore, ProfileStoreInterface,MemoryProfileStore
+from nostr.event.persist import ClientSQLiteEventStore, ClientEventStoreInterface
+from nostr.event.event import Event
+from nostr.ident.persist import SQLiteProfileStore, ProfileStoreInterface, MemoryProfileStore
 # from nostr.ident.profile import ProfileEventHandler
 from nostr.util import util_funcs
 from web.web import NostrWeb
@@ -301,7 +302,7 @@ def run():
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
 
-    # run()
+    run()
     # import re
     # def extract_tag(tag_prefix, text, with_pat=None):
     #     if with_pat is None:
@@ -324,14 +325,16 @@ if __name__ == "__main__":
         events = c.query(url='wss://relay.damus.io',
                          filters=[{
                              'since': util_funcs.date_as_ticks(datetime.now()-timedelta(days=10)),
-                             'kinds': [40]
+                             'kinds': [Event.KIND_CHANNEL_CREATE]
                          }])
+
     c_evt: Event
     from nostr.ident.profile import Profile,ValidatedProfile
     for c_evt in events:
-        print(c_evt.content,c_evt.tags, c_evt.id)
-        # if 'f06a690997a1b7d8283c90a7224eb8b7fe96b7c3d3d8cc7b2e7f743532c02b42' in c_evt.e_tags:
-        #     print(c_evt.content)
+        print(c_evt.e_tags, c_evt.content)
+        if '2b48218edd23e88fd33ec23d6d91fd7203a26497d74d4ba54cbae91e3b6e169e' in c_evt.e_tags:
+            print(c_evt.content,c_evt.tags, c_evt.id)
+
 
     from nostr.client.event_handlers import EventHandler
     # is_done = False

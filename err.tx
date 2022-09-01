@@ -1,0 +1,60 @@
+DEBUG:root:Database::select_sql - SQL: select * from profiles
+        order by 
+            case when profile_name ISNULL or profile_name='' then 1 else 0 end, trim(profile_name) COLLATE NOCASE,
+            case when name ISNULL or name='' then 1 else 0 end, trim(name)  COLLATE NOCASE
+         
+ ARGS: []
+DEBUG:root:starting chat app using profile: adhoc_profile 40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486 {} can sign=True
+DEBUG:root:Database::select_sql - SQL: select * from events where deleted isnull and kind in(?) and (pubkey like ?) union select * from events where deleted isnull and kind in(?)
+                and id in 
+                    (
+                        select id from event_tags where type = 'p' and value in(?)
+                    )
+                                 order by created_at 
+ ARGS: [4, '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486%', 4, '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486']
+DEBUG:root:>>>>>>> dict_keys(['90676df07e5ad64dcf47b99c3734c227c24c788e5f655e52a23c74c821031a28', '2d11d3a3123287b478e19e9ef011bceb48e8f14a0d58e22bd156f35a839c5640', '5e35aa09ccd3b0eb7851405b3ac63996ece75ce21d19b1e452c3b87638d98243', '32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245', '8c0bfcb5f94f4ffd9b35783c8fd0bf70f1858419cb15413f5f7e56a9c84a1fb9', '9eaaaeca48f404f51da6344bcc20e38f5c7017175f161da5a7b176a09d0ef6b5', '41cc073f67e20b175c0401740e51c176fab3f305e3c366f0a53c433b0db3e6d6', '3648e5c206883d9118d9c19a01ddde96059c5f46a89444b252e247ca9b9270e3', '9073f08fa71396e45d89adf34024e5c1dccaa369bab3c0d285994fdb8e150e07', '558be2b5dda449bb9335ebe852a22b2f6afecded384157543af4cd386381ceaf', 'a3caab051e22f877b9ef5ac903e2864aaf9e2adefc60b910a165356219c32266', '75e6ce4e0b183e87486da764dc5168a0ebd4d927c829debcdf7e598b61f82b45', '50cef083cc3272082a56c6897510161ac193edfd656029d63162d90c5948ae7f', '042b2fe4bd8746c7f8e465929e9411e65302ab3bdd30a915565fb18be3c01157'])
+DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:root:Client::_on_open ws://localhost:8081
+DEBUG:root:Database::select_sql - SQL: select * from events where deleted isnull and kind in(?,?) order by created_at 
+ ARGS: [4, 0]
+DEBUG:root:Database::select_sql - SQL: select created_at from events e inner join event_relay er on e.id = er.id where er.relay_url = ? and e.created_at<=? order by created_at desc limit 1 
+ ARGS: ['ws://localhost:8081', 1661933187]
+DEBUG:root:Client::subscribe - ["REQ", "f658", {"kinds": [4, 0], "since": 1661861506}]
+DEBUG:urllib3.connectionpool:Starting new HTTP connection (1): localhost:8081
+DEBUG:urllib3.connectionpool:http://localhost:8081 "GET / HTTP/1.1" 200 102
+DEBUG:root:emulating EOSE for sub_id f658
+DEBUG:root:Database::execute_batch SQL: insert into events(event_id, pubkey, created_at, kind, tags, content,sig) values(?,?,?,?,?,?,?)
+ ARGS: ['7ec3264531f993d4bd6116da0293b9aa4fdc034f894930398c0b25b2f0d78c81', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486', 1661861506, 4, '[["p", "2d11d3a3123287b478e19e9ef011bceb48e8f14a0d58e22bd156f35a839c5640"], ["e", "99231af7fae2d39b42b73614ff65a235f6e34b7a2e1f2b0f07bb87fbe40ec8e6"], ["p", "40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486"], ["e", "6ef356185be653827b15848b3a588e22ed793a4752cb6d55785e955b048ec003", "", "reply"]]', 'TLLHCwQZHgHIZPUeHLD6RQ==?iv=RUcECduIwt4/HT1sdIPDXQ==', '04ce31bd13b688fcbeff1428fcf714c18a02d50f62380e56c9a4ad9a8a6b1827aeeb4d51ff4cac2b3ba8066ca9f5e4c2cbf2e118ff0d1fc1f816318a93fd6a5a']
+DEBUG:root:Database::execute_batch SQL: 
+                                                insert into event_tags values (
+                                                (select id from events where event_id=?),
+                                                ?,
+                                                ?)
+                                            
+ ARGS: ['7ec3264531f993d4bd6116da0293b9aa4fdc034f894930398c0b25b2f0d78c81', 'p', '2d11d3a3123287b478e19e9ef011bceb48e8f14a0d58e22bd156f35a839c5640']
+DEBUG:root:Database::execute_batch SQL: 
+                                                insert into event_tags values (
+                                                (select id from events where event_id=?),
+                                                ?,
+                                                ?)
+                                            
+ ARGS: ['7ec3264531f993d4bd6116da0293b9aa4fdc034f894930398c0b25b2f0d78c81', 'e', '99231af7fae2d39b42b73614ff65a235f6e34b7a2e1f2b0f07bb87fbe40ec8e6']
+DEBUG:root:Database::execute_batch SQL: 
+                                                insert into event_tags values (
+                                                (select id from events where event_id=?),
+                                                ?,
+                                                ?)
+                                            
+ ARGS: ['7ec3264531f993d4bd6116da0293b9aa4fdc034f894930398c0b25b2f0d78c81', 'p', '40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486']
+DEBUG:root:Database::execute_batch SQL: 
+                                                insert into event_tags values (
+                                                (select id from events where event_id=?),
+                                                ?,
+                                                ?)
+                                            
+ ARGS: ['7ec3264531f993d4bd6116da0293b9aa4fdc034f894930398c0b25b2f0d78c81', 'e', '6ef356185be653827b15848b3a588e22ed793a4752cb6d55785e955b048ec003']
+DEBUG:root:Database::execute_batch SQL: insert into event_relay values ((select id from events where event_id=?), ?)
+ ARGS: ['7ec3264531f993d4bd6116da0293b9aa4fdc034f894930398c0b25b2f0d78c81', 'ws://localhost:8081']
+DEBUG:root:Database::execute_batch commit done
+DEBUG:root:Client::_on_close ws://localhost:8081
+DEBUG:root:end of stored events for f658 - 0 events received

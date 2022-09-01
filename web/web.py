@@ -262,6 +262,9 @@ class NostrWeb(StaticServer):
         self._app.route('/relay_list', callback=_get_err_wrapped(self._relay_list))
         self._app.route('/relay_add', callback=_get_err_wrapped(self._add_relay_route))
         self._app.route('/relay_remove', callback=_get_err_wrapped(self._remove_relay_route))
+        self._app.route('/relay_update_mode', callback=_get_err_wrapped(self._relay_mode_route))
+
+
 
         self._app.route('/websocket', callback=self._handle_websocket)
         # self._app.route('/count', callback=self._count)
@@ -1040,12 +1043,36 @@ class NostrWeb(StaticServer):
         if url.find('ws://') != 0 and url.find('wss://') != 0:
             raise NostrWebException('%s doesn\'t look like a websocket url' % url)
 
+    def _get_rw_mode(self):
+        mode = request.query.mode
+        read = True
+        write = True
+
+        if 'read' not in mode:
+            read = False
+        if 'write' not in mode:
+            write = False
+
+        return read, write
+
     def _add_relay_route(self):
         url = request.query.url.lstrip()
+        read, write = self._get_rw_mode()
+
+        # just incase, though this isn't possible from the front end it could be done by url directly
+        # and the gui doesn't currently have a way to show not read or write... and whats the point anyway
+        # just delete
+        if read is False and write is False:
+            raise NostrWebException('Error adding relay neither read or write is true')
+
         self._check_relay_url(url)
 
         try:
-            self._client.add(url)
+            self._client.add({
+                'client': url,
+                'read': read,
+                'write': write
+            })
         except Exception as e:
             raise NostrWebException(str(e))
 
@@ -1066,6 +1093,18 @@ class NostrWeb(StaticServer):
             'success': 'relay %s removed' % url
         }
 
+    def _relay_mode_route(self):
+        url = request.query.url.lstrip()
+        read, write = self._get_rw_mode()
+        self._check_relay_url(url)
+        try:
+            self._client.set_read_write(url, read, write)
+        except Exception as e:
+            raise NostrWebException(str(e))
+
+        return {
+            'success': 'relay %s mode updated to %s' % (url, request.query.mode)
+        }
 
     @lru_cache(maxsize=1000)
     def _get_robo(self, val):
@@ -1116,20 +1155,19 @@ class NostrWeb(StaticServer):
                     """
                     p_tags = evt.p_tags
                     if p_tags:
-                        send: Profile = self._profile_handler.profiles.lookup_pub_key(evt.pub_key)
                         to_p = p_tags[0]
-                        if to_p == send.public_key:
+                        if to_p == evt.pub_key:
                             to_p = p_tags[1]
 
+                    send: Profile = self._profile_handler.profiles.lookup_pub_key(evt.pub_key)
+                    if send and send.private_key:
+                        decrypted = evt.decrypted_content(priv_key=send.private_key,
+                                                          pub_key=to_p)
+                    else:
                         rec: Profile = self._profile_handler.profiles.lookup_pub_key(to_p)
-
-                    if send and rec:
-                        if send.private_key:
-                            decrypted = evt.decrypted_content(priv_key=send.private_key,
-                                                              pub_key=rec.public_key)
-                        elif rec.private_key:
+                        if rec and rec.private_key:
                             decrypted = evt.decrypted_content(priv_key=rec.private_key,
-                                                              pub_key=send.public_key)
+                                                              pub_key=evt.pub_key)
 
                 except:
                     pass

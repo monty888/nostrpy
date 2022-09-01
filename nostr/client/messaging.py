@@ -91,25 +91,28 @@ class MessageThreads:
                 }
             ]
         )
-        # we want newest at the bottom
-        all_evts.reverse()
         c_evt: Event
         for c_evt in all_evts:
             self._add_msg(c_evt)
 
     def _add_msg(self, msg_evt):
-        tags = msg_evt.get_tags('p')
+        p_tags = msg_evt.p_tags
+
         # we've already seen this event either from local store or previous sub recieved
         # or it's not 1-1 msg
         with self._msg_lookup_lock:
-            if msg_evt.id in self._msg_lookup or len(tags) != 1:
+            if msg_evt.id in self._msg_lookup or len(p_tags) < 1 or len(p_tags) > 2:
                 return False
             self._msg_lookup.add(msg_evt.id)
 
-        to_id = tags[0][0]
-        # must there event to us
+        to_id = p_tags[0]
         if to_id == self._from.public_key:
             to_id = msg_evt.pub_key
+
+        if to_id == self._from.public_key:
+            if len(p_tags) == 1:
+                return False
+            to_id = p_tags[1]
 
         if to_id not in self._msg_threads:
             """

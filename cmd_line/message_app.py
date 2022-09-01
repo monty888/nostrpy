@@ -18,8 +18,9 @@ from prompt_toolkit.widgets import VerticalLine, Button,TextArea, HorizontalLine
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.mouse_events import MouseEvent, MouseButton, MouseEventType
-from nostr.ident.profile import Profile, ProfileEventHandler, UnknownProfile, ProfileList
-from nostr.ident.persist import SQLProfileStore, TransientProfileStore
+from nostr.ident.profile import Profile, UnknownProfile, ProfileList
+from nostr.client.event_handlers import ProfileEventHandler
+from nostr.ident.persist import SQLProfileStore, MemoryProfileStore
 from nostr.client.event_handlers import PersistEventHandler
 from nostr.event.event import Event
 from nostr.client.client import Client
@@ -654,9 +655,8 @@ class ChatApp:
             self._profiles = ProfileEventHandler(SQLProfileStore(self._db), None)
             self._event_store = ClientSQLEventStore(self._db)
         else:
-            self._profiles = ProfileEventHandler(TransientProfileStore(), None)
+            self._profiles = ProfileEventHandler(MemoryProfileStore(), None)
             self._event_store = ClientMemoryEventStore()
-
 
         self._profile = self._profiles.profiles.get_profile(as_profile,None)
 
@@ -670,7 +670,7 @@ class ChatApp:
                 self._profile = Profile(priv_k=adhoc_keys['priv_k'],
                                         profile_name='adhoc_profile')
             # needed to show in switch profile
-            self._profiles.profiles.add(self._profile)
+            self._profiles.profiles.put(self._profile)
 
         if not self._profile or not self._profile.private_key:
             raise UnknownProfile('unable to find profile %s or we don\'t have the private key for it')
@@ -725,7 +725,6 @@ class ChatApp:
                 for c_evt in evts:
                     self.do_event(None, c_evt, None)
 
-
             the_client.subscribe(handlers=handlers, filters=filter)
 
 
@@ -754,11 +753,12 @@ class ChatApp:
 
     def do_event(self, sub_id, evt: Event, relay):
         # we only need to forward evts for profiles we already looked at, as others
-        # will be picked up on load from db on create msgthread
-        if evt.pub_key in self._threads:
-            self._threads[evt.pub_key].do_event(sub_id, evt, relay)
-        if evt.p_tags and evt.p_tags[0] in self._threads:
-            self._threads[evt.p_tags[0]].do_event(sub_id, evt, relay)
+        # will be picked up on load from db or on create msgthread
+        to_p = evt.p_tags + [evt.pub_key]
+        for p_k in to_p:
+            if p_k in self._threads:
+                self._threads[p_k].do_event(sub_id, evt, relay)
+                break
 
     def do_message(self, text):
         self.profile_threads.post_message(the_client=self._client,
