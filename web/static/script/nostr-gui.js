@@ -628,12 +628,12 @@ APP.nostr.gui.tabs = function(){
                 '</li>',
             '{{/tabs}}',
             // extra area for e.g. search field,
-            '<span id="{{id}}-tool-con" class="tab-tool-area" >',
+            '<span id="{{id}}-tool-con" class="ms-auto tab-tool-area" >',
             '</span>',
         '</ul>'
         ].join(''),
         _body_tmpl = [
-            '<div class="tab-content" style="overflow-y:auto;height:calc(100% - 32px);padding-right:5px;" >',
+            '<div id="{{id}}-content" class="tab-content" style="overflow-y:auto;height:calc(100% - 32px);padding-right:5px;" >',
             '{{#tabs}}',
                 '<div id="{{tab-ref}}" class="tab-pane {{transition}} {{active}}" role="tabpanel" >',
                     '<div id="{{tab-ref}}-con">{{content}}</div>',
@@ -724,6 +724,12 @@ APP.nostr.gui.tabs = function(){
             // after anims
             _('.nav-tabs a').on('shown.bs.tab', function(e){
             });
+
+            // event on scroll to bottom
+           _('#'+_id+'-content').scrollBottom(function(e){
+                alert('tab mofo!!!');
+            });
+
 
             // not sure we should count this as a change??
             // anyway on first draw fire _on_tab_change for selected tab
@@ -1151,7 +1157,7 @@ APP.nostr.gui.event_view = function(){
                 }
             });
             // evts ordered and rendered for screen
-            event_ordered().forEach(function(c_evt){
+            event_ordered(_notes_arr).forEach(function(c_evt){
                 let add_content = _note_content(c_evt);
                 _render_arr.push(add_content);
                 _event_map[c_evt.id].render_event = add_content;
@@ -1195,7 +1201,7 @@ APP.nostr.gui.event_view = function(){
         };
 
 
-        function event_ordered(){
+        function event_ordered(notes_arr){
             /* where tags refrence a parent, if we have that event we'll lift it up so it appears
                 before it's child event (otherwise everything is just date ordered)
 
@@ -1214,7 +1220,7 @@ APP.nostr.gui.event_view = function(){
             }
 
             // 1. look through all events and [] thouse that have the same parent
-            _notes_arr.forEach(function(c_evt,i){
+            notes_arr.forEach(function(c_evt,i){
                 let tag,j,parent;
                 // everything is done on a copy of the event as we're going to add some of
                 // our own fields
@@ -1287,11 +1293,10 @@ APP.nostr.gui.event_view = function(){
 
         function set_notes(the_notes){
             _notes_arr = the_notes;
-            load_profiles();
-            _create_contents();
+            load_profiles(() => {_create_contents()});
         };
 
-        function load_profiles(){
+        function load_profiles(on_load){
             let pub_ks = new Set([]);
             _notes_arr.forEach(function(c_note){
                 pub_ks.add(c_note.pubkey);
@@ -1306,9 +1311,7 @@ APP.nostr.gui.event_view = function(){
 
             _profiles.fetch({
                 'pub_ks': pub_ks,
-                'on_load' : function(){
-                    _create_contents();
-                }
+                'on_load' : on_load
             });
 
         };
@@ -1353,8 +1356,35 @@ APP.nostr.gui.event_view = function(){
 //                _create_contents();
                 // call load profiles cause it'll make sure we have the profile info before
                 // redrawing, ajax call might be made
-                load_profiles();
+                load_profiles(() => {_create_contents()});
             }
+        }
+
+        function append_notes(evts){
+            evts.forEach(function(c_evt){
+                _event_map[c_evt.id] = {
+                    'event' : c_evt
+                }
+            });
+            let offset = _render_arr.length,
+                n_html = [];
+
+            // evts ordered and rendered for screen
+            event_ordered(evts).forEach(function(c_evt){
+                let add_content = _note_content(c_evt);
+                _render_arr.push(add_content);
+                _event_map[c_evt.id].render_event = add_content;
+            });
+
+
+            load_profiles(() => {
+                for(let i=offset;i<_render_arr.length;i++){
+                    n_html.push(_row_render(_render_arr[i], i));
+                }
+                // hacky should append should probably be a method of list
+                // and it should check if drawing...
+                _con.insertAdjacentHTML('beforeend', n_html.join(''));
+            });
         }
 
         // update the since every 30s
@@ -1365,6 +1395,7 @@ APP.nostr.gui.event_view = function(){
             'set_notes' : set_notes,
             'set_filter' : set_filter,
             'add' : add_note,
+            'append_notes': append_notes,
             'draw' : function(){
                 _my_list.draw();
             }
@@ -2157,7 +2188,6 @@ APP.nostr.gui.profile_list = function (){
                 'con' : _con,
                 'data' : _render_arr,
                 'row_tmpl': _row_tmpl,
-                'filter' : test_filter,
                 'click' : function(id){
                     let click_data = get_click_info(id),
                         action = click_data.action,
@@ -2311,33 +2341,31 @@ APP.nostr.gui.profile_list = function (){
             return render_profile;
         }
 
-        function test_filter(render_obj){
-            if(_filter_text.replace(' ','')==''){
-                return true;
-            };
-            let test_txt = _filter_text.toLowerCase();
-            if(render_obj.pub_k.toLowerCase().indexOf(test_txt)>=0){
-                return true;
-            };
-            if((render_obj.name!==undefined) && (render_obj.name.toLowerCase().indexOf(test_txt)>=0)){
-                return true;
-            }
-            if((render_obj.about!==undefined) && (render_obj.about.toLowerCase().indexOf(test_txt)>=0)){
-                return true;
-            }
-        }
-
-        function set_filter(str){
-            _filter_text = str;
-            _my_list.draw();
-        }
-
         // prep and draw the list
         init();
 
         return {
             'draw': draw,
-            'set_filter': set_filter
+            'set_data': function(data){
+                _view_profiles = data;
+                create_render_data();
+                _my_list.set_data(_render_arr);
+                _my_list.draw();
+            },
+            'add_data': function(data){
+                _view_profiles = _view_profiles.concat(data);
+                create_render_data();
+                _my_list.set_data(_render_arr);
+                let l = data.length,
+                    append_html = [];
+
+                for(var i=_view_profiles.length-l; i<_view_profiles.length;i++){
+                    append_html.push(Mustache.render(_row_tmpl, _render_arr[i]))
+                }
+                _con.insertAdjacentHTML('beforeend', append_html.join(''));
+            }
+
+
         }
     }
 

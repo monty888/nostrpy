@@ -19,6 +19,18 @@ class util_funcs:
         return int(dt.timestamp())
 
     @staticmethod
+    def chunk(arr, chunk_size):
+        if not hasattr(arr, '__iter__'):
+            arr = [arr]
+
+        if chunk_size is not None:
+            ret = [arr[i:i + chunk_size] for i in range(0, len(arr), chunk_size)]
+        else:
+            ret = [arr]
+
+        return ret
+
+    @staticmethod
     def str_tails(the_str, taillen=4):
         # returns str start...end chars for taillen
         ret = '?...?'

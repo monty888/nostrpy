@@ -257,7 +257,7 @@ class Client:
 
         self._reset_status()
 
-    def query(self, url: str, filters=[]):
+    def query(self, filters=[]):
         """
             do simple one of queries to a given relay
         """

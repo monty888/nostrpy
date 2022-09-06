@@ -10,24 +10,18 @@
         _main_con,
         // the search input
         _search_in,
+        // list container
+        _list_con,
         // delay action using timer
         _search_timer,
         // gui profile list objs
         _profiles_list,
         // profiles being listed
         _profiles,
-        // create the search in
-        _search_html = [
-            '<div style="display:table-row">',
-                '<input style="display:table-cell;width:10em;"  placeholder="search" type="text" class="form-control" id="search-in">',
-                '<button id="full_search_but" style="display:table-cell;" type="button" class="btn btn-primary" >' +
-                '</button>',
-            '</div>'
-        ].join('');
-
-    function set_list_filter(){
-        _profiles_list.set_filter(_search_in.val());
-    }
+        _maybe_more,
+        _c_off,
+        _chunk_size = 25,
+        _loading=false;
 
     // start when everything is ready
     document.addEventListener('DOMContentLoaded', () => {
@@ -39,31 +33,59 @@
         _main_con.html(APP.nostr.gui.templates.get('screen-profiles-search'));
         // grab the search button
         _search_in = _('#search-in');
+        _list_con = _('#list-con');
 
-        try{
+        _search_in.focus();
+
+        _search_in.on('keyup', function(e){
+            clearTimeout(_search_timer);
+            _search_timer = setTimeout(function(){
+                load_profiles(true);
+            },200);
+        });
+        load_profiles(true);
+
+        function load_profiles(is_new){
+            _loading = true;
+            if(is_new){
+                _maybe_more = false;
+                _c_off = 0;
+                _profiles = [];
+            }
+
             APP.nostr.data.profiles.search({
+                'match': _search_in.val(),
+                'limit': _chunk_size,
+                'offset': _c_off,
                 'on_load' : function(data){
-                    _profiles = data.profiles;
-                    _profiles_list = APP.nostr.gui.profile_list.create({
-                        'con': _('#list-con'),
-                        'profiles' : _profiles
-                    });
-                    // finally draw
-//                    _profiles_list.draw();
+                    _profiles = _profiles.concat(data.profiles);
+                    if(_profiles_list===undefined){
+                        _profiles_list = APP.nostr.gui.profile_list.create({
+                            'con': _list_con,
+                            'profiles' : _profiles
+                        });
+                    }else{
+                        if(is_new){
+                            _profiles_list.set_data(_profiles);
+                        }else{
+                            _profiles_list.add_data(data.profiles);
+                        }
+                    };
 
-                    _search_in.focus();
-
-                    _search_in.on('keyup', function(e){
-                        clearTimeout(_search_timer);
-                        _search_timer = setTimeout(function(){
-                            set_list_filter();
-                        },200);
-                    });
+                    // for loading more on scroll
+                    _maybe_more = data.profiles.length === _chunk_size;
+                    _c_off += _chunk_size;
+                    _loading = false;
                 }
             });
-        }catch(e){
-            console.log(e)
         }
+
+        _list_con.scrollBottom(function(e){
+            if(!_maybe_more || _loading){
+                return;
+            }
+            load_profiles();
+        });
 
         // any post/ reply we'll go to the home page
         APP.nostr.data.event.add_listener('post-success', function(type, event){

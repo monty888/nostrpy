@@ -27,7 +27,7 @@ from geventwebsocket import WebSocketError
 from geventwebsocket.websocket import WebSocket
 from geventwebsocket.handler import WebSocketHandler
 from nostr.event.event import Event
-from nostr.ident.profile import ProfileList, Profile, Contact, ContactList
+from nostr.ident.profile import ProfileList, Profile, Contact, ContactList, ValidatedProfile
 from nostr.ident.persist import SQLiteProfileStore, ProfileType
 from nostr.event.persist import ClientEventStoreInterface, SQLiteEventStore
 from nostr.encrypt import Keys
@@ -233,7 +233,7 @@ class NostrWeb(StaticServer):
 
         self._app.route('/', callback=_get_err_wrapped(self._home_route))
         self._app.route('/profile', callback=_get_err_wrapped(self._profile))
-        self._app.route('/profiles', method=['POST', 'GET'], callback=self._profiles_list)
+        self._app.route('/profiles', method=['POST', 'GET'], callback=_get_err_wrapped(self._profiles_list))
         self._app.route('/local_profiles', callback=_get_err_wrapped(self._local_profiles))
         self._app.route('/update_profile', method='POST', callback=_get_err_wrapped(self._do_profile_update))
         self._app.route('/export_profile', method='POST', callback=_get_err_wrapped(self._export_profile))
@@ -315,9 +315,21 @@ class NostrWeb(StaticServer):
 
         return ret
 
+    @lru_cache(maxsize=5)
+    def _get_profile_matches(self, match_str):
+        return self._profile_handler.profiles.matches(match_str,
+                                                      max_match=None,
+                                                      search_about=True)
+
     def _profiles_list(self):
+        c_p: Profile
+        limit = self._get_query_limit()
+        offset = self._get_query_offset()
         # , list of pub_ks we want profiles for
         pub_k = request.query.pub_k
+        match = request.query.match
+
+
         if request.method == 'POST':
             if 'pub_k' in request.forms:
                 pub_k = request.forms['pub_k']
@@ -333,6 +345,11 @@ class NostrWeb(StaticServer):
         # we combine so a profile plus some other p_keys can be requested
         all_keys = all_keys.union(for_profile)
 
+        # match style
+        if match:
+            for c_m in match.split(','):
+                all_keys = all_keys.union(self._get_profile_matches(c_m))
+
         the_profile: Profile
         ret = {
             'profiles': []
@@ -340,14 +357,14 @@ class NostrWeb(StaticServer):
         # pub_k, or pub_ks, seperated by ,
         # possibly this will /profile and /profiles methods merged
         # note we don't check the pub_ks, if they're incorrect then nothing will be returned for that pk anyhow
-        if all_keys:
-            for c_pub_k in all_keys:
+        if pub_k != '' or match != '':
+            for c_pub_k in list(all_keys)[offset:offset+limit]:
                 the_profile = self._profile_handler.profiles.get_profile(c_pub_k)
-                # we could easily add in here contact and profile whci would replace the
+                # we could easily add in here contact and profile which would replace the
                 # profiles method, though obviously loading per profile wouldn't be great with a very long list of
                 # pks
                 if the_profile:
-                    ret['profiles'].append(the_profile.as_dict())
+                    ret['profiles'].append(ValidatedProfile.from_profile(the_profile).as_dict())
                 else:
                     ret['profiles'].append({
                         'pub_k': c_pub_k
@@ -355,7 +372,7 @@ class NostrWeb(StaticServer):
 
         # eventually this full list will probably have to go
         else:
-            ret['profiles'] = self._profile_handler.profiles.as_arr()
+            ret['profiles'] = [ValidatedProfile.from_profile(c_p).as_dict() for c_p in self._profile_handler.profiles[offset:offset+limit]]
 
         return ret
 
@@ -380,7 +397,7 @@ class NostrWeb(StaticServer):
         # only used when checking priv_k, we just create a profile with the priv_k and
         # then turn that into pub_k. any supplied pub_k is ignored
         if priv_k:
-            self._check_key(priv_k,key_name='priv_k')
+            self._check_key(priv_k, key_name='priv_k')
             the_profile = Profile(priv_k=priv_k)
             pub_k = the_profile.public_key
 
@@ -892,11 +909,16 @@ class NostrWeb(StaticServer):
             'kinds': [Event.KIND_TEXT_NOTE]
         }
 
+        until = self._get_query_int('until', default_value='')
+        if until != '':
+            filter['until'] = until
+
         if search_str.replace(' ', ''):
             # add hash tags to filter
             hashtags, search_str = extract_tag('#', search_str)
             if hashtags:
-                filter['#hashtag'] = hashtags
+                # filter['#hashtag'] = hashtagsnow
+                filter['#t'] = hashtags
 
             # add authors to filter
             author_pres, search_str = extract_tag('@', search_str)
@@ -942,17 +964,25 @@ class NostrWeb(StaticServer):
             'events': evts
         }
 
+    def _get_query_int(self, field, default_value=None):
+        try:
+            ret = int(request.query[field])
+        except:
+            if default_value is not None:
+                ret = default_value
+            else:
+                raise NostrWebException('error getting query int %s and no default value given' % field)
+        return ret
 
     def _get_query_limit(self):
-        limit = self._default_query_limit
-        try:
-            limit = int(request.query.limit)
-        except:
-            pass
+        ret = self._get_query_int('limit', default_value=self._default_query_limit)
 
-        if self._max_query and limit and limit > self._max_query:
-            limit = self._max_query
-        return limit
+        if self._max_query and ret > self._max_query:
+            ret = self._max_query
+        return ret
+
+    def _get_query_offset(self):
+        return self._get_query_int('offset', default_value=0)
 
     def _text_events_route(self):
         """
@@ -1106,14 +1136,28 @@ class NostrWeb(StaticServer):
             'success': 'relay %s mode updated to %s' % (url, request.query.mode)
         }
 
-    @lru_cache(maxsize=1000)
+    @lru_cache(maxsize=5000)
     def _get_robo(self, val):
-        rh = Robohash(val)
-        rh.assemble(roboset='set1', sizex=128,sizey=128)
-        image_buffer = BytesIO()
-        rh.img.save(image_buffer, format='png')
-        image_buffer.seek(0)
-        return image_buffer.read()
+        ret = None
+
+        def my_assemble():
+            nonlocal ret
+            rh = Robohash(val)
+            rh.assemble(roboset='set1', sizex=128,sizey=128)
+            image_buffer = BytesIO()
+            rh.img.save(image_buffer, format='png')
+            image_buffer.seek(0)
+            ret = image_buffer.read()
+
+        from gevent.thread import Greenlet
+
+        g = Greenlet(my_assemble())
+        g.start()
+        g.join()
+
+
+
+        return ret
 
     def _get_robo_route(self, hash_str):
         response.set_header('Content-type', 'image/png')

@@ -66,16 +66,14 @@
 
     function add_search(){
         let tool_html = [
-            '<span style="vertical-align:top">',
-
-                '<input style="display:table-cell;width:8em;"  placeholder="search" type="text" class="form-control" id="search-in">',
-                '<button id="full_search_but" style="display:table-cell;valign:top" type="button" class="btn btn-primary" >' +
+            '<div class="input-group mb-2" >',
+                '<input style="width:10em" placeholder="search" type="text" class="form-control" id="search-in">',
+                '<button id="full_search_but" type="button" class="btn btn-primary" >' +
                 '<svg class="bi" >',
                     '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#person-plus-fill"/>',
                 '</svg>',
                 '</button>',
             '</span>'
-
 
             ].join('');
 
@@ -96,11 +94,58 @@
         });
     }
 
-    function set_list_filter(){
-        let list = _my_tab.get_selected_index()===0 ? _contacts_list : _followers_list;
-            if(list!==undefined){
-                list.set_filter(_search_in.val());
+    function filter_data(data){
+        let ret = [],
+            filter_str = _search_in.val().toLowerCase();
+
+        function test_filter(c_p){
+            let name, about;
+            if(c_p.pub_k.toLowerCase().indexOf(filter_str)>=0){
+                return true;
+            };
+
+            if(c_p.attrs!==undefined){
+
+                name = c_p.attrs.name;
+                if((name!==undefined) && (name.toLowerCase().indexOf(filter_str)>=0)){
+                    return true;
+                }
+
+                about = c_p.attrs.about;
+                if((about!==undefined) && (about.toLowerCase().indexOf(filter_str)>=0)){
+                    return true;
+                }
             }
+        }
+
+        // no filter
+        if(filter_str.replace(' ','')===''){
+            return data;
+        }
+
+        data.forEach(function(c_p,i){
+            if(test_filter(c_p)){
+                ret.push(c_p);
+            };
+        });
+
+        return ret;
+    }
+
+    function set_list_filter(){
+        // data not loaded yet?
+        if(_profile==undefined){
+            return;
+        }
+
+        let list = _contacts_list,
+            data = _profile.contacts;
+            if(_my_tab.get_selected_index() !==0){
+                list = _followers_list;
+                data = _profile.followed_by;
+            }
+
+            list.set_data(filter_data(data));
     };
 
     // start when everything is ready

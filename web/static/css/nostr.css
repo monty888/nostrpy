@@ -61,8 +61,6 @@ img{
 
 .tab-tool-area{
     float:right;
-    display:table-cell;
-    padding-top:4px;
     padding-bottom:4px;
     max-height: 32px;
     overflow: hidden;

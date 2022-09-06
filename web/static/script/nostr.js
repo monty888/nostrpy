@@ -18,10 +18,29 @@ var _ = (id) => {
         };
 
         ret.on = (type, func) => {
+            let args = {};
             internal.forEach(function(el,i){
-                el.addEventListener(type, func);
+                if(type==='scroll'){
+                    args.passive = true;
+                }
+                el.addEventListener(type, func, args);
             });
         };
+
+        ret.scrollBottom = (func) => {
+            internal.forEach(function(el,i){
+                el.addEventListener('scroll', function(e){
+                    let el = e.target,
+                        max_y = el.scrollHeight,
+                        // ceil fix for brave on mobile..
+                        c_y = Math.ceil(el.scrollTop+el.offsetHeight);
+
+                    if(max_y <= c_y){
+                        func(e);
+                    }
+                });
+            });
+        }
 
         ret.css = (property, val) => {
             internal.forEach(function(el,i){

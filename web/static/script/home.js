@@ -12,7 +12,8 @@
         _global_filter = APP.nostr.data.filter.create({
             'kinds' : [1]
         }),
-        _my_tabs;
+        _my_tabs,
+        _chunk_size = 50;
 
     function home_view(){
         // kill old views if any
@@ -105,7 +106,6 @@
         },_global_filter);
     }
 
-
     function init_view(con, filter){
         return APP.nostr.gui.event_view.create({
             'con': con,
@@ -118,6 +118,7 @@
             'filter' : filter,
             // maybe at somepoint see if we can reduce loads by tracking changes
             'cache' : false,
+            'limit': _chunk_size,
             'success': function(data){
                 if(data['error']!==undefined){
                     alert(data['error']);
@@ -148,6 +149,13 @@
                 global_only_view();
             }
         }
+
+        _main_con.scrollBottom(function(e){
+            if(_current_profile.pub_k===undefined){
+//                alert('mofo!!!');
+            }
+        });
+
 
         APP.nostr.gui.post_button.create();
 

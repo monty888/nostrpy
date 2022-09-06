@@ -25,20 +25,39 @@
         // timer before we add current val to history
         _history_timer,
         _my_event_view,
-        _current_profile = APP.nostr.data.user.profile();
+        _current_profile = APP.nostr.data.user.profile(),
+        _chunk_size = 25,
+        _maybe_more,
+        _until = null,
+        _events = [],
+        _loading=false;
 
-    function load_notes(on_done){
-
+    function load_notes(){
+        _loading = true;
         APP.remote.text_events_search({
             // #>. because otherwise we'll lose it somewhere on teh way to the server because it's a specual char
             // nasty but will do for now...
             'search_str': _search_str===null ? '' : encodeURIComponent(_search_str),
+            'until': _until,
+            'limit': _chunk_size,
             'success': function(data){
                 if(data['error']!==undefined){
                     alert(data['error']);
                 }else{
-                    _my_event_view.set_notes(data['events']);
+                    // fresh load
+                    if(_events.length==0){
+                        _events = data.events;
+                        _my_event_view.set_notes(_events);
+                    // onwards scroll
+                    }else{
+                        _events = _events.concat(data.events);
+                        _my_event_view.append_notes(data.events);
+                    }
+
+
+                    _maybe_more = data.events.length === _chunk_size;
                 }
+                _loading = false;
             }
         });
     }
@@ -56,12 +75,12 @@
         _search_in.val(_search_str);
         _search_in.focus();
         _list_con = _('#list-con');
+
         _my_event_view = APP.nostr.gui.event_view.create({
             'con' : _list_con
         });
-
-        // start client for future notes....
         load_notes();
+
 
         _search_in.on('keyup', function(e){
             clearTimeout(_input_timer);
@@ -70,6 +89,8 @@
             // load notes if no new key for 250ms
             _input_timer = setTimeout(function(){
                 _search_str = _search_in.val();
+                _events = [];
+                _until = null;
                 load_notes();
             },250);
             // save the history if no new key for 1sec
@@ -86,6 +107,19 @@
             _search_in.val(_search_str);
             load_notes();
         });
+
+        _list_con.scrollBottom(function(e){
+            if(!_maybe_more || _loading){
+                return;
+            }
+            _until = null;
+            if(_events.length>0){
+                _until = _events[_events.length-1].created_at-1;
+            }
+            load_notes();
+
+        });
+
 
         APP.nostr.gui.post_button.create();
         // our own listeners

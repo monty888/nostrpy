@@ -22,6 +22,8 @@ class Event:
     KIND_CONTACT_LIST = 3
     KIND_ENCRYPT = 4
     KIND_DELETE = 5
+    # NIP 25 reactions https://github.com/nostr-protocol/nips/blob/master/25.md
+    KIND_REACTION = 7
     # NIP 28 events for group chat
     # https://github.com/nostr-protocol/nips/blob/af6893145f9a4a63be3d90beffbcfd4d90e872ae/28.md
     KIND_CHANNEL_CREATE = 40

@@ -275,7 +275,7 @@ APP.nostr.data.user = function(){
         // NOTE until we get the client to put on seeing meta events
         // session cache will be an issue so disabled for now
         'profile_cache' : function(val){
-            return _property('profile_cache', val, true);
+            return _property('profile_cache', val, false);
         },
         'follow_toggle': function(){
             let my_timer,
@@ -534,20 +534,24 @@ APP.nostr.data.profiles = function(){
     };
 
     function search(args){
-        let _on_load = args.on_load;
-
-        APP.remote.load_profiles({
-            'success' : function(data){
-                try{
+        let on_load = args.on_load,
+            limit = args.limit || 100,
+            offset = args.offset || 0,
+            match = args.match,
+            load_args = {
+                'success' : function(data){
                     _do_store(data);
-                    if(typeof(_on_load)==='function'){
-                        _on_load(data);
+                    if(typeof(on_load)==='function'){
+                        on_load(data);
                     }
-                }catch(e){
-                    alert(e)
-                }
-            }
-        });
+                },
+                'limit': limit,
+                'offset': offset,
+                'match': match
+            };
+
+        APP.remote.load_profiles(load_args);
+
     }
 
     function lookup(pub_k, callback){

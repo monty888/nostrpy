@@ -32,7 +32,6 @@ from nostr.util import util_funcs
 from nostr.event.event import Event
 from app.post import PostApp
 
-
 class EventAccepter(ABC):
 
     @abstractmethod
@@ -210,6 +209,32 @@ class EventTimeHandler:
         self._callback(evt['created_at'])
 
 
+def retry_db_func(the_func, max=3):
+    """
+        specifically for sqlite as during a write the whole db is locked we'll retry
+        inserts ... explain this more.... this should mainly be a problem if access
+        from somewhere else anyhow as we should be using the same db object to access
+        that applies a python lock when doing writes...
+    """
+    is_done = False
+    retry_count = max
+    # while not is_done and retry_count > 0:
+    while not is_done:
+        try:
+            the_func()
+            is_done = True
+        except Exception as de:
+            print('error fuck face!!!! %s' % de )
+            # FIXME: we probably should give up eventually!
+            if 'locked' in str(de):
+                logging.debug('PersistEventHandler::do_event db locked, waiting to retry - %s' % de)
+                # this should probably exponatially back off
+                time.sleep(3)
+                retry_count -= 1
+            else:
+                is_done = True
+
+
 class PersistEventHandler:
     """
         persists event we have seen to storage, profiles created/updated for meta_data type
@@ -218,44 +243,22 @@ class PersistEventHandler:
 
     def __init__(self,
                  store: ClientEventStoreInterface,
-                 max_insert_batch=5000):
+                 max_insert_batch=500):
         self._store = store
         self._max_insert_batch = max_insert_batch
         # to check if new or update profile
         # self._profiles = DataSet.from_sqlite(db_file,'select pub_k from profiles')
 
     def do_event(self, sub_id, evt: Event, relay):
-        # store the actual event
-        if not hasattr(evt, '__iter__'):
-            evt = [evt]
 
-        if self._max_insert_batch:
-            evt = [evt[i:i + self._max_insert_batch] for i in range(0, len(evt), self._max_insert_batch)]
-        else:
-            evt = [evt]
+        def get_store_func(the_chunk):
+            def the_func():
+                self._store.add_event_relay(the_chunk, relay)
+            return the_func
 
-        try:
-            for c_evt_chunk in evt:
-                is_done = False
-                while not is_done:
-                    try:
-                        self._store.add_event_relay(c_evt_chunk, relay)
-                        time.sleep(0.1)
-                        is_done = True
-                    except Exception as de:
-                        # FIXME: we probably should give up eventually!
-                        if 'locked' in str(de):
-                            logging.debug('PersistEventHandler::do_event db locked, waiting to retry - %s' % de)
-                            time.sleep(3)
-                        else:
-                            is_done = True
-
-        except Exception as e:
-            id = 'batched events'
-            if not hasattr(evt,'__iter__'):
-                id = evt.id
-
-            logging.debug('PersistEventHandler::do_event error persisting event %s - %s' % (id, e))
+        for c_evt_chunk in util_funcs.chunk(evt, self._max_insert_batch):
+            retry_db_func(get_store_func(c_evt_chunk))
+            time.sleep(0.1)
 
 
 class RepostEventHandler:
@@ -304,12 +307,14 @@ class ProfileEventHandler:
     def __init__(self,
                  profile_store: 'ProfileStoreInterface',
                  on_profile_update=None,
-                 on_contact_update=None):
+                 on_contact_update=None,
+                 max_insert_batch=500):
 
         self._store = profile_store
         self._profiles = self._store.select_profiles()
         self._on_profile_update = on_profile_update
         self._on_contact_update = on_contact_update
+        self._max_insert_batch = max_insert_batch
 
     # update locally rather than via meta 0 event
     # only used to link prov_k or add/change profile name
@@ -324,17 +329,28 @@ class ProfileEventHandler:
         # split events
         c_evt: Event
         profile_update_events = [c_evt for c_evt in evt if c_evt.kind == Event.KIND_META]
-        contact_update_events = [c_evt for c_evt in evt if c_evt.kind == Event.KIND_CONTACT_LIST]
+
+        def get_profile_store_func(the_chunk):
+            def the_func():
+                self._do_profiles_update(the_chunk)
+            return the_func
+
         if profile_update_events:
-            try:
-                self._do_profiles_update(profile_update_events)
-            except Exception as e:
-                print('profile update %s '%e )
+            for c_chunk in util_funcs.chunk(profile_update_events, self._max_insert_batch):
+                retry_db_func(get_profile_store_func(c_chunk))
+                time.sleep(0.1)
+
+        contact_update_events = [c_evt for c_evt in evt if c_evt.kind == Event.KIND_CONTACT_LIST]
+
+        def get_contacts_store_func(the_chunk):
+            def the_func():
+                self._do_contacts_update(the_chunk)
+            return the_func
+
         if contact_update_events:
-            try:
-                self._do_contacts_update(contact_update_events)
-            except Exception as e:
-                print('contacts update %s '%e )
+            for c_chunk in util_funcs.chunk(contact_update_events, self._max_insert_batch):
+                retry_db_func(get_contacts_store_func(c_chunk))
+                time.sleep(0.1)
 
     def _get_to_update_profiles(self, evts:[Event]) -> ([Profile], [Profile]):
         p_e = []

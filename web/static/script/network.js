@@ -334,12 +334,22 @@ APP.remote = function(){
             // single or , seperated list of pub_ks
             if(args.pub_k!==undefined){
                 // changed to post to deal with large amounts of followers/contacts
-                // though the get method is still mounted so will work for smaller n of pub_ks
+                // though the GET method is still mounted so will work for smaller n of pub_ks
                 // TODO add ti load profile gets full contact info and not just keys...
 //                args['params']['pub_k'] = args['pub_k']
                 args['data'] = 'pub_k='+args['pub_k'];
                 args['method'] = 'POST';
             }
+            if(args.match){
+                args.params.match = args.match;
+            }
+            if(args.limit){
+                args.params.limit = args.limit;
+            }
+            if(args.offset){
+                args.params.offset = args.offset;
+            }
+
             // all followers contacts for this profile
             if(args.for_profile!==undefined){
                 args['params']['for_profile'] = args['for_profile']
@@ -429,11 +439,12 @@ APP.remote = function(){
             args['method'] = 'POST';
             // this should be pub_k of the profile were using and is only required
             // if decrypt is needed
-            if(args.pub_k!==undefined){
-                args['params'] = {
-                    'pub_k' : args.pub_k
-                };
+            args.params = {};
+            if(args.pub_k){
+                args.params.pub_k = args.pub_k;
             }
+            args.params.limit = args.limit || 100;
+
             args['data'] = 'filter='+filter.as_str()
 
             args.success = function (data){
@@ -458,8 +469,12 @@ APP.remote = function(){
 
             args['url'] = _events_by_seach_str;
             args['params'] = {
-                'search_str' : args['search_str']
+                'search_str' : args['search_str'],
+                'limit' : args.limit || 100
             };
+            if(args.until && args.until!==null){
+                args.params.until = args.until;
+            }
 
             args.success = function (data){
                 data.events = make_events(data.events);

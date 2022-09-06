@@ -66,6 +66,16 @@ def get_profile_filter(for_client: Client,
         }
     ]
 
+def get_latest_event_filter(for_client: Client,
+                            event_store: ClientEventStoreInterface,
+                            event_kind):
+    return {
+        'kinds': [event_kind],
+        'since': event_store.get_newest(for_client.url, {
+            'kinds': [event_kind]
+        })
+    }
+
 
 def hook_signals():
     def sigint_handler(signal, frame):
@@ -185,15 +195,14 @@ def run_web(clients,
         # less_30days = util_funcs.date_as_ticks(datetime.now()-timedelta(days=30))
         # if since < less_30days:
         #     since = less_30days
-        the_client.subscribe(handlers=[evt_persist, my_server], filters={
-            # 'since': util_funcs.date_as_ticks(datetime.now()-timedelta(hours=10)),
-            'since': since,
-            'kinds': [
-                Event.KIND_RELAY_REC,
-                Event.KIND_TEXT_NOTE, Event.KIND_ENCRYPT,
-                Event.KIND_META, Event.KIND_CONTACT_LIST
-            ]
-        })
+
+        the_client.subscribe(handlers=[evt_persist, my_server], filters=[
+            get_latest_event_filter(the_client,event_store, Event.KIND_REACTION),
+            get_latest_event_filter(the_client, event_store, Event.KIND_META),
+            get_latest_event_filter(the_client, event_store, Event.KIND_TEXT_NOTE),
+            get_latest_event_filter(the_client, event_store, Event.KIND_CONTACT_LIST),
+            get_latest_event_filter(the_client, event_store, Event.KIND_ENCRYPT)
+        ])
 
     my_peh = ProfileEventHandler(profile_store)
 
@@ -235,7 +244,7 @@ def run_web(clients,
 
 
 def run():
-    db_file = WORK_DIR + 'nostr-client-now.db'
+    db_file = WORK_DIR + 'nostr-client-wtf.db'
     db_type = 'sqlite'
     full_text = True
     is_tor = False
@@ -257,7 +266,7 @@ def run():
 
 
     try:
-        opts, args = getopt.getopt(sys.argv[1:], 'ht', ['help', 'sqlite-file=', 'tor'])
+        opts, args = getopt.getopt(sys.argv[1:], 'ht', ['help', 'db-file=', 'tor'])
 
         # first pass
         for o, a in opts:
@@ -267,7 +276,10 @@ def run():
         for o, a in opts:
             if o in ('-t', '--tor'):
                 is_tor = True
-
+            if o == '--db-file':
+                db_file = a
+                if os.path.pathsep not in db_file:
+                    db_file = WORK_DIR+db_file
 
     except getopt.GetoptError as e:
         print(e)
@@ -321,19 +333,19 @@ if __name__ == "__main__":
     # my_str="👍"
     # print(my_str.encode())
 
-    with Client('wss://relay.damus.io') as c:
-        events = c.query(url='wss://relay.damus.io',
-                         filters=[{
-                             'since': util_funcs.date_as_ticks(datetime.now()-timedelta(days=10)),
-                             'kinds': [Event.KIND_CHANNEL_CREATE]
-                         }])
-
-    c_evt: Event
-    from nostr.ident.profile import Profile,ValidatedProfile
-    for c_evt in events:
-        print(c_evt.e_tags, c_evt.content)
-        if '2b48218edd23e88fd33ec23d6d91fd7203a26497d74d4ba54cbae91e3b6e169e' in c_evt.e_tags:
-            print(c_evt.content,c_evt.tags, c_evt.id)
+    # with Client('wss://relay.damus.io') as c:
+    #     events = c.query(filters=[{
+    #                         'since': 0,
+    #                         'kinds': [Event.KIND_CHANNEL_MESSAGE]
+    #                      }])
+    #
+    # c_evt: Event
+    # from nostr.ident.profile import Profile,ValidatedProfile
+    # for c_evt in events:
+    #     if c_evt.kind == Event.KIND_CHANNEL_CREATE:
+    #         print(c_evt.id, c_evt.content)
+    #     if '25e5c82273a271cb1a840d0060391a0bf4965cafeb029d5ab55350b418953fbb' in c_evt.e_tags:
+    #         print(c_evt.content)
 
 
     from nostr.client.event_handlers import EventHandler

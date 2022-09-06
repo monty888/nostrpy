@@ -264,6 +264,16 @@ class Profile:
 class ValidatedProfile(Profile):
 
     @staticmethod
+    def from_profile(p: Profile):
+        ret = ValidatedProfile(priv_k=p.private_key,
+                                pub_k=p.public_key,
+                                attrs=p.attrs,
+                                profile_name=p.profile_name,
+                                update_at=p.update_at)
+        ret.fit_fields()
+        return ret
+
+    @staticmethod
     def from_event(evt: Event):
         ret = None
         if evt.kind == Event.KIND_META:
@@ -383,11 +393,15 @@ class ProfileList:
             self._pname_lookup[profile.profile_name] = profile
 
     # TODO: remove this and see if it breaks anyhting...
-    def as_arr(self):
-        ret = []
-        for c_p in self._profiles:
-            ret.append(c_p.as_dict())
-        return ret
+    # def as_arr(self):
+    #     ret = []
+    #     for c_p in self._profiles:
+    #         ret.append(c_p.as_dict())
+    #     return ret
+
+    @property
+    def profiles(self) -> [Profile]:
+        return self._profiles
 
     def lookup_pub_key(self, key):
         """
@@ -416,7 +430,7 @@ class ProfileList:
             ret = self._pname_lookup[key]
         return ret
 
-    def matches(self, m_str, max_match=None):
+    def matches(self, m_str, max_match=None, search_about=False):
         if m_str.replace(' ','') == '':
             ret = self._profiles
             if max_match:
@@ -427,9 +441,16 @@ class ProfileList:
         ret = []
         # we're going to ignore case
         m_str = m_str.lower()
+        c_p: Profile
+        c_offset = 0
+
         for c_p in self._profiles:
             # pubkey should be lowercase but name we convert
-            if m_str in c_p.public_key or c_p.name and m_str in c_p.name.lower():
+            if m_str in c_p.public_key or \
+                    c_p.name and m_str in c_p.name.lower() \
+                    or c_p.profile_name and m_str in c_p.profile_name \
+                    or search_about and c_p.get_attr('about') is not None and m_str in c_p.get_attr('about'):
+
                 ret.append(c_p)
 
             # found enough matches

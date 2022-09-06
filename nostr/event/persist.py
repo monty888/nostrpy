@@ -216,7 +216,7 @@ class MemoryEventStore(EventStoreInterface):
         if isinstance(filters, dict):
             filters = [filters]
 
-        # get limit if any
+        # get limit if any TODO: add offset support
         for c_filter in filters:
             if 'limit' in c_filter:
                 if limit is None or c_filter['limit'] > limit:
@@ -361,6 +361,7 @@ class ClientMemoryEventStore(MemoryEventStore, ClientEventStoreInterface):
 
         return [i[0] for i in my_count.most_common()]
 
+
 class SQLEventStore(EventStoreInterface):
 
     @staticmethod
@@ -457,6 +458,9 @@ class SQLEventStore(EventStoreInterface):
         # added support for filter limit and result now sorted by given create_at date
         # only the largest limit is taken where there is a limit on more than one filter
         limit = None
+        # added support for offset, only the first offset found is used
+        offset = None
+
         for c_filter in filters:
             q = for_single_filter(c_filter)
             if sql:
@@ -466,6 +470,8 @@ class SQLEventStore(EventStoreInterface):
             if 'limit' in c_filter:
                 if limit is None or c_filter['limit'] > limit:
                     limit = c_filter['limit']
+            if offset is None and 'offset' in c_filter:
+                offset = c_filter['offset']
 
         if sort_reversed:
             sql += ' order by created_at desc'
@@ -474,6 +480,8 @@ class SQLEventStore(EventStoreInterface):
 
         if limit is not None:
             sql += ' limit %s' % limit
+        if offset is not None:
+            sql += ' offset %s' % offset
 
         return {
             'sql': sql,
@@ -946,6 +954,29 @@ class ClientSQLEventStore(SQLEventStore, ClientEventStoreInterface):
     #
     #     super()._prepare_most_recent_types(evt, batch)
 
+    def _add_reaction_batch(self, evt: Event, batch):
+        if evt.kind == Event.KIND_REACTION:
+            p_tags = evt.p_tags
+            e_tags = evt.e_tags
+            if p_tags and e_tags:
+                last_p = p_tags[len(p_tags) - 1]
+                last_e = e_tags[len(e_tags) - 1]
+
+                batch.append({
+                    'sql': """
+                        insert into reactions values ((select id from events where event_id=?), ?,?,?,?,?) 
+                    """,
+                    'args': [
+                        evt.id,
+                        evt.pub_key,
+                        last_e,
+                        last_p,
+                        evt.content,
+                        'TODO!!!!'
+                    ]
+
+                })
+
     def add_event_relay(self, evt: Event, relay_url: str):
         ret = False
         if hasattr(evt, '__iter__'):
@@ -954,6 +985,7 @@ class ClientSQLEventStore(SQLEventStore, ClientEventStoreInterface):
                 if self._do_update(c_evt):
                     # print(c_evt)
                     self._prepare_add_event_batch(c_evt, batch)
+                    self._add_reaction_batch(c_evt, batch)
                     batch.append({
                         'sql': 'insert into event_relay values ((select id from events where event_id=?), ?)',
                         'args': [c_evt.id, relay_url]
@@ -963,6 +995,7 @@ class ClientSQLEventStore(SQLEventStore, ClientEventStoreInterface):
         else:
             if self._do_update(evt):
                 batch = self._prepare_add_event_batch(evt)
+                self._add_reaction_batch(evt, batch)
                 batch.append({
                     'sql': 'insert into event_relay values ((select id from events where event_id=?), ?)',
                     'args': [evt.id, relay_url]
@@ -1122,6 +1155,26 @@ class ClientSQLiteEventStore(SQLiteEventStore, ClientSQLEventStore,  ClientEvent
           DELETE from event_relay where id=old.id;
         END;
     """
+        },
+        {
+            'sql': """
+            create table reactions(
+                id int NOT NULL,  
+                owner_pub_k text,
+                for_event_id text,
+                for_pub_k text,
+                content text,
+                interpretation text,
+                UNIQUE(owner_pub_k, for_event_id, content) ON CONFLICT IGNORE
+                )
+            """
+        },
+        {
+            'sql': """
+            CREATE TRIGGER reaction_ad AFTER DELETE ON events BEGIN
+                DELETE from reactions where id=old.id;
+            END;
+        """
         }
 
 
