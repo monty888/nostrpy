@@ -26,7 +26,7 @@
         _history_timer,
         _my_event_view,
         _current_profile = APP.nostr.data.user.profile(),
-        _chunk_size = 25,
+        _chunk_size = 100,
         _maybe_more,
         _until = null,
         _events = [],

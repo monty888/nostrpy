@@ -74,6 +74,11 @@ APP.nostr.data.filter = function(){
             return _as_str;
         }
 
+        // as [{},{}...] parse _as_str as our internal rep uses sets which we don't want to return
+        function as_object(){
+            return JSON.parse(_as_str)
+        }
+
         function test(evt){
             let c_filter,
                 is_match,
@@ -128,6 +133,7 @@ APP.nostr.data.filter = function(){
 
         return {
             'as_str': as_str,
+            'as_object': as_object,
             'test': test
         }
     }

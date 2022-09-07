@@ -75,19 +75,10 @@ class Event:
         if created_at is None:
             self._created_at = datetime.now()
         self._content = content
-        self._tags = tags
-
-        if isinstance(self._tags, str):
-            try:
-                self._tags = json.loads(self._tags)
-            except JSONDecodeError as je:
-                self._tags = []
-
 
         self._pub_key = pub_key
 
-        if tags is None:
-            self._tags = []
+        self.tags = tags
 
     def serialize(self):
         """
@@ -255,6 +246,20 @@ class Event:
     @property
     def tags(self):
         return self._tags
+
+    @tags.setter
+    def tags(self, tags):
+
+        # if passed in as json str e.g. as event is received over ws
+        if isinstance(tags, str):
+            try:
+                tags = json.loads(tags)
+            except JSONDecodeError as je:
+                tags = None
+
+        if tags is None:
+            tags = []
+        self._tags = tags
 
     @property
     def e_tags(self):

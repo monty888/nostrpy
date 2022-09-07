@@ -71,6 +71,7 @@ def get_latest_event_filter(for_client: Client,
                             event_kind):
     return {
         'kinds': [event_kind],
+        # 'since': util_funcs.date_as_ticks(datetime.now()-timedelta(days=5))
         'since': event_store.get_newest(for_client.url, {
             'kinds': [event_kind]
         })
@@ -197,7 +198,7 @@ def run_web(clients,
         #     since = less_30days
 
         the_client.subscribe(handlers=[evt_persist, my_server], filters=[
-            get_latest_event_filter(the_client,event_store, Event.KIND_REACTION),
+            get_latest_event_filter(the_client, event_store, Event.KIND_REACTION),
             get_latest_event_filter(the_client, event_store, Event.KIND_META),
             get_latest_event_filter(the_client, event_store, Event.KIND_TEXT_NOTE),
             get_latest_event_filter(the_client, event_store, Event.KIND_CONTACT_LIST),
@@ -210,6 +211,8 @@ def run_web(clients,
         print('eose', the_client.url)
         my_peh.do_event(sub_id, events, the_client.url)
         evt_persist.do_event(sub_id, events, the_client.url)
+
+
 
     # so server can send out client status messages
     def my_status(status):
@@ -244,7 +247,7 @@ def run_web(clients,
 
 
 def run():
-    db_file = WORK_DIR + 'nostr-client-wtf.db'
+    db_file = WORK_DIR + 'reactions.db'
     db_type = 'sqlite'
     full_text = True
     is_tor = False
@@ -342,6 +345,7 @@ if __name__ == "__main__":
     # c_evt: Event
     # from nostr.ident.profile import Profile,ValidatedProfile
     # for c_evt in events:
+    #     print(c_evt.tags)
     #     if c_evt.kind == Event.KIND_CHANNEL_CREATE:
     #         print(c_evt.id, c_evt.content)
     #     if '25e5c82273a271cb1a840d0060391a0bf4965cafeb029d5ab55350b418953fbb' in c_evt.e_tags:

@@ -411,6 +411,10 @@ APP.remote = function(){
             args['params'] = {
                 'pub_k' : args['pub_k']
             };
+            if(args.until){
+                args.params.until = args.until;
+            }
+
             args.success = function(data){
                 data.events = make_events(data.events);
                 o_success(data);

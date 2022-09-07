@@ -594,6 +594,12 @@ class SQLEventStore(EventStoreInterface):
             if len(c_tag) >= 2:
                 tag_type = c_tag[0]
                 tag_value = c_tag[1]
+
+                # hashtag became t, se we can get all on same query we'll change the type in event_tags
+                # what we store in event tbl stays as we received so can still be validated
+                if tag_type.lower() == 'hashtag':
+                    tag_type = 't'
+
                 batch.append({
                     # 'sql': 'insert into event_tags SELECT last_insert_rowid(),?,?',
                     'sql': """

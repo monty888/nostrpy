@@ -1046,6 +1046,11 @@ class NostrWeb(StaticServer):
                 '#p': [pub_k]
             }]
 
+        until = self._get_query_int('until', default_value='')
+        if until != '':
+            filter[0]['until'] = until
+            filter[1]['until'] = until
+
         return {
             'events': self._get_events(filter),
             'filter': filter

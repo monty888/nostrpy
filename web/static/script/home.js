@@ -13,7 +13,7 @@
             'kinds' : [1]
         }),
         _my_tabs,
-        _chunk_size = 50;
+        _chunk_size = 100;
 
     function home_view(){
         // kill old views if any
@@ -38,37 +38,39 @@
                 {
                     'title' : 'global',
                     'filter' : _global_filter,
-                    'load_func' : function (success){
-                        do_load(success, _global_filter);
-                    }
+                    'load_func' : do_load
                 },
                 {
                     'title' : 'feed',
                     'active' : true,
                     'load_func' : function(success){
-                        APP.remote.load_notes_from_profile({
+                        let args = {
                             'pub_k' : _current_profile.pub_k,
                             'success': function(data){
+                                let view = _views[1];
+                                view.loading = true;
                                 // nasty, but we don't know the filter till we loaded the data
-                                _views[1].set_filter(APP.nostr.data.filter.create(data['filter']));
-                                success(data);
+                                view.filter(APP.nostr.data.filter.create(data['filter']));
+                                set_view_loaded_data(view, data);
                             }
-                        });
+                        };
+
+                        if(_views[1].until!==null){
+                            args['until'] = _views[1].until;
+                        }
+
+                        APP.remote.load_notes_from_profile(args);
                     }
                 },
                 {
                     'title' : 'post & replies',
                     'filter' : reply_filter,
-                    'load_func' : function (success){
-                        do_load(success, reply_filter);
-                    }
+                    'load_func' : do_load
                 },
                 {
                     'title' : 'posts',
                     'filter' : post_filter,
-                    'load_func' : function (success){
-                        do_load(success, post_filter);
-                    }
+                    'load_func' : do_load
                 }
             ];
 
@@ -77,12 +79,17 @@
                 'default_content' : 'loading...',
                 'on_tab_change': function(i, con){
                     if(_views[i]===undefined){
-                        _views[i] = init_view(con, tabs_objs[i].filter);
-                        tabs_objs[i].load_func(function(data){
-                            _views[i].set_notes(data['events']);
-                        })
-                    }
+                        _views[i] = init_view(con,
+                            tabs_objs[i].filter,
+                            tabs_objs[i].load_func);
 
+                        _views[i].load_func(_views[i]);
+                    }
+                },
+                'scroll_bottom': function(){
+                    let tab = _my_tabs.get_selected_index(),
+                        view = _views[tab];
+                    view_scroll(view);
                 },
                 'tabs' : tabs_objs
             });
@@ -95,38 +102,74 @@
     function global_only_view(){
         _views = {};
         _main_con.css('overflowY', 'scroll');
-        _views['global'] = init_view(_main_con, _global_filter);
-        do_load(function(data){
-            try{
-                _views['global'].set_notes(data['events']);
-            }catch(e){
-                console.log(e);
-            }
-
-        },_global_filter);
+        _views['global'] = init_view(_main_con, _global_filter, function(){
+            do_load(_views['global']);
+        });
+        do_load(_views['global']);
     }
 
-    function init_view(con, filter){
-        return APP.nostr.gui.event_view.create({
+    function init_view(con, filter, load_func){
+        let ret = APP.nostr.gui.event_view.create({
             'con': con,
             'filter' : filter
         });
+
+        //tack on some extra properties to track scroll
+        ret.maybe_more = false;
+        ret.until = null;
+        ret.events = [];
+        ret.load_func = load_func;
+        return ret;
     }
 
-    function do_load(success, filter){
+    function do_load(view){
+        view.loading = true;
+        let filter = view.filter().as_object();
+        if(view.until!==null){
+            filter.forEach(function(c_f,i){
+                c_f.until = view.until;
+            });
+        }
+
+        filter = APP.nostr.data.filter.create(filter);;
+
         APP.remote.load_events({
             'filter' : filter,
             // maybe at somepoint see if we can reduce loads by tracking changes
             'cache' : false,
             'limit': _chunk_size,
             'success': function(data){
-                if(data['error']!==undefined){
-                    alert(data['error']);
-                }else if(typeof(success)==='function'){
-                    success(data);
-                }
+                set_view_loaded_data(view, data);
             }
         });
+    }
+
+    function set_view_loaded_data(view, data){
+        if(data['error']!==undefined){
+            alert(data['error']);
+        }else{
+            if(view.events.length==0){
+                view.events = data.events;
+                view.set_notes(view.events);
+            // onwards scroll
+            }else{
+                view.events = view.events.concat(data.events);
+                view.append_notes(data.events);
+            }
+            view.maybe_more = data.events.length === _chunk_size;
+        }
+        view.loading = false;
+    }
+
+    function view_scroll(view){
+        if(view.events===undefined || !view.maybe_more || view.loading===true){
+            return;
+        }
+        view.until = null;
+        if(view.events.length>0){
+            view.until = view.events[view.events.length-1].created_at-1;
+        }
+        view.load_func(view);
     }
 
     document.addEventListener('DOMContentLoaded', ()=> {
@@ -150,12 +193,13 @@
             }
         }
 
+        // scroll for global only view (lurker)
         _main_con.scrollBottom(function(e){
+            let view;
             if(_current_profile.pub_k===undefined){
-//                alert('mofo!!!');
+                view_scroll(_views['global']);
             }
         });
-
 
         APP.nostr.gui.post_button.create();
 
