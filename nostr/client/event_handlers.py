@@ -209,7 +209,7 @@ class EventTimeHandler:
         self._callback(evt['created_at'])
 
 
-def retry_db_func(the_func, max=3):
+def retry_db_func(the_func, retry_count=None):
     """
         specifically for sqlite as during a write the whole db is locked we'll retry
         inserts ... explain this more.... this should mainly be a problem if access
@@ -217,20 +217,21 @@ def retry_db_func(the_func, max=3):
         that applies a python lock when doing writes...
     """
     is_done = False
-    retry_count = max
-    # while not is_done and retry_count > 0:
-    while not is_done:
+    retry_n = 0
+    while not is_done and (retry_count is None or retry_n<retry_count):
         try:
             the_func()
             is_done = True
         except Exception as de:
-            print('error fuck face!!!! %s' % de )
             # FIXME: we probably should give up eventually!
             if 'locked' in str(de):
                 logging.debug('PersistEventHandler::do_event db locked, waiting to retry - %s' % de)
-                # this should probably exponatially back off
-                time.sleep(3)
-                retry_count -= 1
+                retry_n += 1
+                wait_time = (1*retry_n*retry_n)
+                if wait_time > 30:
+                    wait_time = 30
+                time.sleep(wait_time)
+
             else:
                 is_done = True
 

@@ -33,7 +33,7 @@ class Event:
     KIND_CHANNEL_MUTE = 44
 
     @staticmethod
-    def create_from_JSON(evt_json):
+    def from_JSON(evt_json):
         """
         TODO: add option to verify sig/eror if invalid?
         creates an event object from json - at the moment this must be a full event, has id and has been signed,

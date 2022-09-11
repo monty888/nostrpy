@@ -59,6 +59,11 @@ img{
     font-family : courier;
 }
 
+.reaction-text {
+    color: gray;
+    font-size: 12px;
+}
+
 .tab-tool-area{
     float:right;
     padding-bottom:4px;
@@ -111,7 +116,7 @@ img{
 }
 
 /* bootstrap icons */
-.bi{
+.nbi{
     width: 16px;
     height: 16px;
     margin-left: 4px;
@@ -120,7 +125,13 @@ img{
     cursor: pointer;
 }
 
-.bi-post{
+.nbi-btn{
+    width: 32px;
+    height: 32px;
+    fill: currentColor;
+}
+
+.nbi-post{
     width: 100%;
     height: 100%;
     margin: 0px;

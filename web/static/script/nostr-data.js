@@ -281,7 +281,7 @@ APP.nostr.data.user = function(){
         // NOTE until we get the client to put on seeing meta events
         // session cache will be an issue so disabled for now
         'profile_cache' : function(val){
-            return _property('profile_cache', val, false);
+            return _property('profile_cache', val, true);
         },
         'follow_toggle': function(){
             let my_timer,
@@ -662,7 +662,6 @@ APP.nostr.data.nostr_event = function(event){
         ENCRYPT = 4;
 
     let _data = event;
-
     function get_tag_values(name, test_func, break_on_match){
         let ret = [],
             tags = _data.tags,

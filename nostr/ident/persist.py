@@ -563,6 +563,16 @@ class SQLProfileStore(ProfileStoreInterface):
                     profiles 
                         (priv_k, pub_k, profile_name, attrs, name, picture, updated_at)
                         values(?,?,?,?,?,?,?)
+                on conflict(pub_k)
+                do update set 
+                    priv_k = excluded.priv_k,
+                    profile_name = excluded.profile_name,
+                    attrs = excluded.attrs,
+                    name = excluded.name,
+                    picture = excluded.picture,
+                    updated_at = excluded.updated_at
+                where excluded.updated_at > updated_at
+                    
             """
             args = [
                 p.private_key, p.public_key,
@@ -575,6 +585,13 @@ class SQLProfileStore(ProfileStoreInterface):
                 insert or replace into 
                     profiles (pub_k, attrs, name, picture, updated_at) 
                             values(?,?,?,?,?)
+                on conflict(pub_k)
+                do update set 
+                    attrs = excluded.attrs,
+                    name = excluded.name,
+                    picture = excluded.picture,
+                    updated_at = excluded.updated_at
+                where excluded.updated_at > updated_at
             """
             args = [
                 p.public_key,
@@ -687,8 +704,9 @@ class SQLProfileStore(ProfileStoreInterface):
         # delete existing
         batch.append(
             {
-                'sql': 'delete from contacts where pub_k_owner=%s' % self._db.placeholder,
-                'args': [contacts.owner_public_key]
+                'sql': 'delete from contacts where pub_k_owner=%s and updated_at<%s' % (self._db.placeholder,
+                                                                                        self._db.placeholder),
+                'args': [contacts.owner_public_key, contacts.updated_at]
             }
         )
 
@@ -705,7 +723,9 @@ class SQLProfileStore(ProfileStoreInterface):
             batch.append(
                 {
                     'sql': """insert into contacts (pub_k_owner, pub_k_contact, updated_at) 
-                                                    values (%s)""" % ','.join([self._db.placeholder] * 3),
+                                                    values (%s)
+                            on conflict (pub_k_owner, pub_k_contact) do NOTHING                             
+                            """ % ','.join([self._db.placeholder] * 3),
                     'args': add_data
                 }
             )
@@ -762,7 +782,8 @@ class SQLiteProfileStore(SQLProfileStore):
                         pub_k_contact text,
                         alias text,
                         source text,
-                        updated_at int
+                        updated_at int,
+                        UNIQUE(pub_k_owner, pub_k_contact) ON CONFLICT IGNORE
                     )
                 """
             }

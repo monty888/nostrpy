@@ -40,46 +40,28 @@
         // as the user we're looking at sees things
         _feed_view,
         _feed_filter,
+        _reaction_view,
         _current_profile = APP.nostr.data.user.profile(),
-        _profiles = APP.nostr.data.profiles;
+        _profiles = APP.nostr.data.profiles,
+        _chunk_size = 100;
 
-    function init_view(con, filter){
-        return APP.nostr.gui.event_view.create({
-            'con': con,
-            'filter' : filter
-        });
-    }
-
-    function do_load(success, filter){
-        APP.remote.load_events({
-            'filter' : filter,
-            'success': function(data){
-                if(data['error']!==undefined){
-                    alert(data['error']);
-                }else{
-                    success(data);
-                }
-            }
-        });
-    }
-
-    function load_notes(){
-        if(_pub_k===null){
-            alert('no pub_k supplied');
+    function do_load(view){
+        view.loading = true;
+        let filter = view.filter().as_object();
+        if(view.until!==null){
+            filter.forEach(function(c_f,i){
+                c_f.until = view.until;
+            });
         }
 
-        APP.remote.load_notes_from_profile({
-            'pub_k' : _pub_k,
+        filter = APP.nostr.data.filter.create(filter);
+        APP.remote.load_events({
+            'filter' : filter,
+            // maybe at somepoint see if we can reduce loads by tracking changes
+            'cache' : false,
+            'limit': _chunk_size,
             'success': function(data){
-                try{
-                    if(data['error']!==undefined){
-                        alert(data['error']);
-                    }else{
-                        _my_event_view.set_notes(data['events']);
-                    }
-                }catch(e){
-                    console.log(e)
-                }
+                set_view_loaded_data(view, data);
             }
         });
     }
@@ -97,15 +79,8 @@
         _profile_con = _('#about-pane');
         _tab_con = _('#tab-pane');
 
-        // profile about head
-        _my_head = APP.nostr.gui.profile_about.create({
-            'con': _profile_con,
-            'pub_k': _pub_k
-        });
-
         // event tabs for this profile
         create_tabs();
-
 
     }
 
@@ -116,30 +91,68 @@
             'on_tab_change': function(i, con){
                 if(i===0){
                     if(_post_view===undefined){
-                        _post_view = init_view(con, _post_filter);
-                        do_load(function(data){
-                            _post_view.set_notes(data['events']);
-                        }, _post_filter);
+                        _post_view = init_view(con, _post_filter, function(){
+                            do_load(_post_view);
+                        });
+                        _post_view.load_func();
                     }
                 }else if(i===1){
                     if(_reply_view===undefined){
-                        _reply_view = init_view(con, _reply_filter);
-                        do_load(function(data){
-                            _reply_view.set_notes(data['events']);
-                        }, _reply_filter);
-
+                        _reply_view = init_view(con, _reply_filter, function(){
+                            do_load(_reply_view);
+                        });
+                        _reply_view.load_func();
                     };
                 // feed tab
-                }else if(i===2){
-                    _feed_view = init_view(con);
-                    APP.remote.load_notes_from_profile({
-                        'pub_k' : _pub_k,
-                        'success': function(data){
-                            // nasty, but we don't know the filter till we loaded the data
-                            _feed_view.set_filter(APP.nostr.data.filter.create(data['filter']));
-                            _feed_view.set_notes(data['events']);
-                        }
+                }else if(i===2 && _feed_view===undefined){
+                    _feed_view = init_view(con, null, () => {
+                        _feed_view.loading = true;
+                        let args = {
+                            'pub_k' : _pub_k,
+                            'limit': _chunk_size,
+                            'success': function(data){
+                                // nasty, but we don't know the filter till we loaded the data
+                                _feed_view.filter(APP.nostr.data.filter.create(data['filter']));
+                                set_view_loaded_data(_feed_view, data);
+                            }
+                        };
+
+                        if(_feed_view.until!==null){
+                            args['until'] = _feed_view.until;
+                        };
+
+                        APP.remote.load_notes_from_profile(args);
                     });
+                    _feed_view.load_func();
+                }else if(i==3){
+
+                    // atleast for now no filter.. we could see the likes but then we'd still have to go and
+                    // grab the actual event
+                    try{
+                        _reaction_view = init_view(con, null, ()=>{
+                            _reaction_view.loading = true;
+                             let args = {
+                                'pub_k' : _pub_k,
+                                'limit': _chunk_size,
+                                'success': function(data){
+                                    set_view_loaded_data(_reaction_view, data);
+                                }
+                            };
+                            if(_reaction_view.until!==null){
+                                args['until'] = _reaction_view.until;
+                            };
+
+                            APP.remote.load_reactions(args);
+                        });
+                        _reaction_view.load_func();
+
+                    }catch(e){
+                        console.log(e)
+                    }
+
+
+
+
                 }
             },
             'tabs' : [
@@ -151,11 +164,71 @@
                 },
                 {
                     'title': 'feed'
+                },
+                {
+                    'title': 'reactions'
                 }
-            ]
+            ],
+            scroll_bottom(){
+                let tab = _my_tab.get_selected_index(),
+                    views = [_post_view, _reply_view, _feed_view, _reaction_view],
+                    view = views[tab];
+                view_scroll(view);
+            }
+
         })
 
     }
+
+
+    function init_view(con, filter, load_func){
+        let ret = APP.nostr.gui.event_view.create({
+            'con': con,
+            'filter' : filter
+        });
+
+        //tack on some extra properties to track scroll
+        ret.maybe_more = false;
+        ret.until = null;
+        ret.events = [];
+        ret.load_func = load_func;
+        return ret;
+    }
+
+    function set_view_loaded_data(view, data){
+        if(data['error']!==undefined){
+            alert(data['error']);
+        }else{
+            if(view.events.length==0){
+                view.events = data.events;
+                view.set_notes(view.events);
+            // onwards scroll
+            }else{
+                view.events = view.events.concat(data.events);
+                view.append_notes(data.events);
+            }
+            view.maybe_more = data.events.length === _chunk_size;
+        }
+        view.loading = false;
+    }
+
+    function view_scroll(view){
+        if(view.events===undefined || !view.maybe_more || view.loading===true){
+            console.log(view.events);
+            console.log(view.maybe_more);
+            console.log(view.loading);
+
+
+            return;
+        }
+        view.until = null;
+        if(view.events.length>0){
+            view.until = view.events[view.events.length-1].created_at-1;
+        }
+        view.load_func(view);
+    }
+
+
 
 
     // start when everything is ready
@@ -167,19 +240,27 @@
         // draw the tabs
         _my_tab.draw();
 
-        _profiles.fetch({
-            'pub_ks' : [_pub_k],
-            'on_load' : function(){
-                let name = APP.nostr.util.short_key(_pub_k),
-                    cp = _profiles.lookup(_pub_k);
-
-                if(cp.attrs.name!==undefined){
-                    name = cp.attrs.name;
-                }
-
-                document.title = name;
-            }
+        // profile about head
+        _my_head = APP.nostr.gui.profile_about.create({
+            'con': _profile_con,
+            'pub_k': _pub_k
         });
+
+
+
+//        _profiles.fetch({
+//            'pub_ks' : [_pub_k],
+//            'on_load' : function(){
+//                let name = APP.nostr.util.short_key(_pub_k),
+//                    cp = _profiles.lookup(_pub_k);
+//
+//                if(cp.attrs.name!==undefined){
+//                    name = cp.attrs.name;
+//                }
+//
+//                document.title = name;
+//            }
+//        });
 //        profiles.init();
 
         // our own listeners

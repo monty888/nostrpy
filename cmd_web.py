@@ -74,7 +74,7 @@ def get_latest_event_filter(for_client: Client,
         # 'since': util_funcs.date_as_ticks(datetime.now()-timedelta(days=5))
         'since': event_store.get_newest(for_client.url, {
             'kinds': [event_kind]
-        })
+        })+1
     }
 
 
@@ -210,7 +210,9 @@ def run_web(clients,
     def my_eose(the_client: Client, sub_id: str, events):
         print('eose', the_client.url)
         my_peh.do_event(sub_id, events, the_client.url)
+        print('peh complete', the_client.url)
         evt_persist.do_event(sub_id, events, the_client.url)
+        print('evt complete', the_client.url)
 
 
 
@@ -260,7 +262,7 @@ def run():
             'write': True
         },
         'ws://localhost:8081',
-        # 'ws://localhost:8083',
+        # # 'ws://localhost:8083',
         {
             'client': 'wss://relay.damus.io',
             'write': True
@@ -316,7 +318,6 @@ def run():
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
-
     run()
     # import re
     # def extract_tag(tag_prefix, text, with_pat=None):

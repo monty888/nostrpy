@@ -264,6 +264,8 @@ class NostrWeb(StaticServer):
         self._app.route('/relay_remove', callback=_get_err_wrapped(self._remove_relay_route))
         self._app.route('/relay_update_mode', callback=_get_err_wrapped(self._relay_mode_route))
 
+        self._app.route('/profile_reactions', callback=_get_err_wrapped(self.reactions_route))
+
 
 
         self._app.route('/websocket', callback=self._handle_websocket)
@@ -442,7 +444,7 @@ class NostrWeb(StaticServer):
             raise NostrWebException('priv_k: %s doesn\'t match supplied pub_k: %s' % (priv_k, pub_k))
 
         the_profile = self._profile_handler.profiles.get_profile(pub_k)
-
+        the_profile.update_at = datetime.now()
 
 
         if the_profile is None:
@@ -804,19 +806,24 @@ class NostrWeb(StaticServer):
 
         return ret
 
-    def _get_events(self, filter, decrypt_p: Profile=None):
-        events = self._event_store.get_filter(filter)
-        c_evt: Event
-        ret = []
-
-        for c_evt in events:
-            to_add = c_evt.event_data()
-            if c_evt.kind == Event.KIND_ENCRYPT:
-                to_add['content'] = self._decrypt_event_content_as_user(c_evt, decrypt_p)
-
-            ret.append(to_add)
+    def _serialse_event(self, c_evt, decrypt_p: Profile=None):
+        """
+        converts {} to event and then back to {} so it'll be as front end expects
+        extra fields not used by event also returned
+        :param c_evt: event data, possible with extra filds that'll be added as is
+        :param decrypt_p, use the profile for decrypting NIP4 content
+        :return:
+        """
+        as_evt = Event.from_JSON(c_evt)
+        ret = {**c_evt, **as_evt.event_data()}
+        if decrypt_p and as_evt.kind == Event.KIND_ENCRYPT:
+            ret['content'] = self._decrypt_event_content_as_user(as_evt, decrypt_p)
 
         return ret
+
+    def _get_events(self, filter, decrypt_p: Profile = None):
+        events = self._event_store.get_filter(filter)
+        return [self._serialse_event(c_evt, decrypt_p) for c_evt in events]
 
     def _events_route(self):
         """
@@ -958,7 +965,7 @@ class NostrWeb(StaticServer):
             #     ]
 
 
-        evts = [c_evt.event_data() for c_evt in self._event_store.get_filter(filter)]
+        evts = [self._serialse_event(c_evt) for c_evt in self._event_store.get_filter(filter)]
 
         return {
             'events': evts
@@ -1055,6 +1062,29 @@ class NostrWeb(StaticServer):
             'events': self._get_events(filter),
             'filter': filter
         }
+
+    def reactions_route(self):
+        pub_k = request.query.pub_k
+
+        # will throw if we don't think valid pub_k
+        self._check_key(pub_k)
+
+        until = self._get_query_int('until', default_value='')
+        if until == '':
+            until = None
+
+
+        ret = self._event_store.reactions(pub_k,
+                                          limit=self._get_query_limit(),
+                                          until=until)
+
+
+        ret = [self._serialse_event(c_evt) for c_evt in ret]
+
+        return {
+            'events': ret
+        }
+
 
     def _relay_status(self):
         # response.set_header('Content-type', 'application/json')

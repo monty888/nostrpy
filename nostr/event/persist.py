@@ -53,7 +53,7 @@ class EventStoreInterface(ABC):
         """
 
     @abstractmethod
-    def get_filter(self, filter) -> [Event]:
+    def get_filter(self, filter) -> [{}]:
         """
         :param filter: [{filter}...] nostr filter
         :return: all evts in store that passed the filter
@@ -113,6 +113,21 @@ class ClientEventStoreInterface(EventStoreInterface):
     # TODO:
     #  add method that returns the most recent create date for all relays we've seen
 
+    @staticmethod
+    def reaction_lookup(content: str):
+        lookup = {
+            '': 'like',
+            '+': 'like',
+            '-': 'dislike',
+            'wtf': 'wtf'
+        }
+        ret = 'other'
+        content = content.lower()
+        if content in lookup:
+            ret = lookup[content]
+
+        return ret
+
     @abstractmethod
     def add_event_relay(self, evt: Event, relay_url: str):
         """
@@ -136,7 +151,7 @@ class ClientEventStoreInterface(EventStoreInterface):
         """
 
     @abstractmethod
-    def get_filter(self, filter) -> [Event]:
+    def get_filter(self, filter) -> [{}]:
         """
         :param filter: [{filter}...] nostr filter
         :return: all evts in store that passed the filter
@@ -162,6 +177,15 @@ class ClientEventStoreInterface(EventStoreInterface):
         """
         :param pub_k: if given relays surgested by contacts for this pub_k will be listed first
         :return: [relay_urls]
+        """
+
+    @abstractmethod
+    def reactions(self, pub_k:str, limit=None, offset=None) -> [{}]:
+        """
+        :param pub_k:
+        :param limit:
+        :param offset:
+        :return:
         """
 
 
@@ -254,6 +278,9 @@ class RelayMemoryEventStore(MemoryEventStore, RelayEventStoreInterface):
 
 
 class ClientMemoryEventStore(MemoryEventStore, ClientEventStoreInterface):
+    """
+        Will eventually fully implement but most likely better to use SQL in memory mode
+    """
 
     def __init__(self):
         super().__init__(delete_mode=DeleteMode.DEL_DELETE,
@@ -361,6 +388,9 @@ class ClientMemoryEventStore(MemoryEventStore, ClientEventStoreInterface):
 
         return [i[0] for i in my_count.most_common()]
 
+    def reactions(self, pub_k: str, limit=None, offset=None) -> [{}]:
+        pass
+
 
 class SQLEventStore(EventStoreInterface):
 
@@ -390,7 +420,17 @@ class SQLEventStore(EventStoreInterface):
                 args = args + t_filter
 
             # deleted isnull to filter deleted if in flag delete mode
-            sql_arr = ['select * from events where deleted isnull']
+            sql_arr = ["""
+                select 
+                    e.event_id as id,
+                    e.pubkey, 
+                    e.created_at,
+                    e.kind,
+                    e.tags,
+                    e.content,
+                    e.sig
+                from events e where deleted isnull
+            """]
             # join not really required anymore because its always and
             join = 'and'
             args = []
@@ -473,15 +513,8 @@ class SQLEventStore(EventStoreInterface):
             if offset is None and 'offset' in c_filter:
                 offset = c_filter['offset']
 
-        if sort_reversed:
-            sql += ' order by created_at desc'
-        else:
-            sql += ' order by created_at'
-
-        if limit is not None:
-            sql += ' limit %s' % limit
-        if offset is not None:
-            sql += ' offset %s' % offset
+        sql = SQLEventStore._add_sort(sql, sort_reversed)
+        sql = SQLEventStore._add_range(sql, limit, offset)
 
         return {
             'sql': sql,
@@ -489,7 +522,27 @@ class SQLEventStore(EventStoreInterface):
         }
 
     @staticmethod
-    def _events_data_to_event_arr(data) -> [Event]:
+    def _add_range(sql: str, limit=None, offset=None):
+        if limit is not None:
+            sql += ' limit %s' % limit
+        if offset is not None:
+            sql += ' offset %s' % offset
+
+        return sql
+
+    @staticmethod
+    def _add_sort(sql, sort_reversed, col_name=None):
+        if col_name is None:
+            col_name = 'created_at'
+
+        if sort_reversed:
+            sql += ' order by %s desc' % col_name
+        else:
+            sql += ' order by %s' % col_name
+        return sql
+
+    @staticmethod
+    def _events_data_to_event_arr(data:DataSet) -> [Event]:
         """
         :param data: from db query should have event fields head at min
         :return: [Events]
@@ -656,7 +709,7 @@ class SQLEventStore(EventStoreInterface):
 
         return ret
 
-    def get_filter(self, filter, custom=None) -> [Event]:
+    def get_filter(self, filter, custom=None) -> [{}]:
         """
         from database returns events that match filter/s
         doesn't do #e and #p filters yet (maybe never)
@@ -674,7 +727,7 @@ class SQLEventStore(EventStoreInterface):
         data = self._db.select_sql(sql=filter_query['sql'],
                                    args=filter_query['args'])
 
-        return self._events_data_to_event_arr(data)
+        return data.as_arr(True)
 
     def _prepare_delete_batch(self, evt: Event, batch=None):
         if batch is None:
@@ -978,7 +1031,7 @@ class ClientSQLEventStore(SQLEventStore, ClientEventStoreInterface):
                         last_e,
                         last_p,
                         evt.content,
-                        'TODO!!!!'
+                        self.reaction_lookup(evt.content)
                     ]
 
                 })
@@ -1091,6 +1144,38 @@ order by count(pubkey) desc, relay
             ret = for_all
 
         return ret
+
+    def reactions(self, pub_k: str, limit=None, until=None) -> DataSet:
+        sql = """
+            select et.event_id as id,
+                    et.pubkey,
+                    et.kind,
+                    et.content,
+                    et.tags,
+                    et.created_at,
+                    et.sig,
+                    r.content as reaction, 
+                    r.interpretation 
+                from reactions r
+                inner join events e on r.id =e.id
+                inner join events et on et.event_id = r.for_event_id 
+            """
+        join = 'where'
+        args = []
+        if until:
+            sql += 'where et.created_at < %s' % self._db.placeholder
+            join = 'and'
+            args.append(until)
+
+        sql += join + " owner_pub_k=%s" % self._db.placeholder
+        args.append(pub_k)
+
+        sql = self._add_sort(sql, self._sort_reversed, 'et.created_at')
+        sql = self._add_range(sql, limit)
+
+        return self._db.select_sql(sql, args=args).as_arr(True)
+
+
 
     # def do_delete(self, evt: Event):
     #     ret = None

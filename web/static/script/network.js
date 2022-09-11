@@ -5,6 +5,7 @@ APP.remote = function(){
     // move all urls here so we can change in future if we want
     let _note_url = '/text_events',
         _note_for_profile_url = '/text_events_for_profile',
+        _reactions_for_profile = '/profile_reactions',
         _events_by_filter_url = '/events',
         _messages_url = '/messages',
         _events_by_seach_str = '/events_text_search',
@@ -404,7 +405,7 @@ APP.remote = function(){
 //            args['url'] = _current_profile_url;
 //            do_query(args);
 //        },
-        'load_notes_from_profile': function(args){
+        'load_notes_for_profile': function(args){
             let o_success = args.success;
 
             args['url'] = _note_for_profile_url;
@@ -414,25 +415,12 @@ APP.remote = function(){
             if(args.until){
                 args.params.until = args.until;
             }
+            args.params.limit = args.limit || 100;
 
             args.success = function(data){
                 data.events = make_events(data.events);
                 o_success(data);
             };
-            do_query(args);
-        },
-        'load_notes_for_profile': function(args){
-            let o_success = args.success;
-
-            args['url'] = _note_for_profile_url;
-            args['params'] = {
-                'pub_k' : args['pub_k']
-            };
-            args.success = function(data){
-                data.events = make_events(data.events);
-                o_success(data);
-            };
-
             do_query(args);
         },
         'load_events' : function(args){
@@ -462,6 +450,22 @@ APP.remote = function(){
             args['params'] = {
                 'pub_k' : args.pub_k
             };
+            args['prepare'] = function (data){
+                data.events = make_events(data.events);
+                return data;
+            };
+            do_query(args);
+        },
+        'load_reactions' : function(args){
+            args['url'] = _reactions_for_profile;
+            args['params'] = {
+                'pub_k' : args.pub_k
+            };
+            args.params.limit = args.limit || 100;
+            if(args.until!==undefined){
+                args.params.until = args.until;
+            }
+
             args['prepare'] = function (data){
                 data.events = make_events(data.events);
                 return data;

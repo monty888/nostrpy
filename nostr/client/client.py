@@ -92,7 +92,7 @@ class Client:
                     l = f.readline()
                     while l:
                         try:
-                            evt = Event.create_from_JSON(json.loads(l))
+                            evt = Event.from_JSON(json.loads(l))
                             my_client.publish(evt)
                         except JSONDecodeError as je:
                             logging.debug('Client::post_events_from_file - problem loading event data %s - %s' % (l, je))
@@ -332,7 +332,7 @@ class Client:
         # these are stored events
         if ret is False:
             if self._relay_supports_eose() or self._emulate_eose:
-                self._subs[sub_id]['events'].append(Event.create_from_JSON(message[2]))
+                self._subs[sub_id]['events'].append(Event.from_JSON(message[2]))
                 self._subs[sub_id]['last_event'] = datetime.now()
             else:
                 # eose not supported by relay and we're not emulating
@@ -351,7 +351,7 @@ class Client:
 
         if sub_id in self._subs and self._check_eose(sub_id, message):
             try:
-                the_evt = Event.create_from_JSON(message[2])
+                the_evt = Event.from_JSON(message[2])
                 for c_handler in self._subs[sub_id]['handlers']:
                     try:
                         c_handler.do_event(sub_id, the_evt, self._url)

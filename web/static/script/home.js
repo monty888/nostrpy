@@ -46,6 +46,7 @@
                     'load_func' : function(success){
                         let args = {
                             'pub_k' : _current_profile.pub_k,
+                            'limit' : _chunk_size,
                             'success': function(data){
                                 let view = _views[1];
                                 view.loading = true;
@@ -59,7 +60,7 @@
                             args['until'] = _views[1].until;
                         }
 
-                        APP.remote.load_notes_from_profile(args);
+                        APP.remote.load_notes_for_profile(args);
                     }
                 },
                 {
@@ -131,8 +132,7 @@
             });
         }
 
-        filter = APP.nostr.data.filter.create(filter);;
-
+        filter = APP.nostr.data.filter.create(filter);
         APP.remote.load_events({
             'filter' : filter,
             // maybe at somepoint see if we can reduce loads by tracking changes

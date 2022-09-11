@@ -69,7 +69,7 @@
             '<div class="input-group mb-2" >',
                 '<input style="width:10em" placeholder="search" type="text" class="form-control" id="search-in">',
                 '<button id="full_search_but" type="button" class="btn btn-primary" >' +
-                '<svg class="bi" >',
+                '<svg class="nbi" >',
                     '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#person-plus-fill"/>',
                 '</svg>',
                 '</button>',

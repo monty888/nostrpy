@@ -213,7 +213,7 @@ class Relay:
     def _do_event(self, req_json, ws: WebSocket):
         if len(req_json) <= 1:
             raise NostrCommandException('EVENT command missing event data')
-        evt = Event.create_from_JSON(req_json[1])
+        evt = Event.from_JSON(req_json[1])
         # check event sig matches pub_key
         if not evt.is_valid():
             raise NostrCommandException('invalid event, pubkey doesn\'t match sig')
@@ -253,7 +253,7 @@ class Relay:
                 for c_rem in to_rem:
                     del self._ws[c_rem]
 
-    def _check_subs(self, evt):
+    def _check_subs(self, evt:Event):
         """
         go through all our filters and send the event to any clients who have registered subs
         with filters that the new event passes.
@@ -286,7 +286,7 @@ class Relay:
                 the_sub = self._ws[ws]['subs'][c_sub_id]
                 # event passes sub filter
                 if evt.test(the_sub['filter']):
-                    Greenlet(get_send(ws, c_sub_id, evt, self._ws[ws]['send_lock'])).start()
+                    Greenlet(get_send(ws, c_sub_id, evt.event_data(), self._ws[ws]['send_lock'])).start()
 
     def _do_sub(self, req_json, ws: WebSocket):
         logging.info('subscription requested')
@@ -320,8 +320,8 @@ class Relay:
         evts = self._store.get_filter(filter)
         def get_sub_func(ws, sub_id, lock, evts):
             def my_func():
-                for c_evt in evts:
-                    self._send_event(ws, sub_id, c_evt, lock)
+                [self._send_event(ws, sub_id, c_evt, lock)
+                 for c_evt in evts]
 
                 # NIP15 support
                 if self._enable_nip15:
@@ -363,7 +363,7 @@ class Relay:
                       data=[
                           'EVENT',
                           sub_id,
-                          evt.event_data()
+                          evt
                       ],
                       lock=lock)
 

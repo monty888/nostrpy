@@ -20,7 +20,7 @@
         _profiles,
         _maybe_more,
         _c_off,
-        _chunk_size = 25,
+        _chunk_size = 100,
         _loading=false;
 
     // start when everything is ready
@@ -52,12 +52,19 @@
                 _c_off = 0;
                 _profiles = [];
             }
+            let load_str = _search_in.val();
 
             APP.nostr.data.profiles.search({
-                'match': _search_in.val(),
+                'match': load_str,
                 'limit': _chunk_size,
                 'offset': _c_off,
                 'on_load' : function(data){
+                    // old load
+                    if(_search_in.val()!==load_str){
+                        _loading = false;
+                        return;
+                    }
+
                     _profiles = _profiles.concat(data.profiles);
                     if(_profiles_list===undefined){
                         _profiles_list = APP.nostr.gui.profile_list.create({
