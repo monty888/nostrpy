@@ -6,6 +6,7 @@ APP.remote = function(){
     let _note_url = '/text_events',
         _note_for_profile_url = '/text_events_for_profile',
         _reactions_for_profile = '/profile_reactions',
+        _do_reaction = '/do_reaction',
         _events_by_filter_url = '/events',
         _messages_url = '/messages',
         _events_by_seach_str = '/events_text_search',
@@ -472,6 +473,16 @@ APP.remote = function(){
             };
             do_query(args);
         },
+        do_reaction(args){
+            args['url'] = _do_reaction;
+            args['params'] = {
+                'pub_k' : args.pub_k,
+                'event_id': args.event_id,
+                'reaction' : encodeURIComponent(args.reaction),
+                'active': args.active
+            };
+            do_query(args);
+        },
         'text_events_search' : function(args){
             let o_success = args.success;
 
@@ -483,7 +494,9 @@ APP.remote = function(){
             if(args.until && args.until!==null){
                 args.params.until = args.until;
             }
-
+            if(args.pub_k){
+                args.params.pub_k = args.pub_k;
+            }
             args.success = function (data){
                 data.events = make_events(data.events);
                 o_success(data);

@@ -33,6 +33,10 @@
                     '#p' : [_current_profile.pub_k]
                 }
             ]),
+            reaction_filter = APP.nostr.data.filter.create([{
+                'kinds': [7],
+                'authors': [_current_profile.pub_k]
+            }]),
             // the tabs also the data needed to load
             tabs_objs = [
                 {
@@ -43,7 +47,7 @@
                 {
                     'title' : 'feed',
                     'active' : true,
-                    'load_func' : function(success){
+                    load_func(){
                         let args = {
                             'pub_k' : _current_profile.pub_k,
                             'limit' : _chunk_size,
@@ -72,6 +76,11 @@
                     'title' : 'posts',
                     'filter' : post_filter,
                     'load_func' : do_load
+                },
+                {
+                    'title': 'reactions',
+                    'filter': reaction_filter,
+                    'load_func': do_load
                 }
             ];
 
@@ -137,6 +146,7 @@
             'filter' : filter,
             // maybe at somepoint see if we can reduce loads by tracking changes
             'cache' : false,
+            'pub_k': _current_profile.pub_k,
             'limit': _chunk_size,
             'success': function(data){
                 set_view_loaded_data(view, data);
@@ -215,13 +225,6 @@
         APP.nostr.data.event.add_listener('home',function(of_type, data){
             if(_my_tabs){
                 _my_tabs.set_selected_tab(1);
-            }
-        });
-
-        // saw a new events
-        APP.nostr.data.event.add_listener('event', function(type, event){
-            for(let i in _views){
-                _views[i].add(event)
             }
         });
 

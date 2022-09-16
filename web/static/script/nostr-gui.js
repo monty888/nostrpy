@@ -19,7 +19,35 @@ APP.nostr.gui = function(){
             'src="{{url}}"' +
             'frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"' +
             ' allowfullscreen></iframe>',
-        _notifications_con;
+        _tmpl_lookup = {
+            'image' : _img_tmpl,
+            'external' : _link_tmpl,
+            'video' : _video_tmpl,
+            'youtube': _youtube_tmpl
+        },
+        _notifications_con,
+        /*
+            below here is the marked stuff, it's a bit wierd because we need the renderer to track some current state...
+            also I don't completely understand flow of marked - should probably come back to this
+            a new actual_render is created everytime we do some markdown and used once, only one ever should ever exist
+            at a time.
+        */
+        _actual_render;
+        // override marked render
+        const renderer = {
+            text(text){
+                return _actual_render.text(text);
+            },
+            image(href, title, text){
+                return _actual_render.image(href, title, text);
+            }
+        };
+
+    // only call this once else you get recursion errs, why we do things slightly wierd
+    marked.use({
+        renderer
+    });
+
 
     // return a unique id in page
     function uid(){
@@ -124,6 +152,7 @@ APP.nostr.gui = function(){
             // boostrap alert types
             _type = args.type || 'success',
             _tmpl = APP.nostr.gui.templates.get('notification');
+
         function do_notification(){
             let _id = APP.nostr.gui.uid();
             _notifications_con.insertAdjacentHTML('beforeend',Mustache.render(_tmpl, {
@@ -152,76 +181,60 @@ APP.nostr.gui = function(){
 
     function get_note_content_for_render(evt, enable_media){
         let content = evt.content,
-            http_data,
-            tmpl_lookup = {
-                'image' : _img_tmpl,
-                'external' : _link_tmpl,
-                'video' : _video_tmpl,
-                'youtube': _youtube_tmpl
-            },
-            external = [];
+            http_data;
+
+        // create a new render for marked to use
+        _actual_render = function(enable_media){
+            let _external = [],
+                _enable_media = enable_media;
+
+            return {
+                text(text){
+                    let media = 'external';
+                    // this deals with media not defined via markup...
+                    // we'll also need to intercept the markup to make sure it honours users enable media
+                    // for now meida off == no preview also
+                    if(enable_media && text.indexOf('http')==0){
+                        media = media_lookup(text);
+                        if(media!=='external'){
+                            // looks like markup has escape the text so we need to unescape or
+                            // links might break, probably need more chars then amp
+                            if(media==='youtube'){
+                                text = text.replace(/watch\?.*=/,'embed/');
+                            }
+
+                            text = Mustache.render(_tmpl_lookup[media],{
+                                'url': APP.nostr.util.html_unescape(text, {amp: '&'})
+                            });
+
+                        }else{
+                            _external.push(text);
+                        }
+                    }
+                    return text;
+                },
+                image(href, title, text){
+                    if(_enable_media){
+                        return false;
+                    }else{
+                        return Mustache.render(_md_img_tmpl, {
+                            'text': text,
+                            'url': href
+                        });
+                    }
+                },
+                external(){
+                    return _external;
+                }
+            }
+        }(enable_media);
 
         // make safe
 //        content = APP.nostr.util.html_escape(content);
         content = DOMPurify.sanitize(content, {ALLOWED_TAGS: []});
 
-        const renderer = {
-            text(text){
-                let media = 'external';
-                // this deals with media not defined via markup...
-                // we'll also need to intercept the markup to make sure it honours users enable media
-                // for now meida off == no preview also
-                if(enable_media && text.indexOf('http')==0){
-                    media = media_lookup(text);
-                    if(media!=='external'){
-                        // looks like markup has escape the text so we need to unescape or
-                        // links might break, probably need more chars then amp
-                        if(media==='youtube'){
-                            text = text.replace(/watch\?.*=/,'embed/');
-                        }
-
-                        text = Mustache.render(tmpl_lookup[media],{
-                            'url': APP.nostr.util.html_unescape(text, {amp: '&'})
-                        });
-
-                    }else{
-                        external.push(text);
-                    }
-                }
-               return text;
-            },
-            image(href, title, text){
-                if(enable_media){
-                    return false;
-                }else{
-                    return Mustache.render(_md_img_tmpl, {
-                        'text': text,
-                        'url': href
-                    });
-                }
-            }
-        };
-//        tokenizer = {
-//            text(text) {
-//                'type': 'text',
-//                'raw': text,
-//                'text': text
-//            }
-//           }
-//        },
-//        walkTokens = (token) => {
-//            let type = token.type,
-//                text = token.text;
-//        };
-
-        marked.use({
-            renderer
-        });
-
-        // to in text tag replacement (hashtag)
-
-
         // do p,e [n] tag replacement
+        console.log(evt)
         content = APP.nostr.gui.tag_replacement(content, evt.tags);
 
         // parse the raw content to html for any markup and http links
@@ -240,7 +253,7 @@ APP.nostr.gui = function(){
 
         return {
             'content': content,
-            'external': external
+            'external': _actual_render.external()
         }
     }
 
@@ -573,7 +586,7 @@ APP.nostr.gui.post_button = function(){
     let _post_html = [
             '<div id="post-button" class="post-div">',
                 '<div style="width:50%;height:50%;margin:25%;">',
-                        '<svg class="bi-post" style="height:100%;width:100%;">',
+                        '<svg class="nbi-post" style="height:100%;width:100%;">',
                             '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#send-plus"/>',
                         '</svg>',
                 '</div>',
@@ -623,7 +636,7 @@ APP.nostr.gui.tabs = function(){
     let _head_tmpl = [
         '<ul id="{{id}}-tab" class="nav nav-tabs" style="overflow:hidden;height:32px;" >',
             '{{#tabs}}',
-                '<li class="nav-item">',
+                '<li id="{{id}}-head" class="nav-item">',
                     '<a class="nav-link {{active}}" style="padding:3px;" data-bs-toggle="tab" data-bs-target="#{{tab-ref}}" href="#{{tab-ref}}" >{{tab-title}}</a>',
                 '</li>',
             '{{/tabs}}',
@@ -659,7 +672,9 @@ APP.nostr.gui.tabs = function(){
             // index of currently selected tab
             _cur_index,
             // function called on a tab being selected
-            _on_tab_change = args.on_tab_change;
+            _on_tab_change = args.on_tab_change,
+            // called on sroll to end of tabs contents
+            _scroll_bottom = args.scroll_bottom;
 
         function create_render_obj(){
             _render_obj = {
@@ -727,9 +742,21 @@ APP.nostr.gui.tabs = function(){
 
             // event on scroll to bottom
            _('#'+_id+'-content').scrollBottom(function(e){
-                alert('tab mofo!!!');
+                if(typeof(_scroll_bottom)==='function'){
+                    _scroll_bottom();
+                }
             });
 
+            window.addEventListener('resize', ()=>{
+                let x = _('#'+_id+'-head'),
+                    sum = 0;
+                x.forEach((c,i) => {
+                    sum+=c.offsetWidth;
+                });
+                console.log(sum);
+                console.log(_con[0].offsetWidth);
+
+            });
 
             // not sure we should count this as a change??
             // anyway on first draw fire _on_tab_change for selected tab
@@ -798,7 +825,7 @@ APP.nostr.gui.tabs = function(){
 
 APP.nostr.gui.list = function(){
     const CHUNK_SIZE = 50,
-        CHUNK_DELAY = 200,
+        CHUNK_DELAY = 100,
         MAX_DRAW = null;
 
     function create(args){
@@ -814,49 +841,55 @@ APP.nostr.gui.list = function(){
             _uid = APP.nostr.gui.uid(),
             _click = args.click,
             _empty_message = args.empty_message || 'nothing to show!',
-            _max_draw = args.max_draw || MAX_DRAW;
+            _max_draw = args.max_draw || MAX_DRAW,
+            _drawing,
+            _c_start,
+            _c_end,
+            _last_block,
+            _to_draw;
 
         // draw the entire list
         // TODO: chunk draw, max draw amount
         // future
-        function draw(){
-            let to_draw = _data.length;
-            if(_max_draw!==null && _data.length>_max_draw){
-                to_draw = _max_draw;
-            }
 
+        function set_draw_length(){
+            _to_draw = _data.length;
+            if(_max_draw!==null && _data.length>_max_draw){
+                _to_draw = _max_draw;
+            }
+        }
+
+        function draw(start_pos){
+            set_draw_length();
             clearInterval(_draw_timer);
             _con.html('');
-            if(to_draw===0){
+            if(_to_draw===0){
                 _con.html(_empty_message);
-            }else if(_render_chunk && to_draw> _chunk_size){
-                let c_start=0,
-                    c_end=_chunk_size,
-                    last_block = false;
-
-                function _prog_draw(){
-                    c_start = draw_chunk(c_start, c_end);
-                    if(!last_block){
-                        c_end+=_chunk_size;
-                        if(c_end>= to_draw){
-                            c_end = to_draw;
-                            last_block = true
-                        }
-
-
-                        _draw_timer = setTimeout(_prog_draw,CHUNK_DELAY);
-
-                    }
-
-
-                }
-
+                _drawing = false;
+            }else if(_render_chunk && _to_draw> _chunk_size){
+                _drawing = true;
+                _last_block = false;
+                _c_start=0;
+                _c_end=_chunk_size;
                 _prog_draw();
-//                _draw_timer = setTimeout(_prog_draw,CHUNK_DELAY);
-
-
             }else{
-                draw_chunk(0, to_draw);
+                _drawing = true;
+                draw_chunk(0, _to_draw);
+                _drawing = false;
+            }
+        }
+
+        function _prog_draw(){
+            _c_start = draw_chunk(_c_start, _c_end);
+            if(!_last_block){
+                _c_end+=_chunk_size;
+                if(_c_end>= _to_draw){
+                    _c_end = _to_draw;
+                    _last_block = true
+                }
+                _draw_timer = setTimeout(_prog_draw,CHUNK_DELAY);
+            }else{
+                _drawing = false;
             }
         }
 
@@ -864,6 +897,7 @@ APP.nostr.gui.list = function(){
             let draw_arr = [],
                 r_obj,
                 pos;
+
             for(pos=start;pos<end;pos++){
                 r_obj = _data[pos];
                 if((_filter===false)||(_filter(r_obj))){
@@ -904,6 +938,14 @@ APP.nostr.gui.list = function(){
 
         return {
             'draw' : draw,
+            'append_draw': function(start_pos){
+                set_draw_length();
+                if(!_drawing){
+                    _c_start = start_pos;
+                    _c_end = _to_draw;
+                    _prog_draw();
+                }
+            },
             'set_data' : function(data){
                 _data = data;
             },
@@ -949,12 +991,15 @@ APP.nostr.gui.event_view = function(){
     };
 
     function create(args){
+        const _actions = new Set(['reply','boost','like'])
         // notes as given to us (as they come from the load)
         let _notes_arr,
             // data render to be used to render
             _render_arr,
             // events data by id
             _event_map,
+            // like event ids
+            _like_map,
             // unique id for the event view
             _uid= _gui.uid(),
             // where we'll render
@@ -994,16 +1039,24 @@ APP.nostr.gui.event_view = function(){
         }
 
         function _note_content(the_note){
-            let name = the_note['pubkey'],
+            let render_note = the_note;
+            if(the_note.kind===7 && the_note.react_event){
+                // TODO: do this in data event
+                render_note = the_note.react_event;
+            }
+
+            let name = render_note['pubkey'],
             p,
             attrs,
-            pub_k = the_note['pubkey'],
+            pub_k = render_note['pubkey'],
             preview_data,
-            note_content = _gui.get_note_content_for_render(the_note, _enable_media),
+            note_content = _gui.get_note_content_for_render(render_note, _enable_media),
             preview_url,
             to_add = {
                 'is_parent' : the_note.is_parent,
                 'missing_parent' : the_note.missing_parent,
+                'reaction_txt': render_note.interpretation,
+                'is_liked' : render_note.react_like,
                 'is_child' : the_note.is_child,
                 'uid' : _uid,
                 'evt': the_note,
@@ -1016,9 +1069,7 @@ APP.nostr.gui.event_view = function(){
                     'text' : pub_k
                 }),
                 'at_time': dayjs.unix(the_note.created_at).fromNow(),
-                'can_reply' : function(){
-                    return APP.nostr.data.user.profile().pub_k!==undefined;
-                },
+                'can_reply' : APP.nostr.data.user.profile().pub_k!==undefined,
                 'subject': the_note.get_first_tag_value('subject')
             };
 
@@ -1140,28 +1191,78 @@ APP.nostr.gui.event_view = function(){
             });
         }
 
+        function do_action(action, event_id){
+           let p = APP.nostr.data.user.profile(),
+            event = _event_map[event_id].event;
+            if(event.react_event){
+                event = event.react_event;
+            }
+
+            if(p.pub_k===undefined){
+                alert('action not possible unless login-- show profile select here?!');
+            }else{
+                if(action==='reply'){
+                    // we actually pass the render_event, probably it'd be better if it could work from just evt
+                    // maybe once we make the event render a bit more sane...
+                    APP.nostr.gui.post_modal.show({
+                        'type' : 'reply',
+                        'event' : event
+                    });
+                }else if(action==='boost'){
+                    alert('do boost');
+                }else if (action==='like'){
+                    let c_val = event.react_like;
+                    console.log('XXXXXXX');
+                    console.log(event);
+
+                    APP.remote.do_reaction({
+                        'pub_k' : p.pub_k,
+                        'event_id': event.id,
+                        'reaction': '+',
+                        'active': !c_val===true,
+                        'cache': false,
+                        success(data){
+                            if(data.error===undefined){
+//                                event.react_like = data.liked;
+                                // do notification
+                            }
+                        }
+                    });
+                }
+            }
+        }
+
         function _create_contents(){
             // profiles must have loaded before notes
             if(_notes_arr===undefined){
                 return;
             };
-
             _render_arr = [];
             // event map contains both the event and event after we added our
             // extra fields
             _event_map = {};
+            _like_map = {};
 
             _notes_arr.forEach(function(c_evt){
                 _event_map[c_evt.id] = {
                     'event' : c_evt
                 }
+                if(c_evt.react_like_id!==undefined){
+                    _like_map[c_evt.react_like_id] = c_evt;
+                }
+
             });
-            // evts ordered and rendered for screen
-            event_ordered(_notes_arr).forEach(function(c_evt){
-                let add_content = _note_content(c_evt);
-                _render_arr.push(add_content);
-                _event_map[c_evt.id].render_event = add_content;
-            });
+
+            try{
+                event_ordered(_notes_arr).forEach(function(c_evt){
+                    let add_content = _note_content(c_evt);
+                    _render_arr.push(add_content);
+                    _event_map[c_evt.id].render_event = add_content;
+                });
+            }catch(e){
+                console.log(e);
+                alert(e);
+            }
 
             if(_my_list===undefined){
                 _my_list = APP.nostr.gui.list.create({
@@ -1177,13 +1278,8 @@ APP.nostr.gui.event_view = function(){
                             _expand_event(evt);
                         }else if(type==='pt' || type==='pp'){
                            _profile_clicked(evt.pubkey);
-                        }else if(type==='reply'){
-                            // we actually pass the render_event, probably it'd be better if it could work from just evt
-                            // maybe once we make the event render a bit more sane...
-                            APP.nostr.gui.post_modal.show({
-                                'type' : 'reply',
-                                'event' : _event_map[event_id].event
-                            });
+                        }else if(_actions.has(type)){
+                            do_action(type, event_id);
                         // anywhere else click to event, to change
                         }else if(type==='preview'){
                             _get_preview_event(event_id);
@@ -1293,6 +1389,7 @@ APP.nostr.gui.event_view = function(){
 
         function set_notes(the_notes){
             _notes_arr = the_notes;
+//            _create_contents()
             load_profiles(() => {_create_contents()});
         };
 
@@ -1322,8 +1419,11 @@ APP.nostr.gui.event_view = function(){
             in add_note to see if new events should be shown... We expect all the data we get at
             create to be ok for display (-- though it'd be easy to run through filter too)
         */
-        function set_filter(filter){
-            _sub_filter = filter;
+        function filter(filter){
+            if(filter!==undefined){
+                _sub_filter = filter;
+            }
+            return _sub_filter;
         }
 
         function _time_update(){
@@ -1345,56 +1445,124 @@ APP.nostr.gui.event_view = function(){
         }
 
         function add_note(evt){
-            // does the event pass our filter and also just double check we don't already have it
-            // the server should be trying not to send us duplicates anyhow
-            if(_sub_filter.test(evt) && _event_map[evt.id]===undefined){
-//                let add_content = _note_content(evt);
-                // just insert the new event
+            /* add a note if it passes are filter...
+            */
+            if(_event_map[evt.id]===undefined){
                 _notes_arr.unshift(evt);
-                // this results in a full recheck of order and redraw
-                // probably we could do more efficent but this is simplest and will do for now
-//                _create_contents();
-                // call load profiles cause it'll make sure we have the profile info before
-                // redrawing, ajax call might be made
                 load_profiles(() => {_create_contents()});
             }
         }
 
+        function remove_note(id){
+            if(_event_map[id]!==undefined){
+                let el = _('#'+_uid+'-'+id);
+                if(el.length>0){
+                    // painful... find the e and rem from render_arr else it might come back on add/rem...
+                    let rem_pos;
+                    for(rem_pos=0;rem_pos<_notes_arr.length;rem_pos++){
+                        console.log(_notes_arr[rem_pos]);
+                        if(_notes_arr[rem_pos].id === id){
+                            _notes_arr.splice(rem_pos,1);
+                            break;
+                        }
+                    }
+                    console.log(_notes_arr);
+                    delete _event_map[id]
+                    el.remove();
+                    // it could be possible that we need to look in _like_map and rem but not as we currntly use
+                    // _like_map = {};
+                }
+            }
+        }
+
+        function do_reaction(evt){
+            let id = evt.get_first_e_tag_value(),
+                r_evt =_event_map[id];
+            if(r_evt!==undefined){
+                r_evt = r_evt.event;
+                _('#'+_uid+'-'+id+'-like').html('<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#heart-fill"/>');
+                _like_map[evt.id] = r_evt;
+                r_evt.react_like = true;
+            }
+        }
+
+        function do_delete(evt){
+            let ids = evt.get_tag_values('e'),
+                like_evt;
+            ids.forEach((id,i) => {
+                // we're actually showing the like event - reactions view
+                if(id in _event_map){
+                    remove_note(id)
+                // the events that may be liked - normal views
+                }else{
+                    like_evt = _like_map[id];
+                    if(like_evt!==undefined){
+                        _('#'+_uid+'-'+like_evt.id+'-like').html('<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#heart"/>');
+                        delete _like_map[id];
+                        like_evt.react_like = false;
+                    }
+                }
+
+
+            });
+
+        }
+
+        function on_event(evt){
+            if(_sub_filter.test(evt)){
+                add_note(evt);
+            }else if(evt.kind==7){
+                do_reaction(evt);
+            }else if(evt.kind==5){
+                do_delete(evt);
+            }
+        }
+
+
         function append_notes(evts){
+            _notes_arr = _notes_arr.concat(evts);
+
             evts.forEach(function(c_evt){
                 _event_map[c_evt.id] = {
                     'event' : c_evt
                 }
             });
-            let offset = _render_arr.length,
-                n_html = [];
-
-            // evts ordered and rendered for screen
-            event_ordered(evts).forEach(function(c_evt){
-                let add_content = _note_content(c_evt);
-                _render_arr.push(add_content);
-                _event_map[c_evt.id].render_event = add_content;
-            });
-
 
             load_profiles(() => {
-                for(let i=offset;i<_render_arr.length;i++){
-                    n_html.push(_row_render(_render_arr[i], i));
-                }
-                // hacky should append should probably be a method of list
-                // and it should check if drawing...
-                _con.insertAdjacentHTML('beforeend', n_html.join(''));
+                let offset = _render_arr.length,
+                n_html = [];
+                // evts ordered and rendered for screen - note only within the appending chunk
+                event_ordered(evts).forEach(function(c_evt){
+                    let add_content = _note_content(c_evt);
+                    _render_arr.push(add_content);
+                    _event_map[c_evt.id].render_event = add_content;
+                });
+                _my_list.append_draw(offset);
+//                for(let i=offset;i<_render_arr.length;i++){
+//                    n_html.push(_row_render(_render_arr[i], i));
+//                }
+//                // hacky should append should probably be a method of list
+//                // and it should check if drawing...
+//                _con.insertAdjacentHTML('beforeend', n_html.join(''));
             });
         }
 
         // update the since every 30s
         _time_update = setInterval(_time_update, 1000*30);
 
+        // new event, assumes client has been started
+        APP.nostr.data.event.add_listener('event', function(type, event){
+            on_event(event);
+//            for(let i in _views){
+//                _views[i].add(event)
+//            }
+        });
+
         // methods for event_view obj
         return {
             'set_notes' : set_notes,
-            'set_filter' : set_filter,
-            'add' : add_note,
+            'filter': filter,
+//            'on_event' : on_event,
             'append_notes': append_notes,
             'draw' : function(){
                 _my_list.draw();
@@ -1417,7 +1585,7 @@ APP.nostr.gui.profile_about = function(){
                     // TODO: do something if unable to load pic
                     '{{#picture}}',
                         '<a href="{{picture}}" >',
-                            '<img style="display:inline-block;float:left;" id="{{pub_k}}-pp" src="{{picture}}" class="{{profile_pic_class}}" />',
+                            '<img loading="lazy" style="display:inline-block;float:left;" id="{{pub_k}}-pp" src="{{picture}}" class="{{profile_pic_class}}" />',
                         '</a>',
                     '{{/picture}}',
                     '<div style="text-align: justify; vertical-align:top;word-break: break-all;">',
@@ -1428,16 +1596,16 @@ APP.nostr.gui.profile_about = function(){
                         // options that we can if we're in profile and this is not our profile
                         '{{#other_profile}}',
                             '<span style="float:right;">',
-                                '<svg id="{{pub_k}}-dm" class="bi" >',
+                                '<svg id="{{pub_k}}-dm" class="nbi" >',
                                     '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#envelope-fill"/>',
                                 '</svg>',
                                 '{{#follows}}',
-                                    '<svg id="{{pub_k}}-fol" class="bi" >',
+                                    '<svg id="{{pub_k}}-fol" class="nbi" >',
                                         '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#star-fill"/>',
                                     '</svg>',
                                 '{{/follows}}',
                                 '{{^follows}}',
-                                    '<svg id="{{pub_k}}-fol" class="bi" >',
+                                    '<svg id="{{pub_k}}-fol" class="nbi" >',
                                         '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#star"/>',
                                     '</svg>',
                                 '{{/follows}}',
@@ -1458,12 +1626,12 @@ APP.nostr.gui.profile_about = function(){
             '<span class="profile-about-label">{{label}} {{count}}</span>',
             '{{#images}}',
             '<span style="display:table-cell;">',
-                '<img id="{{id}}" src="{{src}}" class="profile-pic-verysmall" />',
+                '<img loading="lazy" id="{{id}}" src="{{src}}" class="profile-pic-verysmall" />',
             '</span>',
             '{{/images}}',
             '{{#trail}}',
                 '<span style="display:table-cell">',
-                    '<svg class="bi" >',
+                    '<svg class="nbi" >',
                         '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#three-dots"/>',
                     '</svg>',
                 '</span>',
@@ -2287,9 +2455,12 @@ APP.nostr.gui.profile_list = function (){
         function create_render_data(){
             _render_arr = [];
             _render_lookup = {};
+            append_render_data(_view_profiles);
+        }
 
+        function append_render_data(data){
             let r_obj;
-            _view_profiles.forEach(function(p){
+            data.forEach(function(p){
                 r_obj = _create_render_profile(p);
                 _render_lookup[p.pub_k] = r_obj;
                 _render_arr.push(r_obj);
@@ -2354,15 +2525,17 @@ APP.nostr.gui.profile_list = function (){
             },
             'add_data': function(data){
                 _view_profiles = _view_profiles.concat(data);
-                create_render_data();
-                _my_list.set_data(_render_arr);
-                let l = data.length,
-                    append_html = [];
+                append_render_data(data);
+                _my_list.append_draw(_view_profiles.length - data.length);
 
-                for(var i=_view_profiles.length-l; i<_view_profiles.length;i++){
-                    append_html.push(Mustache.render(_row_tmpl, _render_arr[i]))
-                }
-                _con.insertAdjacentHTML('beforeend', append_html.join(''));
+//                _my_list.set_data(_render_arr);
+//                let l = data.length,
+//                    append_html = [];
+//
+//                for(var i=_view_profiles.length-l; i<_view_profiles.length;i++){
+//                    append_html.push(Mustache.render(_row_tmpl, _render_arr[i]))
+//                }
+//                _con.insertAdjacentHTML('beforeend', append_html.join(''));
             }
 
 

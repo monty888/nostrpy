@@ -662,6 +662,7 @@ APP.nostr.data.nostr_event = function(event){
         ENCRYPT = 4;
 
     let _data = event;
+
     function get_tag_values(name, test_func, break_on_match){
         let ret = [],
             tags = _data.tags,
@@ -695,22 +696,29 @@ APP.nostr.data.nostr_event = function(event){
     // not sure if i like this... does mean we can access the evt fields like it was just the normal
     // {} obj though
     _data = _.extend({
-        'is_encrypt' : function(){
+        is_encrypt(){
             return _data.kind === ENCRYPT;
         },
         'get_tag_values' : get_tag_values,
-        'get_p_tag_values' : function(test_func, break_on_match){
-            return get_p_tag_values(test_func, break_on_match);
-        },
+//        get_p_tag_values(test_func, break_on_match){
+//            return get_p_tag_values(test_func, break_on_match);
+//        },
         'get_first_tag_value' : get_first_tag_value,
-        'get_first_p_tag_value' : function(test_func){
+        get_first_p_tag_value(test_func){
             return get_first_tag_value('p', test_func);
         },
-        'copy': function(){
+        get_first_e_tag_value(test_func){
+            return get_first_tag_value('e', test_func);
+        },
+        copy(){
             return APP.nostr.data.nostr_event(_.extend({},_data));
         }
 
     }, _data);
+
+    if(_data.react_event){
+        _data.react_event = APP.nostr.data.nostr_event(_data.react_event)
+    }
 
     return _data
 

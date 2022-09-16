@@ -264,9 +264,8 @@ class NostrWeb(StaticServer):
         self._app.route('/relay_remove', callback=_get_err_wrapped(self._remove_relay_route))
         self._app.route('/relay_update_mode', callback=_get_err_wrapped(self._relay_mode_route))
 
-        self._app.route('/profile_reactions', callback=_get_err_wrapped(self.reactions_route))
-
-
+        self._app.route('/profile_reactions', callback=_get_err_wrapped(self._reactions_route))
+        self._app.route('/do_reaction', callback=_get_err_wrapped(self._do_reaction_route))
 
         self._app.route('/websocket', callback=self._handle_websocket)
         # self._app.route('/count', callback=self._count)
@@ -290,6 +289,15 @@ class NostrWeb(StaticServer):
             raise NostrWebException('%s is required' % key_name)
         if not Keys.is_key(key):
             raise NostrWebException('value - %s doesn\'t look like a valid nostr %s' % (key, key_name))
+
+    def _check_event_id(self, event_id):
+        if event_id == '':
+            raise NostrWebException('event_id required')
+
+        # looks like event id?
+        if not Event.is_event_id(event_id):
+            raise NostrWebException('%s doesn\'t look like a valid nostr event' % event_id)
+
 
     def _get_all_contacts_profile(self, pub_k):
         # shortcut, nothing asked for
@@ -806,7 +814,7 @@ class NostrWeb(StaticServer):
 
         return ret
 
-    def _serialse_event(self, c_evt, decrypt_p: Profile=None):
+    def _serialse_event(self, c_evt, use_profile: Profile = None):
         """
         converts {} to event and then back to {} so it'll be as front end expects
         extra fields not used by event also returned
@@ -816,14 +824,94 @@ class NostrWeb(StaticServer):
         """
         as_evt = Event.from_JSON(c_evt)
         ret = {**c_evt, **as_evt.event_data()}
-        if decrypt_p and as_evt.kind == Event.KIND_ENCRYPT:
-            ret['content'] = self._decrypt_event_content_as_user(as_evt, decrypt_p)
+        if use_profile and as_evt.kind == Event.KIND_ENCRYPT:
+            ret['content'] = self._decrypt_event_content_as_user(as_evt, use_profile)
+
+        if 'react_event' in ret:
+            ret['react_event'] = self._serialse_event(c_evt['react_event'], use_profile)
 
         return ret
 
-    def _get_events(self, filter, decrypt_p: Profile = None):
+    def _get_events(self, filter, use_profile: Profile = None,
+                    embed_reactions=True, add_reactions_flag=True):
+        c_evt: Event
         events = self._event_store.get_filter(filter)
-        return [self._serialse_event(c_evt, decrypt_p) for c_evt in events]
+
+        if add_reactions_flag and use_profile:
+            events = self._add_reacted_to(use_profile, events)
+
+        # for reaction events to be useful you'll probbaly want to embed the event that is being reacted to
+        if embed_reactions:
+            self._add_reaction_events(events)
+
+        return [self._serialse_event(c_evt, use_profile) for c_evt in events]
+
+    def _add_reacted_to(self, p: Profile, evts: []):
+        """
+            for given events returns a lookup of [event_id] {
+                'type' : true     p reacted to e this type - undefined if not true
+            }
+        """
+
+        # should return all reactions for given events by p
+        reactions = self._event_store.reactions(pub_k=p.public_key,
+                                                react_event_id=[c_evt['id'] for c_evt in evts])
+        r_lookup = {}
+        for c_evt in reactions:
+            r_type = c_evt['interpretation']
+            if c_evt['id'] not in r_lookup:
+                r_lookup[c_evt['id']] = {}
+
+            # we only care if we have the type or not e.g. for like on/off
+            # for other expect the caller should no what its looking for
+            r_lookup[c_evt['id']]['react_'+r_type] = True
+            r_lookup[c_evt['id']]['react_' + r_type+'_id'] = c_evt['r_event_id']
+
+        # add flags to events
+        ret = []
+        for c_evt in evts:
+            if c_evt['id'] in r_lookup:
+                c_evt = {**c_evt, **r_lookup[c_evt['id']]}
+            ret.append(c_evt)
+
+        return ret
+
+    def _add_reaction_events(self, evts: []):
+        """
+            adds react_event to any kind7 reaction events
+        """
+        # reaction_evts only
+        r_evts = [c_evt for c_evt in evts if c_evt['kind'] == Event.KIND_REACTION]
+        # no reaction events
+        if not r_evts:
+            return evts
+
+        # events that r_evts refer to, those we can find anyhow
+        r_to_events = self._event_store.reactions(for_event_id=[c_evt['id'] for c_evt in r_evts])
+
+        # turn to lookup
+        r_evt_lookup = {}
+        for c_evt in r_to_events:
+            if c_evt['r_event_id'] not in r_evt_lookup:
+                r_evt_lookup[c_evt['r_event_id']] = c_evt
+
+            c_evt['react_'+c_evt['interpretation']] = True
+
+
+        # add r_event_data as r_event, we do over r_evts but this is the same data as
+        # evts so we're actually changing there
+        for c_evt in r_evts:
+            if c_evt['id'] in r_evt_lookup:
+                c_evt['react_event'] = r_evt_lookup[c_evt['id']]
+            else:
+                pass
+                # c_evt['react_event'] = {
+                #     'id': c_evt['id'],
+                #     'sig': None,
+                #     'content': 'reacted event not found %s'  % c_evt['id']
+                # }
+
+        return evts
 
     def _events_route(self):
         """
@@ -831,10 +919,11 @@ class NostrWeb(StaticServer):
         :return:
         """
         pub_k = request.query.pub_k
-        decrypt_p: Profile = None
+        use_profile: Profile = None
+
         if pub_k:
             self._check_key(pub_k)
-            decrypt_p = self._profile_handler.profiles.lookup_pub_key(pub_k)
+            use_profile = self._profile_handler.profiles.lookup_pub_key(pub_k)
 
         try:
             filter = json.loads(request.forms['filter'])
@@ -857,15 +946,15 @@ class NostrWeb(StaticServer):
 
         return {
             'events': self._get_events(filter,
-                                       decrypt_p=decrypt_p)
+                                       use_profile=use_profile)
         }
 
     def _messages(self):
         pub_k = request.query.pub_k
-        decrypt_p: Profile = None
+        use_profile: Profile = None
         self._check_key(pub_k)
-        decrypt_p = self._profile_handler.profiles.lookup_pub_key(pub_k)
-        if decrypt_p is None:
+        use_profile = self._profile_handler.profiles.lookup_pub_key(pub_k)
+        if use_profile is None:
             raise NostrWebException('unable to find profile for decryption pub_k: %s', pub_k)
 
         # get the top message for everyone we
@@ -878,7 +967,7 @@ class NostrWeb(StaticServer):
         ret = []
         if dms:
             ret = self._get_events(filter,
-                                   decrypt_p=decrypt_p)
+                                   use_profile=use_profile)
 
         return {
             'events': ret
@@ -963,9 +1052,13 @@ class NostrWeb(StaticServer):
             #         filter,
             #         ref_copy
             #     ]
+        use_profile: None
+        pub_k = request.query.pub_k
+        if pub_k:
+            self._check_key(pub_k)
+            use_profile = self._profile_handler.profiles.lookup_pub_key(pub_k)
 
-
-        evts = [self._serialse_event(c_evt) for c_evt in self._event_store.get_filter(filter)]
+        evts = self._get_events(filter, use_profile)
 
         return {
             'events': evts
@@ -1011,13 +1104,7 @@ class NostrWeb(StaticServer):
 
     def _event_relay_route(self):
         event_id = request.query.event_id
-        if event_id == '':
-            raise NostrWebException('event_id required')
-
-        # looks like event id?
-        if not Event.is_event_id(event_id):
-            raise NostrWebException('%s doesn\'t look like a valid nostr event' % event_id)
-
+        self._check_event_id(event_id)
 
         # ok take a look which relays we saw at, TODO add date to event_relay
 
@@ -1059,11 +1146,12 @@ class NostrWeb(StaticServer):
             filter[1]['until'] = until
 
         return {
-            'events': self._get_events(filter),
+            'events': self._get_events(filter,
+                                       use_profile=for_profile),
             'filter': filter
         }
 
-    def reactions_route(self):
+    def _reactions_route(self):
         pub_k = request.query.pub_k
 
         # will throw if we don't think valid pub_k
@@ -1083,6 +1171,80 @@ class NostrWeb(StaticServer):
 
         return {
             'events': ret
+        }
+
+    def _do_reaction_route(self):
+        """
+        do a reaction, currently only suporting on/off type reactions e.g.
+        like which is the only one the front end support anyhow
+        :return:
+        """
+        pub_k = request.query.pub_k
+        self._check_key(pub_k)
+
+        p:Profile = self._profile_handler.profiles.lookup_pub_key(pub_k)
+        if not p:
+            raise NostrWebException('couldn\'t profile %s', pub_k)
+        if not p.private_key:
+            raise NostrWebException('can\'t sign events with profile %s', pub_k)
+
+        event_id = request.query.event_id
+        self._check_event_id(event_id)
+        reactions = {
+            '+': '+',
+            '': '+'
+        }
+        reaction = request.query.reaction
+        if reaction not in reactions:
+            raise NostrWebException('%s is not a valid reaction' % reaction)
+
+        reaction = reactions[reaction]
+
+        active = request.query.active.lower() == 'true'
+
+        # get event we're reacting to
+        r_evt:Event = self._event_store.get_filter({
+            'ids': event_id
+        })
+
+        if not r_evt:
+            raise NostrWebException('couldn\'t find event reacting to, event_id: %s' % event_id)
+        r_evt = Event.from_JSON(r_evt[0])
+
+        my_react_event = Event(kind=Event.KIND_REACTION,
+                               content=reaction,
+                               tags=[
+                                   ['p', r_evt.pub_key],
+                                   ['e', r_evt.id]
+                               ],
+                               pub_key=p.public_key)
+
+        c_evt: Event
+        to_del = [['e', c_evt['r_event_id']]
+                  for c_evt in self._event_store.reactions(pub_k, react_event_id=event_id)
+                  if c_evt['reaction'] == reaction]
+
+        del_evt: Event = Event(kind=Event.KIND_DELETE,
+                               content='user undid reaction',
+                               pub_key=p.public_key,
+                               tags=to_del)
+
+
+        # insert new like
+        if active is True:
+            my_react_event.sign(p.private_key)
+            self._client.publish(evt=my_react_event)
+
+        # rem any old
+        if to_del:
+            del_evt.sign(p.private_key)
+            self._client.publish(evt=del_evt)
+            # do local delete - don't worry about seeing callback we can't rely on relays anyhow
+            self._event_store.do_delete(del_evt)
+
+        # ok for now - we only do likes...
+        return {
+            'liked': active
         }
 
 
@@ -1258,7 +1420,14 @@ class NostrWeb(StaticServer):
             # are being imported
             if evt.created_at_ticks > self._started_at:
                 print('doing event send?')
-                self.send_data(evt.event_data())
+                the_data = evt.event_data()
+                if the_data['kind'] == Event.KIND_REACTION:
+                    the_data = self._add_reaction_events([the_data])[0]
+
+                # eventual we should try to track who the user is then this could decrypt for us
+                the_data = self._serialse_event(the_data)
+
+                self.send_data(the_data)
 
     def send_data(self, the_data):
         for c_sock in self._web_sockets:

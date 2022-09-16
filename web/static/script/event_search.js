@@ -38,6 +38,7 @@
             // #>. because otherwise we'll lose it somewhere on teh way to the server because it's a specual char
             // nasty but will do for now...
             'search_str': _search_str===null ? '' : encodeURIComponent(_search_str),
+            'pub_k': _current_profile.pub_k,
             'until': _until,
             'limit': _chunk_size,
             'success': function(data){
@@ -132,10 +133,10 @@
         });
 
         // saw a new events
-        APP.nostr.data.event.add_listener('event', function(type, event){
-
-//            _my_event_view.draw();
-        });
+//        APP.nostr.data.event.add_listener('event', function(type, event){
+//
+////            _my_event_view.draw();
+//        });
 
         // any post/ reply we'll go to the home page
         APP.nostr.data.event.add_listener('post-success', function(type, event){

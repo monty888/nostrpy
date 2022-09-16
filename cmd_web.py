@@ -199,6 +199,7 @@ def run_web(clients,
 
         the_client.subscribe(handlers=[evt_persist, my_server], filters=[
             get_latest_event_filter(the_client, event_store, Event.KIND_REACTION),
+            get_latest_event_filter(the_client, event_store, Event.KIND_DELETE),
             get_latest_event_filter(the_client, event_store, Event.KIND_META),
             get_latest_event_filter(the_client, event_store, Event.KIND_TEXT_NOTE),
             get_latest_event_filter(the_client, event_store, Event.KIND_CONTACT_LIST),
@@ -262,7 +263,7 @@ def run():
             'write': True
         },
         'ws://localhost:8081',
-        # # 'ws://localhost:8083',
+        # # # # 'ws://localhost:8083',
         {
             'client': 'wss://relay.damus.io',
             'write': True

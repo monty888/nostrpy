@@ -180,9 +180,10 @@ class ClientEventStoreInterface(EventStoreInterface):
         """
 
     @abstractmethod
-    def reactions(self, pub_k:str, limit=None, offset=None) -> [{}]:
+    def reactions(self, pub_k: str=None, for_event_id: str=None, react_event_id: str=None, limit=None, until=None) -> [{}]:
         """
         :param pub_k:
+        :param event_id:
         :param limit:
         :param offset:
         :return:
@@ -1145,7 +1146,7 @@ order by count(pubkey) desc, relay
 
         return ret
 
-    def reactions(self, pub_k: str, limit=None, until=None) -> DataSet:
+    def reactions(self, pub_k: str=None, for_event_id: str=None, react_event_id: str=None, limit=None, until=None) -> DataSet:
         sql = """
             select et.event_id as id,
                     et.pubkey,
@@ -1155,27 +1156,49 @@ order by count(pubkey) desc, relay
                     et.created_at,
                     et.sig,
                     r.content as reaction, 
-                    r.interpretation 
+                    r.interpretation,
+                    e.event_id as r_event_id
                 from reactions r
                 inner join events e on r.id =e.id
-                inner join events et on et.event_id = r.for_event_id 
+                inner join events et on et.event_id = r.for_event_id
+                where e.deleted isnull
+                -- we could show events event if they have been deleted? 
+                and et.deleted isnull 
+                
             """
-        join = 'where'
+        join = 'and'
         args = []
+
+        if pub_k:
+            sql += '%s r.owner_pub_k = %s' % (join, self._db.placeholder)
+            args = [pub_k]
         if until:
-            sql += 'where et.created_at < %s' % self._db.placeholder
+            sql += '%s et.created_at < %s' % (join, self._db.placeholder)
             join = 'and'
             args.append(until)
+        # query using the event_ids being reacted to
+        if for_event_id:
+            # event_id can be , str or [] of ids
+            if isinstance(for_event_id, str):
+                for_event_id = for_event_id.split(',')
 
-        sql += join + " owner_pub_k=%s" % self._db.placeholder
-        args.append(pub_k)
+            sql += '%s e.event_id in (%s)' % (join, ','.join([self._db.placeholder]*len(for_event_id)))
+            join = 'and'
+            args = args + for_event_id
+        # using the event_ids of the reaction (kind 7) events
+        if react_event_id:
+            # event_id can be , str or [] of ids
+            if isinstance(react_event_id, str):
+                react_event_id = react_event_id.split(',')
+
+            sql += '%s et.event_id in (%s)' % (join, ','.join([self._db.placeholder]*len(react_event_id)))
+            join = 'and'
+            args = args + react_event_id
 
         sql = self._add_sort(sql, self._sort_reversed, 'et.created_at')
         sql = self._add_range(sql, limit)
 
         return self._db.select_sql(sql, args=args).as_arr(True)
-
-
 
     # def do_delete(self, evt: Event):
     #     ret = None
@@ -1256,7 +1279,7 @@ class ClientSQLiteEventStore(SQLiteEventStore, ClientSQLEventStore,  ClientEvent
                 for_pub_k text,
                 content text,
                 interpretation text,
-                UNIQUE(owner_pub_k, for_event_id, content) ON CONFLICT IGNORE
+                UNIQUE(id) ON CONFLICT IGNORE
                 )
             """
         },

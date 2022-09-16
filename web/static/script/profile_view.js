@@ -121,35 +121,29 @@
                             args['until'] = _feed_view.until;
                         };
 
-                        APP.remote.load_notes_from_profile(args);
+                        APP.remote.load_notes_for_profile(args);
                     });
                     _feed_view.load_func();
                 }else if(i==3){
 
                     // atleast for now no filter.. we could see the likes but then we'd still have to go and
                     // grab the actual event
-                    try{
-                        _reaction_view = init_view(con, null, ()=>{
-                            _reaction_view.loading = true;
-                             let args = {
-                                'pub_k' : _pub_k,
-                                'limit': _chunk_size,
-                                'success': function(data){
-                                    set_view_loaded_data(_reaction_view, data);
-                                }
-                            };
-                            if(_reaction_view.until!==null){
-                                args['until'] = _reaction_view.until;
-                            };
+                    _reaction_view = init_view(con, null, ()=>{
+                        _reaction_view.loading = true;
+                         let args = {
+                            'pub_k' : _pub_k,
+                            'limit': _chunk_size,
+                            'success': function(data){
+                                set_view_loaded_data(_reaction_view, data);
+                            }
+                        };
+                        if(_reaction_view.until!==null){
+                            args['until'] = _reaction_view.until;
+                        };
 
-                            APP.remote.load_reactions(args);
-                        });
-                        _reaction_view.load_func();
-
-                    }catch(e){
-                        console.log(e)
-                    }
-
+                        APP.remote.load_reactions(args);
+                    });
+                    _reaction_view.load_func();
 
 
 
@@ -214,11 +208,6 @@
 
     function view_scroll(view){
         if(view.events===undefined || !view.maybe_more || view.loading===true){
-            console.log(view.events);
-            console.log(view.maybe_more);
-            console.log(view.loading);
-
-
             return;
         }
         view.until = null;
@@ -240,27 +229,27 @@
         // draw the tabs
         _my_tab.draw();
 
-        // profile about head
-        _my_head = APP.nostr.gui.profile_about.create({
-            'con': _profile_con,
-            'pub_k': _pub_k
+
+        _profiles.fetch({
+            'pub_ks' : [_pub_k],
+            'on_load' : function(){
+                let name = APP.nostr.util.short_key(_pub_k),
+                    cp = _profiles.lookup(_pub_k);
+
+                if(cp.attrs.name!==undefined){
+                    name = cp.attrs.name;
+                }
+
+                document.title = name;
+                // profile about head
+                _my_head = APP.nostr.gui.profile_about.create({
+                    'con': _profile_con,
+                    'pub_k': _pub_k
+                });
+
+
+            }
         });
-
-
-
-//        _profiles.fetch({
-//            'pub_ks' : [_pub_k],
-//            'on_load' : function(){
-//                let name = APP.nostr.util.short_key(_pub_k),
-//                    cp = _profiles.lookup(_pub_k);
-//
-//                if(cp.attrs.name!==undefined){
-//                    name = cp.attrs.name;
-//                }
-//
-//                document.title = name;
-//            }
-//        });
 //        profiles.init();
 
         // our own listeners
