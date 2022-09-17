@@ -1042,6 +1042,9 @@ APP.nostr.gui.event_view = function(){
             if(render_evt['missing_parent']!==undefined && render_evt.missing_parent===true){
                 root = '&root='+get_event_parent(evt);
             }
+
+            evt = evt.react_event ? evt.react_event : evt;
+
             location.href = '/html/event?id='+evt.id+root;
         }
 
@@ -1219,8 +1222,6 @@ APP.nostr.gui.event_view = function(){
                     alert('do boost');
                 }else if (action==='like'){
                     let c_val = event.react_like;
-                    console.log('XXXXXXX');
-                    console.log(event);
 
                     APP.remote.do_reaction({
                         'pub_k' : p.pub_k,

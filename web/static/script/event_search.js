@@ -132,11 +132,9 @@
             }
         });
 
-        // saw a new events
-//        APP.nostr.data.event.add_listener('event', function(type, event){
-//
-////            _my_event_view.draw();
-//        });
+        _('#search-filter-but').on('click', function(){
+            alert("filter modal to plug!!!");
+        });
 
         // any post/ reply we'll go to the home page
         APP.nostr.data.event.add_listener('post-success', function(type, event){

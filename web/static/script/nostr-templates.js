@@ -40,7 +40,7 @@ APP.nostr.gui.templates = function(){
             '<div style="width:100%;overflow:hidden; height:40px;">',
                 '<div class="input-group mb-2" >',
                     '<input placeholder="search" type="text" class="form-control" id="search-in" />',
-                    '<button type="button" class="btn" aria-label="filter" >',
+                    '<button id="search-filter-but" type="button" class="btn" aria-label="filter" >',
                         '<svg class="nbi-btn">',
                             '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#filter-square"/>',
                         '</svg>',
