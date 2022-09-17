@@ -460,8 +460,12 @@ APP.remote = function(){
         'load_reactions' : function(args){
             args['url'] = _reactions_for_profile;
             args['params'] = {
-                'pub_k' : args.pub_k
+                'view_pub_k' : args.view_pub_k
             };
+            if(args.pub_k!==undefined){
+                args.params.pub_k = args.pub_k;
+            }
+
             args.params.limit = args.limit || 100;
             if(args.until!==undefined){
                 args.params.until = args.until;

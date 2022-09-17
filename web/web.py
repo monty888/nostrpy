@@ -298,6 +298,23 @@ class NostrWeb(StaticServer):
         if not Event.is_event_id(event_id):
             raise NostrWebException('%s doesn\'t look like a valid nostr event' % event_id)
 
+    def _get_profile(self, key_field='pub_k', for_sign=False) -> Profile:
+        ret: Profile
+
+        p_k = request.query[key_field]
+        if not p_k:
+            return None
+
+        self._check_key(p_k,
+                        key_name=key_field)
+
+        ret = self._profile_handler.profiles.lookup_pub_key(p_k)
+        if ret is None:
+            raise NostrWebException('couldn\'t create profile %s', p_k)
+        if for_sign and not ret.private_key:
+            raise NostrWebException('can\'t sign events with profile %s', p_k)
+
+        return ret
 
     def _get_all_contacts_profile(self, pub_k):
         # shortcut, nothing asked for
@@ -814,7 +831,7 @@ class NostrWeb(StaticServer):
 
         return ret
 
-    def _serialse_event(self, c_evt, use_profile: Profile = None):
+    def _serialise_event(self, c_evt, use_profile: Profile = None):
         """
         converts {} to event and then back to {} so it'll be as front end expects
         extra fields not used by event also returned
@@ -828,7 +845,7 @@ class NostrWeb(StaticServer):
             ret['content'] = self._decrypt_event_content_as_user(as_evt, use_profile)
 
         if 'react_event' in ret:
-            ret['react_event'] = self._serialse_event(c_evt['react_event'], use_profile)
+            ret['react_event'] = self._serialise_event(c_evt['react_event'], use_profile)
 
         return ret
 
@@ -844,7 +861,7 @@ class NostrWeb(StaticServer):
         if embed_reactions:
             self._add_reaction_events(events)
 
-        return [self._serialse_event(c_evt, use_profile) for c_evt in events]
+        return [self._serialise_event(c_evt, use_profile) for c_evt in events]
 
     def _add_reacted_to(self, p: Profile, evts: []):
         """
@@ -1152,22 +1169,23 @@ class NostrWeb(StaticServer):
         }
 
     def _reactions_route(self):
-        pub_k = request.query.pub_k
+        v_profile = self._get_profile(key_field='view_pub_k')
 
-        # will throw if we don't think valid pub_k
-        self._check_key(pub_k)
 
         until = self._get_query_int('until', default_value='')
         if until == '':
             until = None
 
-
-        ret = self._event_store.reactions(pub_k,
+        ret = self._event_store.reactions(v_profile.public_key,
                                           limit=self._get_query_limit(),
                                           until=until)
 
+        if request.query.pub_k:
+            use_profile = self._get_profile()
+            ret = self._add_reacted_to(p=use_profile,
+                                       evts=ret)
 
-        ret = [self._serialse_event(c_evt) for c_evt in ret]
+        ret = [self._serialise_event(c_evt) for c_evt in ret]
 
         return {
             'events': ret
@@ -1179,14 +1197,7 @@ class NostrWeb(StaticServer):
         like which is the only one the front end support anyhow
         :return:
         """
-        pub_k = request.query.pub_k
-        self._check_key(pub_k)
-
-        p:Profile = self._profile_handler.profiles.lookup_pub_key(pub_k)
-        if not p:
-            raise NostrWebException('couldn\'t profile %s', pub_k)
-        if not p.private_key:
-            raise NostrWebException('can\'t sign events with profile %s', pub_k)
+        p = self._get_profile(for_sign=True)
 
         event_id = request.query.event_id
         self._check_event_id(event_id)
@@ -1221,7 +1232,7 @@ class NostrWeb(StaticServer):
 
         c_evt: Event
         to_del = [['e', c_evt['r_event_id']]
-                  for c_evt in self._event_store.reactions(pub_k, react_event_id=event_id)
+                  for c_evt in self._event_store.reactions(p.public_key, react_event_id=event_id)
                   if c_evt['reaction'] == reaction]
 
         del_evt: Event = Event(kind=Event.KIND_DELETE,
@@ -1425,7 +1436,7 @@ class NostrWeb(StaticServer):
                     the_data = self._add_reaction_events([the_data])[0]
 
                 # eventual we should try to track who the user is then this could decrypt for us
-                the_data = self._serialse_event(the_data)
+                the_data = self._serialise_event(the_data)
 
                 self.send_data(the_data)
 

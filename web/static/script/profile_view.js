@@ -131,7 +131,8 @@
                     _reaction_view = init_view(con, null, ()=>{
                         _reaction_view.loading = true;
                          let args = {
-                            'pub_k' : _pub_k,
+                            'view_pub_k': _pub_k,
+                            'pub_k' : _current_profile.pub_k,
                             'limit': _chunk_size,
                             'success': function(data){
                                 set_view_loaded_data(_reaction_view, data);

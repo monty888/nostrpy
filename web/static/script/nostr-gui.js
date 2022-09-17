@@ -234,7 +234,6 @@ APP.nostr.gui = function(){
         content = DOMPurify.sanitize(content, {ALLOWED_TAGS: []});
 
         // do p,e [n] tag replacement
-        console.log(evt)
         content = APP.nostr.gui.tag_replacement(content, evt.tags);
 
         // parse the raw content to html for any markup and http links
@@ -976,6 +975,12 @@ APP.nostr.gui.event_view = function(){
     function get_event_parent(evt){
         let parent = null,
             tag;
+
+        // reactions not considered for ordering
+        if(evt.kind===7){
+            return null;
+        }
+
         for(let j=0;j<evt.tags.length;j++){
             tag = evt.tags[j];
             if(tag[0]==='e'){
@@ -1021,7 +1026,9 @@ APP.nostr.gui.event_view = function(){
             // for loading profiles
             _profiles = APP.nostr.data.profiles,
             // for preview render external links
-            _web_preview_tmpl = APP.nostr.gui.templates.get('web-preview');
+            _web_preview_tmpl = APP.nostr.gui.templates.get('web-preview'),
+            // assuming everything get re-drawn if we change profile so safe to get here
+            _c_profile = APP.nostr.data.user.profile()
 
         function uevent_id(event_id){
             return _uid+'-'+event_id;
@@ -1315,7 +1322,7 @@ APP.nostr.gui.event_view = function(){
                 });
             }
 
-            // 1. look through all events and [] thouse that have the same parent
+            // 1. look through all events and [] those that have the same parent
             notes_arr.forEach(function(c_evt,i){
                 let tag,j,parent;
                 // everything is done on a copy of the event as we're going to add some of
@@ -1502,20 +1509,22 @@ APP.nostr.gui.event_view = function(){
                         like_evt.react_like = false;
                     }
                 }
-
-
             });
 
         }
 
         function on_event(evt){
-            if(_sub_filter.test(evt)){
+            if(_sub_filter!==null && _sub_filter.test(evt)){
                 add_note(evt);
-            }else if(evt.kind==7){
+
+            // we only watch are one likes
+            }else if(evt.kind==7 && _c_profile.pub_k===evt.pubkey){
                 do_reaction(evt);
+            // do we want to do deletes the same for our own and for others events?
             }else if(evt.kind==5){
                 do_delete(evt);
             }
+
         }
 
 
@@ -3200,7 +3209,7 @@ APP.nostr.gui.profile_select_modal = function(){
             let img_src;
 
             // a profile doesn't necessarily exist
-            if(c_p && c_p.attrs.picture!==undefined && true){
+            if(c_p && c_p.attrs.picture!==undefined && c_p.attrs.picture!=='' && true){
                 img_src = c_p.attrs.picture;
             }else{
                 img_src = APP.nostr.gui.robo_images.get_url({
