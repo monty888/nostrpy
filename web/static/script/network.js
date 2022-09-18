@@ -323,6 +323,15 @@ APP.remote = function(){
         return ret
     }
 
+    function _add_field(name,args){
+        if(args.params===undefined){
+            args.params = {};
+        }
+        if(args[name]!==undefined){
+            args.params[name] = args[name];
+        }
+    }
+
     return {
         'load_profiles' : function(args){
 
@@ -491,16 +500,16 @@ APP.remote = function(){
             let o_success = args.success;
 
             args['url'] = _events_by_seach_str;
-            args['params'] = {
-                'search_str' : args['search_str'],
-                'limit' : args.limit || 100
-            };
+
             if(args.until && args.until!==null){
                 args.params.until = args.until;
             }
-            if(args.pub_k){
-                args.params.pub_k = args.pub_k;
-            }
+            _add_field('pub_k', args);
+            _add_field('include', args);
+            _add_field('pow', args);
+            _add_field('limit', args);
+            _add_field('search_str', args);
+
             args.success = function (data){
                 data.events = make_events(data.events);
                 o_success(data);

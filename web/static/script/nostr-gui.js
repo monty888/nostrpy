@@ -2851,7 +2851,7 @@ APP.nostr.gui.modal = function(){
         args = args||{};
         _title = args.title || '?no title?',
         _content = args.content || '',
-        _ok_text = args.ok_text || '?no_text?',
+        _ok_text = args.ok_text || 'ok',
         _on_ok = args.on_ok,
         _ok_hide = args.ok_hide===undefined ? false : args.ok_hide,
         _on_show = args.on_show,
@@ -3316,8 +3316,6 @@ APP.nostr.gui.profile_select_modal = function(){
     }
 }();
 
-APP.nostr.data.relay_rw_options =
-
 APP.nostr.gui.relay_list = function(){
     const _gui = APP.nostr.gui;
 
@@ -3669,8 +3667,10 @@ APP.nostr.gui.select = function(){
                 if(c_opt.value===undefined){
                     c_opt.value = c_opt.text;
                 }
+                if(args.selected!==undefined && c_opt.value===args.selected){
+                    c_opt.selected = 'selected';
+                }
             });
-
             return ret;
         };
 
@@ -3774,6 +3774,101 @@ APP.nostr.gui.relay_edit = function(){
 }();
 
 
+APP.nostr.gui.event_search_filter_modal = function(){
+    /*
+        modal of options to filter search results
+    */
+    const _gui = APP.nostr.gui,
+        _user = APP.nostr.data.user;
+
+    function show(args){
+        // set the modal as we want it
+        let c_profile = _user.profile(),
+            pub_k = c_profile.pub_k,
+            include_val = _user.get(pub_k+'.evt-search-include', 'everyone'),
+            pow_val = _user.get(pub_k+'.evt-search-pow', 'none'),
+            o_val = include_val+ ';' +pow_val,
+            include_sel = _gui.select.create({
+                'id': 'include-sel',
+                'selected': include_val,
+                'options': [
+                    {
+                        'text': 'everyone'
+                    },
+                    {
+                        'text': 'only people I follow',
+                        'value': 'followers'
+                    }
+                ]
+            }),
+            pow_sel = _gui.select.create({
+                'id': 'pow-sel',
+                'selected': pow_val,
+                'options': [
+                    {
+                        'text': 'none'
+                    },
+                    {
+                        'text': '16 bits',
+                        'value' : '0000'
+                    },
+                    {
+                        'text': '20 bits',
+                        'value' : '00000'
+                    },
+                    {
+                        'text': '24 bits',
+                        'value' : '000000'
+                    },
+                    {
+                        'text': '28 bits',
+                        'value' : '0000000'
+                    },
+                    {
+                        'text': '32 bits',
+                        'value' : '00000000'
+                    }
+                ]
+            }),
+            // called on ok if user changed anything
+            on_change = args.on_change;
+
+        _gui.modal.create({
+            'title' : 'event view filter',
+            'content' : Mustache.render(_gui.templates.get('event-search-filter-modal'),{
+                'pub_k': c_profile.pub_k,
+                'include_sel': include_sel.html(),
+                'pow_sel': pow_sel.html()
+            }),
+            'on_hide' : function(){
+                let n_val;
+                if(pub_k){
+                    include_val = _('#include-sel').val();
+                }
+                pow_val = _('#pow-sel').val();
+                n_val = include_val + ';' + pow_val;
+
+                // user changed values
+                if(o_val!==n_val){
+                    _user.put(pub_k+'.evt-search-include', include_val);
+                    _user.put(pub_k+'.evt-search-pow', pow_val);
+                    if(typeof(on_change)==='function'){
+                        on_change();
+                    }
+                }
+
+
+
+            }
+        });
+        _gui.modal.show();
+    }
+
+    return {
+        'show' : show
+    }
+}();
+
 APP.nostr.gui.relay_view_modal = function(){
     const _gui = APP.nostr.gui;
 
@@ -3816,6 +3911,7 @@ APP.nostr.gui.relay_view_modal = function(){
         'show' : show
     }
 }();
+
 
 APP.nostr.gui.request_private_key_modal = function(){
     /* modal to link a private key either to a given prexisiting pub_k (it'll only allow matches to that)

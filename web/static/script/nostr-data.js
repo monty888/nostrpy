@@ -214,8 +214,8 @@ APP.nostr.data.user = function(){
     function _property(name, val, def){
         let ret = val;
 
-        if(val!==undefined){
-            APP.nostr.data.state.set(name, val);
+        if(val!==undefined && val!==null){
+            APP.nostr.data.state.put(name, val);
         }else{
             ret = APP.nostr.data.state.get(name, {
                 'def' : def
@@ -256,6 +256,12 @@ APP.nostr.data.user = function(){
 
             // caller doesn't have the same obj
             return _.extend({},_user);
+        },
+        get(name,def){
+            return _property(name,null,def);
+        },
+        put(name,value){
+            return _property(name,value);
         },
         'get_client' : function(){
             return CLIENT;

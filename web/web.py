@@ -993,6 +993,12 @@ class NostrWeb(StaticServer):
     def _events_text_search_route(self):
         search_str = request.query.search_str
 
+        use_profile: Profile = None
+        pub_k = request.query.pub_k
+        if pub_k:
+            self._check_key(pub_k)
+            use_profile = self._profile_handler.profiles.lookup_pub_key(pub_k)
+
         def extract_tag(tag_prefix, text, with_pat=None):
             if with_pat is None:
                 with_pat = '\\%s(\w*)' % tag_prefix
@@ -1003,13 +1009,13 @@ class NostrWeb(StaticServer):
 
             return matches, text
 
-        def find_authors(prefixes):
+        def find_authors(prefixes, search_profiles: ProfileList):
             c_p: Profile
             m_find = 100
             ret = []
 
             for c_pre in prefixes:
-                auth_match = self._profile_handler.profiles.matches(c_pre, m_find)
+                auth_match = search_profiles.matches(c_pre, m_find)
                 if auth_match:
                     ret = ret + [c_p.public_key for c_p in auth_match]
                     if len(ret) > m_find:
@@ -1021,6 +1027,16 @@ class NostrWeb(StaticServer):
             'limit': self._get_query_limit(),
             'kinds': [Event.KIND_TEXT_NOTE]
         }
+
+        # pow is just events with leading 000s, user could manually do &000... if they want ot any q
+        pow = request.params.pow.lower()
+        if pow and pow != 'none':
+            filter['ids'] = [pow]
+        include = request.params.include.lower()
+        # restrict only to followers
+        if include and use_profile and include == 'followers':
+            followers = use_profile.load_contacts(self._profile_store).follow_keys()
+            filter['authors'] = followers
 
         until = self._get_query_int('until', default_value='')
         if until != '':
@@ -1036,7 +1052,13 @@ class NostrWeb(StaticServer):
             # add authors to filter
             author_pres, search_str = extract_tag('@', search_str)
             if author_pres:
-                authors = find_authors(author_pres)
+                search_profiles = self._profile_handler.profiles
+                # filter on authors already so only search these
+                if 'authors' in filter:
+                    c_p: Profile
+                    search_profiles = ProfileList([c_p for c_p in search_profiles if c_p.public_key in filter['authors']])
+
+                authors = find_authors(author_pres, search_profiles)
                 if authors:
                     filter['authors'] = authors
                 else:
@@ -1053,7 +1075,11 @@ class NostrWeb(StaticServer):
             # event id
             ids_pres, search_str = extract_tag('&', search_str)
             if ids_pres:
-                filter['ids'] = ids_pres
+                if not filter['ids']:
+                    filter['ids'] = ids_pres
+                # where pow and & then the pow is added before user given prefix
+                else:
+                    filter['ids'] = [pow+pre for pre in ids_pres]
 
             if search_str:
                 filter['content'] = search_str
@@ -1069,11 +1095,6 @@ class NostrWeb(StaticServer):
             #         filter,
             #         ref_copy
             #     ]
-        use_profile: None
-        pub_k = request.query.pub_k
-        if pub_k:
-            self._check_key(pub_k)
-            use_profile = self._profile_handler.profiles.lookup_pub_key(pub_k)
 
         evts = self._get_events(filter, use_profile)
 

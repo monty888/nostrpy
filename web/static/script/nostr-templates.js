@@ -451,6 +451,19 @@ APP.nostr.gui.templates = function(){
                     '<option {{selected}} value="{{value}}" >{{text}}</option>',
                 '{{/options}}',
             '</select>'
+        ],
+        'event-search-filter-modal': [
+            // can't been done if not using profile
+            '{{#pub_k}}',
+                '<div class="mb-2" >',
+                    '<label for="include-sel" class="form-label">Include events from</label>',
+                    '{{{include_sel}}}',
+                '</div>',
+            '{{/pub_k}}',
+            '<div class="mb-2" >',
+                '<label for="pow-sel" class="form-label">Minimum required POW</label>',
+                '{{{pow_sel}}}',
+            '</div>'
         ]
 
     };
