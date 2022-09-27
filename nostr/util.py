@@ -4,6 +4,7 @@ import logging
 import os
 from pathlib import Path
 from db.db import SQLiteDatabase
+from datetime import time
 
 """
     just a place to hand any util funcs that don't easily fit anywhere else
@@ -80,14 +81,46 @@ class util_funcs:
     def create_sqlite_store(db_file):
         from nostr.event.persist import ClientSQLiteEventStore
         from nostr.ident.persist import SQLiteProfileStore
+        from nostr.channels.persist import SQLiteSQLChannelStore
 
         my_events = ClientSQLiteEventStore(db_file)
         if not my_events.exists():
             my_events.create()
             my_profiles = SQLiteProfileStore(db_file)
             my_profiles.create()
+            my_channels = SQLiteSQLChannelStore(db_file)
+            my_channels.create()
 
         return SQLiteDatabase(db_file)
+
+    @staticmethod
+    def retry_db_func(the_func, retry_count=None):
+        """
+            specifically for sqlite as during a write the whole db is locked we'll retry
+            inserts ... explain this more.... this should mainly be a problem if access
+            from somewhere else anyhow as we should be using the same db object to access
+            that applies a python lock when doing writes...
+        """
+        is_done = False
+        retry_n = 0
+        while not is_done and (retry_count is None or retry_n < retry_count):
+            try:
+                the_func()
+                is_done = True
+            except Exception as de:
+                # FIXME: we probably should give up eventually!
+                if 'locked' in str(de):
+                    logging.debug('PersistEventHandler::do_event db locked, waiting to retry - %s' % de)
+                    retry_n += 1
+                    wait_time = (1 * retry_n * retry_n)
+                    if wait_time > 30:
+                        wait_time = 30
+                    time.sleep(wait_time)
+
+                else:
+                    is_done = True
+
+
 
 if __name__ == "__main__":
     print('monkies')

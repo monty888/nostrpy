@@ -742,7 +742,7 @@ APP.nostr.gui.tabs = function(){
             // event on scroll to bottom
            _('#'+_id+'-content').scrollBottom(function(e){
                 if(typeof(_scroll_bottom)==='function'){
-                    _scroll_bottom();
+                    _scroll_bottom(_cur_index, _render_obj.tabs[_cur_index]['tab_content_con']);
                 }
             });
 
@@ -2538,14 +2538,6 @@ APP.nostr.gui.profile_list = function (){
                 append_render_data(data);
                 _my_list.append_draw(_view_profiles.length - data.length);
 
-//                _my_list.set_data(_render_arr);
-//                let l = data.length,
-//                    append_html = [];
-//
-//                for(var i=_view_profiles.length-l; i<_view_profiles.length;i++){
-//                    append_html.push(Mustache.render(_row_tmpl, _render_arr[i]))
-//                }
-//                _con.insertAdjacentHTML('beforeend', append_html.join(''));
             }
 
 
@@ -2556,6 +2548,112 @@ APP.nostr.gui.profile_list = function (){
         'create': create
     }
 }();
+
+APP.nostr.gui.channel_list = function (){
+        // lib shortcut
+    let _gui = APP.nostr.gui,
+        _util = APP.nostr.util;
+
+    function create(args){
+            // container for list
+        let _con = args.con,
+            // profiles passed into us
+            _view_channels = args.channels || [],
+            // inline media where we can, where false just the link is inserted
+            _enable_media = APP.nostr.data.user.enable_media(),
+            // data in arr to be rendered
+            _render_arr,
+            // above on pub_k
+            _render_lookup,
+            // only profiles that pass this filter will be showing
+            _filter_text = args.filter || '',
+            // so ids will be unique per this list
+            _uid = APP.nostr.gui.uid(),
+            // list obj that actually does the rendering
+            _my_list,
+            // template to render into
+            _row_tmpl = APP.nostr.gui.templates.get('channel-list'),
+            _current_profile = APP.nostr.data.user.profile();
+
+        // methods
+        function init(){
+            // prep the intial render obj
+            create_render_data();
+            _my_list = APP.nostr.gui.list.create({
+                'con' : _con,
+                'data' : _render_arr,
+                'row_tmpl': _row_tmpl,
+                click(id){
+                }
+            });
+            draw();
+        }
+
+
+        function draw(){
+            _my_list.draw();
+        };
+
+        /*
+            fills data that'll be used with template to render
+        */
+        function create_render_data(){
+            _render_arr = [];
+            _render_lookup = {};
+            append_render_data(_view_channels);
+        }
+
+        function append_render_data(data){
+            let r_obj;
+            data.forEach(function(c){
+                r_obj = _create_render_channel(c);
+                _render_lookup[c.id] = r_obj;
+                _render_arr.push(r_obj);
+            });
+        }
+
+        // create profile render obj to be put in _renderObj['profiles']
+        function _create_render_channel(channel){
+            let id = channel.id,
+                render_channel = {
+                    // required to make unique ids if page has more than one list showing same items on page
+                    'uid' : _uid,
+                    'id' : _util.short_key(channel.id),
+                    'name': channel.name,
+                    'picture': channel.picture,
+                    'about': channel.about
+                };
+
+
+            return render_channel;
+        }
+
+        // prep and draw the list
+        init();
+
+        return {
+            'draw': draw,
+            'set_data': function(data){
+                _view_channels = data;
+                create_render_data();
+                _my_list.set_data(_render_arr);
+                _my_list.draw();
+            },
+            'add_data': function(data){
+                _view_channels = _view_channels.concat(data);
+                append_render_data(data);
+                _my_list.append_draw(_view_channels.length - data.length);
+            }
+
+
+        }
+    }
+
+    return {
+        'create': create
+    }
+}();
+
 
 /*
    list component for messages page. On the messages page you only get the topmost event for each
@@ -2786,7 +2884,7 @@ APP.nostr.gui.dm_list = function (){
                 // update in render obj, at the moment it never gets reused anyhow
 //                c['at_time'] = ntime;
                 // actually update onscreen
-                $('#'+id+'-time').html(ntime);
+                _('#'+id+'-time').html(ntime);
 
             });
         }
@@ -3798,6 +3896,10 @@ APP.nostr.gui.event_search_filter_modal = function(){
                     {
                         'text': 'only people I follow',
                         'value': 'followers'
+                    },
+                    {
+                        'text': 'only my posts',
+                        'value': 'self'
                     }
                 ]
             }),

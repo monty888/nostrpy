@@ -13,11 +13,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import getopt
 from nostr.client.client import ClientPool, Client
-from nostr.client.event_handlers import PersistEventHandler, ProfileEventHandler
+from nostr.client.event_handlers import PersistEventHandler
 from nostr.event.persist import ClientSQLiteEventStore, ClientEventStoreInterface
 from nostr.event.event import Event
 from nostr.ident.persist import SQLiteProfileStore, ProfileStoreInterface, MemoryProfileStore
-# from nostr.ident.profile import ProfileEventHandler
+from nostr.ident.event_handlers import ProfileEventHandler
+from nostr.channels.persist import SQLiteSQLChannelStore, ChannelStoreInterface
+from nostr.channels.event_handlers import ChannelEventHandler
 from nostr.util import util_funcs
 from web.web import NostrWeb
 
@@ -180,6 +182,7 @@ def run_tor(clients,
 def run_web(clients,
             event_store: ClientEventStoreInterface,
             profile_store: ProfileStoreInterface,
+            channel_store: ChannelStoreInterface,
             web_dir: str):
 
     # we'll persist events, not done automatically by nostrweb
@@ -203,18 +206,22 @@ def run_web(clients,
             get_latest_event_filter(the_client, event_store, Event.KIND_META),
             get_latest_event_filter(the_client, event_store, Event.KIND_TEXT_NOTE),
             get_latest_event_filter(the_client, event_store, Event.KIND_CONTACT_LIST),
-            get_latest_event_filter(the_client, event_store, Event.KIND_ENCRYPT)
+            get_latest_event_filter(the_client, event_store, Event.KIND_ENCRYPT),
+            get_latest_event_filter(the_client, event_store, Event.KIND_CHANNEL_CREATE),
+            get_latest_event_filter(the_client, event_store, Event.KIND_CHANNEL_MESSAGE)
         ])
 
     my_peh = ProfileEventHandler(profile_store)
+    my_ceh = ChannelEventHandler(channel_store)
 
     def my_eose(the_client: Client, sub_id: str, events):
         print('eose', the_client.url)
         my_peh.do_event(sub_id, events, the_client.url)
         print('peh complete', the_client.url)
+        my_ceh.do_event(sub_id, events, the_client.url)
+        print('ceh complete', the_client.url)
         evt_persist.do_event(sub_id, events, the_client.url)
         print('evt complete', the_client.url)
-
 
 
     # so server can send out client status messages
@@ -232,6 +239,7 @@ def run_web(clients,
     my_server = NostrWeb(file_root='%s/web/static/' % web_dir,
                          event_store=event_store,
                          profile_handler=my_peh,
+                         channel_handler=my_ceh,
                          client=my_client)
 
     my_client.start()
@@ -250,7 +258,7 @@ def run_web(clients,
 
 
 def run():
-    db_file = WORK_DIR + 'reactions.db'
+    db_file = WORK_DIR + 'delete-reactions.db'
     db_type = 'sqlite'
     full_text = True
     is_tor = False
@@ -298,6 +306,7 @@ def run():
 
         # event_store = ClientMemoryEventStore()
         profile_store = SQLiteProfileStore(db_file)
+        channel_store = SQLiteSQLChannelStore(db_file)
         # profile_store = MemoryProfileStore()
         # profile_store.import_profiles_from_events(event_store)
         # profile_store.import_contacts_from_events(event_store)
@@ -315,6 +324,7 @@ def run():
         run_web(clients=clients,
                 event_store=event_store,
                 profile_store=profile_store,
+                channel_store=channel_store,
                 web_dir=web_dir)
 
 if __name__ == "__main__":
@@ -341,20 +351,41 @@ if __name__ == "__main__":
     # with Client('wss://relay.damus.io') as c:
     #     events = c.query(filters=[{
     #                         'since': 0,
-    #                         'kinds': [Event.KIND_CHANNEL_MESSAGE]
+    #                         'kinds': [Event.KIND_CHANNEL_MESSAGE, Event.KIND_CHANNEL_CREATE]
     #                      }])
     #
+    from nostr.channels.channel import Channel
+    from nostr.channels.persist import SQLiteSQLChannelStore
     # c_evt: Event
-    # from nostr.ident.profile import Profile,ValidatedProfile
-    # for c_evt in events:
-    #     print(c_evt.tags)
-    #     if c_evt.kind == Event.KIND_CHANNEL_CREATE:
-    #         print(c_evt.id, c_evt.content)
-    #     if '25e5c82273a271cb1a840d0060391a0bf4965cafeb029d5ab55350b418953fbb' in c_evt.e_tags:
-    #         print(c_evt.content)
+    # c_ch: Channel
+    # es = ClientSQLiteEventStore(WORK_DIR + 'reactions.db')
+    # events = es.get_filter(filter=[{
+    #     'since': 0,
+    #     'kinds': [Event.KIND_CHANNEL_CREATE]
+    # }])
+    #
+    # channels = [Channel.from_event(Event.from_JSON(c_evt)) for c_evt in events]
+    #
+    # channels = [c_ch for c_ch in channels if c_ch.name]
+    #
+    # for c_channel in channels:
+    #     print(c_channel)
 
 
-    from nostr.client.event_handlers import EventHandler
+    channel_store = SQLiteSQLChannelStore(WORK_DIR + 'reactions.db')
+    # channel_store.put(channels)
+    # channel_store.create()
+    channels = channel_store.select()
+    channels = channels.matches(m_str='')
+
+    channels.sort()
+
+    for c_c in channels:
+        print(c_c)
+
+
+
+    # from nostr.client.event_handlers import EventHandler
     # is_done = False
     #
     # class my_printer(EventHandler):

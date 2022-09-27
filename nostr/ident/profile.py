@@ -385,19 +385,15 @@ class ProfileList:
                 del self._priv_key_lookup[our_p.private_key]
             del self._pub_key_lookup[our_p.public_key]
 
+
+
+
         # add/update lookups
         self._pub_key_lookup[profile.public_key] = profile
         if profile.private_key is not None:
             self._priv_key_lookup[profile.private_key] = profile
         if profile.profile_name is not None:
             self._pname_lookup[profile.profile_name] = profile
-
-    # TODO: remove this and see if it breaks anyhting...
-    # def as_arr(self):
-    #     ret = []
-    #     for c_p in self._profiles:
-    #         ret.append(c_p.as_dict())
-    #     return ret
 
     @property
     def profiles(self) -> [Profile]:
@@ -442,7 +438,6 @@ class ProfileList:
         # we're going to ignore case
         m_str = m_str.lower()
         c_p: Profile
-        c_offset = 0
 
         for c_p in self._profiles:
             # pubkey should be lowercase but name we convert

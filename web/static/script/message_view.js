@@ -24,8 +24,9 @@
                     alert(data['error']);
                 }else{
                     try{
+                        _main_con.html('<div style="position:sticky;top: 0;width:100%;background-color:black">stuff here</div><div id="msgs" ></div>');
                         _my_view = APP.nostr.gui.dm_list.create({
-                            'con' : _main_con,
+                            'con' : _('#msgs'),
                             'events' : data['events']
                         });
                     }catch(e){

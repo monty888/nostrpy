@@ -3,12 +3,13 @@ from typing import TYPE_CHECKING
 
 import beaker.middleware
 import bottle
-import cryptography.x509
 
 if TYPE_CHECKING:
-    pass
+    from nostr.ident.event_handlers import ProfileEventHandler
+    from nostr.channels.event_handlers import ChannelEventHandler
 
 import json
+import time
 from io import BytesIO
 from json import JSONEncoder
 from datetime import datetime
@@ -32,7 +33,8 @@ from nostr.ident.persist import SQLiteProfileStore, ProfileType
 from nostr.event.persist import ClientEventStoreInterface, SQLiteEventStore
 from nostr.encrypt import Keys
 from nostr.client.client import ClientPool, Client
-from nostr.client.event_handlers import DeduplicateAcceptor, ProfileEventHandler
+from nostr.client.event_handlers import DeduplicateAcceptor
+from nostr.channels.channel import Channel
 from nostr.util import util_funcs
 import beaker.middleware
 
@@ -180,11 +182,13 @@ class NostrWeb(StaticServer):
                  file_root,
                  event_store: ClientEventStoreInterface,
                  profile_handler: ProfileEventHandler,
+                 channel_handler: ChannelEventHandler,
                  client: ClientPool):
 
         self._event_store = event_store
         self._profile_handler = profile_handler
         self._profile_store = profile_handler.store
+        self._channel_handler = channel_handler
 
         self._web_sockets = {}
         super(NostrWeb, self).__init__(file_root)
@@ -234,11 +238,14 @@ class NostrWeb(StaticServer):
         self._app.route('/', callback=_get_err_wrapped(self._home_route))
         self._app.route('/profile', callback=_get_err_wrapped(self._profile))
         self._app.route('/profiles', method=['POST', 'GET'], callback=_get_err_wrapped(self._profiles_list))
+
         self._app.route('/local_profiles', callback=_get_err_wrapped(self._local_profiles))
         self._app.route('/update_profile', method='POST', callback=_get_err_wrapped(self._do_profile_update))
         self._app.route('/export_profile', method='POST', callback=_get_err_wrapped(self._export_profile))
         self._app.route('/link_profile', method='POST', callback=_get_err_wrapped(self._link_profile))
         self._app.route('/update_follows',  callback=_get_err_wrapped(self._do_contact_update))
+
+        self._app.route('/channels', method=['POST', 'GET'], callback=_get_err_wrapped(self._channels_list))
 
         # self._app.route('/set_profile', method='POST', callback=_get_err_wrapped(self._set_profile))
         # self._app.route('/current_profile', callback=_get_err_wrapped(self._get_profile))
@@ -298,7 +305,7 @@ class NostrWeb(StaticServer):
         if not Event.is_event_id(event_id):
             raise NostrWebException('%s doesn\'t look like a valid nostr event' % event_id)
 
-    def _get_profile(self, key_field='pub_k', for_sign=False) -> Profile:
+    def _get_profile(self, key_field='pub_k', for_sign=False, create_empty=False) -> Profile:
         ret: Profile
 
         p_k = request.query[key_field]
@@ -310,7 +317,10 @@ class NostrWeb(StaticServer):
 
         ret = self._profile_handler.profiles.lookup_pub_key(p_k)
         if ret is None:
-            raise NostrWebException('couldn\'t create profile %s', p_k)
+            if create_empty:
+                ret = Profile(pub_k=p_k)
+            else:
+                raise NostrWebException('couldn\'t create profile %s', p_k)
         if for_sign and not ret.private_key:
             raise NostrWebException('can\'t sign events with profile %s', p_k)
 
@@ -342,8 +352,14 @@ class NostrWeb(StaticServer):
 
         return ret
 
-    @lru_cache(maxsize=5)
-    def _get_profile_matches(self, match_str):
+    # see https://stackoverflow.com/questions/31771286/python-in-memory-cache-with-time-to-live
+    @staticmethod
+    def get_ttl_hash(seconds=3600):
+        """Return the same value withing `seconds` time period"""
+        return round(time.time() / seconds)
+
+    @lru_cache(maxsize=10)
+    def _get_profile_matches(self, match_str, ttl_hash=None):
         return self._profile_handler.profiles.matches(match_str,
                                                       max_match=None,
                                                       search_about=True)
@@ -375,7 +391,7 @@ class NostrWeb(StaticServer):
         # match style
         if match:
             for c_m in match.split(','):
-                all_keys = all_keys.union(self._get_profile_matches(c_m))
+                all_keys = all_keys.union(self._get_profile_matches(c_m, ttl_hash=self.get_ttl_hash(60)))
 
         the_profile: Profile
         ret = {
@@ -520,6 +536,28 @@ class NostrWeb(StaticServer):
             'profiles': [c_p.as_dict() for c_p in profiles]
         }
         return ret
+
+    @lru_cache(maxsize=10)
+    def _get_channel_matches(self, match_str, ttl_hash=None):
+        return self._channel_handler.channels.matches(match_str,
+                                                      max_match=None,
+                                                      search_about=True)
+
+    def _channels_list(self):
+        limit = self._get_query_limit()
+        offset = self._get_query_offset()
+        match = request.query.match
+        channels = []
+        c_c: Channel
+        # match style
+        for c_m in match.split(','):
+            channels = channels + self._get_channel_matches(c_m, self.get_ttl_hash(60))
+
+
+
+        return {
+            'channels': [c_c.as_dict() for c_c in channels[offset:offset+limit]]
+        }
 
     @property
     def session(self):
@@ -1034,9 +1072,12 @@ class NostrWeb(StaticServer):
             filter['ids'] = [pow]
         include = request.params.include.lower()
         # restrict only to followers
-        if include and use_profile and include == 'followers':
-            followers = use_profile.load_contacts(self._profile_store).follow_keys()
-            filter['authors'] = followers
+        if include and use_profile:
+            if include == 'followers':
+                followers = use_profile.load_contacts(self._profile_store).follow_keys()
+                filter['authors'] = followers
+            elif include =='self':
+                filter['authors'] = [use_profile.public_key]
 
         until = self._get_query_int('until', default_value='')
         if until != '':
@@ -1190,7 +1231,8 @@ class NostrWeb(StaticServer):
         }
 
     def _reactions_route(self):
-        v_profile = self._get_profile(key_field='view_pub_k')
+        v_profile = self._get_profile(key_field='view_pub_k',
+                                      create_empty=True)
 
 
         until = self._get_query_int('until', default_value='')

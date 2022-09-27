@@ -7,7 +7,7 @@ from nostr.ident.profile import Profile, ProfileList, Contact, ContactList
 # from nostr.client.persist import ClientEventStoreInterface
 from nostr.event.persist import ClientEventStoreInterface
 from nostr.event.event import Event
-from db.db import Database, SQLiteDatabase
+from db.db import Database, SQLiteDatabase, QueryFromFilter
 from data.data import DataSet
 from nostr.util import util_funcs
 from nostr.encrypt import Keys
@@ -449,52 +449,32 @@ class SQLProfileStore(ProfileStoreInterface):
         } to execute the query
         """
 
-        sql_arr = ['select * from profiles']
-        args = []
+        my_q = QueryFromFilter(select_sql='select * from profiles',
+                               filter=filter,
+                               placeholder=placeholder,
+                               alias={
+                                   'public_key': 'pub_k',
+                                   'private_key': 'priv_k'
+                               }).get_query()
 
-        join = ' where '
-
-        def _add_for_field(f_name, db_field):
-            nonlocal args
-            nonlocal join
-
-            if f_name in filter:
-                values = filter[f_name]
-                if not hasattr(values, '__iter__') or isinstance(values, str):
-                    values = [values]
-
-                sql_arr.append(
-                    ' %s %s in (%s) ' % (join,
-                                            db_field,
-                                            ','.join([placeholder] * len(values)))
-                )
-
-                args = args + values
-                join = ' or '
-
-        _add_for_field('public_key','pub_k')
-        _add_for_field('profile_name', 'profile_name')
-        _add_for_field('private_key', 'priv_k')
-
-
-        if join==' or ':
-            join=' and '
+        join = my_q['join']
+        if join == ' or ':
+            join = ' and '
         if profile_type == ProfileType.LOCAL:
-            sql_arr.append(' %s priv_k is not null ' % join)
-        elif profile_type==ProfileType.REMOTE:
-            sql_arr.append(' %s priv_k is null ' % join
-                           )
+            my_q['sql'] = my_q['sql'] + (' %s priv_k is not null ' % join)
+        elif profile_type == ProfileType.REMOTE:
+            my_q['sql'] = my_q['sql'] + (' %s priv_k is null ' % join)
 
         # for now we're ordering what we return
-        sql_arr.append("""
+        my_q['sql'] = my_q['sql'] + """
         order by 
             case when profile_name ISNULL or profile_name='' then 1 else 0 end, trim(profile_name) COLLATE NOCASE,
             case when name ISNULL or name='' then 1 else 0 end, trim(name)  COLLATE NOCASE
-        """)
+        """
 
         return {
-            'sql': ''.join(sql_arr),
-            'args': args
+            'sql': my_q['sql'],
+            'args': my_q['args']
         }
 
     @staticmethod
@@ -613,13 +593,12 @@ class SQLProfileStore(ProfileStoreInterface):
         :param is_local: if local profile name,prov_k also included in update
         :return:
         """
+        batch = []
+        if not hasattr(p, '__iter__'):
+            p = [p]
 
-        if hasattr(p, '__iter__'):
-            batch = []
-            for c_p in p:
-                self._prepare_put_profile(c_p, is_local, batch)
-        else:
-            batch = self._prepare_put_profile(p, is_local)
+        for c_p in p:
+            self._prepare_put_profile(c_p, is_local, batch)
 
         return self._db.execute_batch(batch)
 

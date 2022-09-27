@@ -18,6 +18,7 @@ APP.remote = function(){
         _export_profile_url = '/export_profile',
         _link_profile_url = '/link_profile',
         _set_profile_url = '/set_profile',
+        _all_channels_url = '/channels',
 //        _current_profile_url = '/current_profile',
         // details on a single profile
         _profile_url = '/profile',
@@ -333,8 +334,7 @@ APP.remote = function(){
     }
 
     return {
-        'load_profiles' : function(args){
-
+        load_profiles(args){
             args['url'] = _all_profiles;
             // in future you'll probably want to supply one of this because the no params load everyone
             // is likely to become a problem at some point, in any case we'll probably use storage client side
@@ -351,15 +351,9 @@ APP.remote = function(){
                 args['data'] = 'pub_k='+args['pub_k'];
                 args['method'] = 'POST';
             }
-            if(args.match){
-                args.params.match = args.match;
-            }
-            if(args.limit){
-                args.params.limit = args.limit;
-            }
-            if(args.offset){
-                args.params.offset = args.offset;
-            }
+            _add_field('match', args);
+            _add_field('limit', args);
+            _add_field('offset', args);
 
             // all followers contacts for this profile
             if(args.for_profile!==undefined){
@@ -433,6 +427,14 @@ APP.remote = function(){
             };
             do_query(args);
         },
+        load_channels(args){
+            args['url'] = _all_channels_url;
+            args['params'] = {};
+            _add_field('match', args);
+            _add_field('limit', args);
+            _add_field('offset', args);
+            do_query(args);
+        },
         'load_events' : function(args){
             let filter = args.filter===undefined ? APP.nostr.data.filter.create({'kinds':[1]}) : args.filter,
                 o_success = args.success;
@@ -501,14 +503,14 @@ APP.remote = function(){
 
             args['url'] = _events_by_seach_str;
 
-            if(args.until && args.until!==null){
-                args.params.until = args.until;
-            }
             _add_field('pub_k', args);
             _add_field('include', args);
             _add_field('pow', args);
             _add_field('limit', args);
             _add_field('search_str', args);
+            if(args.until && args.until!==null){
+                args.params.until = args.until;
+            }
 
             args.success = function (data){
                 data.events = make_events(data.events);

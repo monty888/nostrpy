@@ -303,3 +303,58 @@ class PostgresDatabase(Database, ABC):
     @property
     def placeholder(self):
         return '%s'
+
+
+class QueryFromFilter:
+
+    def __init__(self, select_sql:str, filter={}, placeholder='?', alias={}):
+        self._sql_base = select_sql
+        self._filter = filter
+        self._placeholder = placeholder
+        self._alias = alias
+
+    def _construct(self):
+
+        sql_arr = [self._sql_base]
+        args = []
+        join = ' where '
+
+        def _add_for_field(f_name):
+            nonlocal args
+            nonlocal join
+
+            values = self._filter[f_name]
+            db_field = f_name
+            if f_name in self._alias:
+                db_field = self._alias[db_field]
+
+            if not hasattr(values, '__iter__') or isinstance(values, str):
+                values = [values]
+
+            sql_arr.append(
+                ' %s %s in (%s) ' % (join,
+                                     db_field,
+                                     ','.join([self._placeholder] * len(values)))
+            )
+
+            args = args + values
+            join = ' or '
+
+        for k in self._filter:
+            _add_for_field(k)
+
+        return {
+            'sql': ''.join(sql_arr),
+            'args': args,
+            'join': join
+        }
+
+    def get_query(self):
+        return self._construct()
+
+
+
+
+
+
+
