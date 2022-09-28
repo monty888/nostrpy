@@ -67,8 +67,8 @@ class SQLiteSQLChannelStore(ChannelStoreInterface):
 
         sql = """
             insert or replace into 
-                channels (event_id, attrs, name, picture, about, created_at, updated_at) 
-                        values(?,?,?,?,?,?,?)
+                channels (event_id, attrs, name, picture, about, create_pub_k, created_at, updated_at) 
+                        values(?,?,?,?,?,?,?,?)
             on conflict(event_id)
             do update set 
                 attrs = excluded.attrs,
@@ -81,7 +81,7 @@ class SQLiteSQLChannelStore(ChannelStoreInterface):
         args = [
             c.event_id,
             json.dumps(c.attrs),
-            c.name, c.picture, c.about,
+            c.name, c.picture, c.about, c.create_pub_k,
             util_funcs.date_as_ticks(c.created_at),
             util_funcs.date_as_ticks(c.updated_at)
         ]
@@ -113,6 +113,7 @@ class SQLiteSQLChannelStore(ChannelStoreInterface):
         ret = []
         for c_c in channels:
             ret.append(Channel(event_id=c_c['event_id'],
+                               create_pub_k=c_c['create_pub_k'],
                                attrs=c_c['attrs'],
                                created_at=c_c['created_at'],
                                updated_at=c_c['updated_at']))

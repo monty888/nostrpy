@@ -1073,6 +1073,17 @@ class NostrWeb(StaticServer):
         include = request.params.include.lower()
         # restrict only to followers
         if include and use_profile:
+            if include == 'followersplus':
+                followers = use_profile.load_contacts(self._profile_store).follow_keys()
+                c_p: Profile
+                all_follows = set(followers)
+                for k in followers:
+                    c_p = self._profile_handler.profiles.lookup_pub_key(k)
+                    if c_p:
+                        all_follows = all_follows.union(set(c_p.load_contacts(self._profile_store).follow_keys()))
+
+                filter['authors'] = list(all_follows)
+
             if include == 'followers':
                 followers = use_profile.load_contacts(self._profile_store).follow_keys()
                 filter['authors'] = followers

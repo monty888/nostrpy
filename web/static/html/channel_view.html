@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<!--
+    page for showing and posting in a channel - the list view on channels and in future dm
+    will list messages from top to bottom newest at bottom, the opposite of what we do for general/public posts
+-->
+<html lang="en">
+<head>
+
+    <script defer src="/script/bootstrap.bundle.js"></script>
+    <script defer src="/script/dayjs.min.js"></script>
+    <script defer src="/script/relativeTime.js"></script>
+    <script defer src="/script/updateLocale.js"></script>
+    <script defer src="/script/mustache.js"></script>
+    <script defer src="/script/purify.min.js"></script>
+    <script defer src="/script/marked.min.js"></script>
+    <script defer src="/script/network.js"></script>
+    <script defer src="/script/nostr.js"></script>
+    <script defer src="/script/nostr-data.js"></script>
+    <script defer src="/state/js"></script>
+    <script defer src="/script/nostr-gui.js"></script>
+    <script defer src="/script/nostr-templates.js"></script>
+    <script defer src="/script/channel_view.js"></script>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Event view</title>
+     <!-- Bootstrap core CSS -->
+    <link href="/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/css/nostr.css" rel="stylesheet">
+</head>
+<body style="height:100vh;">
+    <div class="container" style="height:100%;" id="main_container">
+    </div>
+</body>
+
+</html>

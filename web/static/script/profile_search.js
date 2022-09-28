@@ -16,6 +16,7 @@
         // profiles being listed
         _chunk_size = 100,
         _my_tabs,
+        _filter_but,
         _tab_objs = [
             {
                 'title' : 'people',
@@ -34,8 +35,8 @@
         ],
         _tool_html = [
             '<div class="input-group mb-2" >',
-                '<input style="max-width:12em" placeholder="search" type="text" class="form-control" id="search-in">',
-                '<button style="padding-top:0px" id="full_search_but" type="button" class="btn btn-primary" >' +
+                '<input style="max-width:10em" placeholder="search" type="text" class="form-control" id="search-in">',
+                '<button style="padding-top:0px" id="filter_but" type="button" class="btn btn-primary" >' +
                 '<svg class="nbi-btn" >',
                     '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#filter-square"/>',
                 '</svg>',
@@ -68,10 +69,15 @@
 
                     my_obj.data = my_obj.data.concat(data.profiles);
                     if(my_obj.profiles_list===undefined){
-                        my_obj.profiles_list = APP.nostr.gui.profile_list.create({
-                            'con': my_obj.con,
-                            'profiles' : my_obj.data
-                        });
+                        try{
+                            my_obj.profiles_list = APP.nostr.gui.profile_list.create({
+                                'con': my_obj.con,
+                                'data' : my_obj.data
+                            });
+                        }catch(e){
+                            console.log(e);
+                        }
+
                     }else{
                         if(my_obj.c_off===0){
                             my_obj.profiles_list.set_data(my_obj.data);
@@ -111,10 +117,14 @@
 
                     my_obj.data = my_obj.data.concat(data.channels);
                     if(my_obj.channels_list===undefined){
-                        my_obj.channels_list = APP.nostr.gui.channel_list .create({
+                        try{
+                        my_obj.channels_list = APP.nostr.gui.channel_list.create({
                             'con': my_obj.con,
-                            'channels' : my_obj.data
+                            'data' : my_obj.data
                         });
+                        }catch(e){
+                            console.log(e)
+                        }
                     }else{
                         if(my_obj.c_off===0){
                             my_obj.channels_list.set_data(my_obj.data);
@@ -171,6 +181,10 @@
             _main_con.css('overflowY', 'hidden');
             _my_tabs.draw();
             _my_tabs.get_tool_con().html(_tool_html);
+            _filter_but = _('#filter_but');
+            _filter_but.on('click', (e) => {
+                APP.nostr.gui.profile_search_filter_modal.show({});
+            });
         }
 
         function init_search(){

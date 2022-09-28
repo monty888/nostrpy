@@ -26,12 +26,17 @@ class DeleteMode(Enum):
 
     # delete any events we can from db - note that once deleted there is no check that it's not reposted, which
     # anyone would be able to do... not just the creator.
-    DEL_DELETE = 1
+    delete = 1
     # mark as deleted any events from db - to client this would look exactly same as DEL_DELETE
-    DEL_FLAG = 2
+    flag = 2
     # nothing, ref events will still be returned to clients
-    DEL_NO_ACTION = 3
+    no_action = 3
 
+
+class SortDirection(Enum):
+    natural = 1
+    newest_first = 2
+    oldest_first = 3
 
 class EventStoreInterface(ABC):
 
@@ -199,12 +204,14 @@ class MemoryEventStore(EventStoreInterface):
     """
 
     def __init__(self,
-                 delete_mode=DeleteMode.DEL_FLAG,
+                 delete_mode=DeleteMode.flag,
                  is_nip16=False,
-                 sort_reversed=True):
+                 sort_direction=SortDirection.newest_first):
+
+
         self._delete_mode = delete_mode
         self._is_nip16 = is_nip16
-        self._sort_reversed = sort_reversed
+        self._sort_direction = sort_direction
         self._events = {}
         self._lock = BoundedSemaphore()
 
@@ -217,15 +224,15 @@ class MemoryEventStore(EventStoreInterface):
                 }
 
     def do_delete(self, evt: Event):
-        if self._delete_mode == DeleteMode.DEL_NO_ACTION:
+        if self._delete_mode == DeleteMode.no_action:
             return
         else:
             with self._lock:
                 for c_id in evt.e_tags:
                     if c_id in self._events:
-                        if self._delete_mode == DeleteMode.DEL_FLAG:
+                        if self._delete_mode == DeleteMode.flag:
                             self._events[c_id]['is_deleted'] = True
-                        elif self._delete_mode == DeleteMode.DEL_DELETE:
+                        elif self._delete_mode == DeleteMode.delete:
                             # we just leave the is deleted flag in place but get rid of the evt data
                             # as it's just in memory it wouldn't be easy to get at anyway so really we're just freeing the mem
                             del self._events[c_id]['evt']
@@ -262,7 +269,9 @@ class MemoryEventStore(EventStoreInterface):
             return evt.created_at
 
         ret = list(ret)
-        ret.sort(key=_updated_sort, reverse=self._sort_reversed)
+        if self._sort_direction != SortDirection.natural:
+            ret.sort(key=_updated_sort, reverse=self._sort_direction==SortDirection.newest_first)
+
         if limit is not None:
             ret = ret[:limit]
 
@@ -275,7 +284,7 @@ class MemoryEventStore(EventStoreInterface):
 class RelayMemoryEventStore(MemoryEventStore, RelayEventStoreInterface):
 
     def is_NIP09(self):
-        return self._delete_mode in (DeleteMode.DEL_FLAG, DeleteMode.DEL_DELETE)
+        return self._delete_mode in (DeleteMode.flag, DeleteMode.delete)
 
 
 class ClientMemoryEventStore(MemoryEventStore, ClientEventStoreInterface):
@@ -284,8 +293,8 @@ class ClientMemoryEventStore(MemoryEventStore, ClientEventStoreInterface):
     """
 
     def __init__(self):
-        super().__init__(delete_mode=DeleteMode.DEL_DELETE,
-                         sort_reversed=True)
+        super().__init__(delete_mode=DeleteMode.delete,
+                         sort_direction=SortDirection.newest_first)
 
     def add_event(self, evt: Event):
         if hasattr(evt, '__iter__'):
@@ -396,7 +405,9 @@ class ClientMemoryEventStore(MemoryEventStore, ClientEventStoreInterface):
 class SQLEventStore(EventStoreInterface):
 
     @staticmethod
-    def _make_filter_sql(filters, placeholder='?', custom=None, sort_reversed=False):
+    def _make_filter_sql(filters, placeholder='?',
+                         custom=None,
+                         sort_direction=SortDirection.natural):
         """
         creates the sql to select events from a db given nostr filter
         :param filter:
@@ -514,7 +525,7 @@ class SQLEventStore(EventStoreInterface):
             if offset is None and 'offset' in c_filter:
                 offset = c_filter['offset']
 
-        sql = SQLEventStore._add_sort(sql, sort_reversed)
+        sql = SQLEventStore._add_sort(sql, sort_direction)
         sql = SQLEventStore._add_range(sql, limit, offset)
 
         return {
@@ -532,11 +543,15 @@ class SQLEventStore(EventStoreInterface):
         return sql
 
     @staticmethod
-    def _add_sort(sql, sort_reversed, col_name=None):
+    def _add_sort(sql, sort_direction, col_name=None):
+        # nothing to do
+        if sort_direction == SortDirection.natural:
+            return sql
+
         if col_name is None:
             col_name = 'created_at'
 
-        if sort_reversed:
+        if sort_direction.newest_first:
             sql += ' order by %s desc' % col_name
         else:
             sql += ' order by %s' % col_name
@@ -562,12 +577,12 @@ class SQLEventStore(EventStoreInterface):
         return ret
 
     def __init__(self, db: Database,
-                 delete_mode=DeleteMode.DEL_FLAG,
+                 delete_mode=DeleteMode.flag,
                  is_nip16=False,
-                 sort_reversed=False):
+                 sort_direction=SortDirection.newest_first):
         self._delete_mode = delete_mode
         self._is_nip16 = is_nip16
-        self._sort_reversed = sort_reversed
+        self._sort_direction = sort_direction
         self._db = db
 
     def _prepare_most_recent_types(self, evt: Event, batch=None):
@@ -710,7 +725,7 @@ class SQLEventStore(EventStoreInterface):
 
         return ret
 
-    def get_filter(self, filter, custom=None) -> [{}]:
+    def get_filter(self, filter, custom=None, sort_direction=None) -> [{}]:
         """
         from database returns events that match filter/s
         doesn't do #e and #p filters yet (maybe never)
@@ -718,10 +733,13 @@ class SQLEventStore(EventStoreInterface):
         :param filter: {} or [{},...] or filters
         :return:
         """
+        if sort_direction is None:
+            sort_direction = self._sort_direction
+
         filter_query = SQLEventStore._make_filter_sql(filter,
                                                       placeholder=self._db.placeholder,
                                                       custom=custom,
-                                                      sort_reversed=self._sort_reversed)
+                                                      sort_direction=sort_direction)
 
         # print(filter_query['sql'], filter_query['args'])
 
@@ -734,12 +752,12 @@ class SQLEventStore(EventStoreInterface):
         if batch is None:
             batch = []
 
-        if self._delete_mode == DeleteMode.DEL_NO_ACTION:
+        if self._delete_mode == DeleteMode.no_action:
             return batch
         to_delete = evt.e_tags
 
         # only flag as deleted
-        if self._delete_mode == DeleteMode.DEL_FLAG:
+        if self._delete_mode == DeleteMode.flag:
             batch.append({
                 'sql': 'update events set deleted=true where event_id in (%s) and kind<>?' %
                        ','.join(['?'] * len(to_delete)),
@@ -747,7 +765,7 @@ class SQLEventStore(EventStoreInterface):
 
             })
         # actually delete
-        elif self._delete_mode == DeleteMode.DEL_DELETE:
+        elif self._delete_mode == DeleteMode.delete:
             batch = [
                 # now done via trigger
                 # {
@@ -820,12 +838,12 @@ class SQLiteEventStore(SQLEventStore):
 
     def __init__(self,
                  db_file,
-                 delete_mode=DeleteMode.DEL_FLAG,
+                 delete_mode=DeleteMode.flag,
                  is_nip16=False,
-                 sort_reversed=False):
+                 sort_direction=SortDirection.newest_first):
         super().__init__(SQLiteDatabase(db_file),
                          delete_mode=delete_mode,
-                         sort_reversed=sort_reversed,
+                         sort_direction=sort_direction,
                          is_nip16=is_nip16)
         logging.debug('SQLiteStore::__init__ db_file=%s, delete mode=%s' % (db_file,
                                                                             self._delete_mode))
@@ -845,11 +863,11 @@ class PostgresEventStore(SQLEventStore):
     Postgres implementation of RelayStoreInterface
     """
 
-    def __init__(self, db_name, user, password, sort_reversed=False, delete_mode=DeleteMode.DEL_FLAG):
+    def __init__(self, db_name, user, password, sort_direction=SortDirection.newest_first, delete_mode=DeleteMode.flag):
         super().__init__(PostgresDatabase(db_name=db_name,
                                           user=user,
                                           password=password),
-                         sort_reversed=sort_reversed, delete_mode=delete_mode)
+                         sort_direction=sort_direction, delete_mode=delete_mode)
         self._db_name = db_name
         self._user = user
         self._password = password
@@ -940,19 +958,19 @@ class PostgresEventStore(SQLEventStore):
 class RelaySQLEventStore(SQLEventStore, RelayEventStoreInterface):
 
     def is_NIP09(self):
-        return self._delete_mode in (DeleteMode.DEL_FLAG, DeleteMode.DEL_DELETE)
+        return self._delete_mode in (DeleteMode.flag, DeleteMode.delete)
 
 
 class RelaySQLiteEventStore(SQLiteEventStore, RelayEventStoreInterface):
 
     def is_NIP09(self):
-        return self._delete_mode in (DeleteMode.DEL_FLAG, DeleteMode.DEL_DELETE)
+        return self._delete_mode in (DeleteMode.flag, DeleteMode.delete)
 
 
 class RelayPostgresEventStore(PostgresEventStore, RelayEventStoreInterface):
 
     def is_NIP09(self):
-        return self._delete_mode in (DeleteMode.DEL_FLAG, DeleteMode.DEL_DELETE)
+        return self._delete_mode in (DeleteMode.flag, DeleteMode.delete)
 
 
 class ClientSQLEventStore(SQLEventStore, ClientEventStoreInterface):
@@ -997,22 +1015,6 @@ class ClientSQLEventStore(SQLEventStore, ClientEventStoreInterface):
         else:
             logging.debug('Store::get_newest - no created_at found, db empty?')
         return ret
-
-    # def _prepare_most_recent_types(self, evt: Event, batch=None):
-    #     batch.append({
-    #         'sql': """
-    #         delete from event_relay where id in(
-    #             select id from events where kind=%s and pubkey=%s and id not in(
-    #             select id from events where kind=%s and pubkey=%s order by created_at desc limit 1)
-    #         );
-    #         """.replace('%s', self._db.placeholder),
-    #         'args': [
-    #             evt.kind, evt.pub_key,
-    #             evt.kind, evt.pub_key
-    #         ]
-    #     })
-    #
-    #     super()._prepare_most_recent_types(evt, batch)
 
     def _add_reaction_batch(self, evt: Event, batch):
         if evt.kind == Event.KIND_REACTION:
@@ -1195,29 +1197,10 @@ order by count(pubkey) desc, relay
             join = 'and'
             args = args + react_event_id
 
-        sql = self._add_sort(sql, self._sort_reversed, 'et.created_at')
+        sql = self._add_sort(sql, self._sort_direction, 'et.created_at')
         sql = self._add_range(sql, limit)
 
         return self._db.select_sql(sql, args=args).as_arr(True)
-
-    # def do_delete(self, evt: Event):
-    #     ret = None
-    #     batch = []
-    #
-    #     if self._delete_mode == DeleteMode.DEL_DELETE:
-    #         batch.append(
-    #             {
-    #                 'sql': 'delete from event_relay where id in (select id from events '
-    #                        'where event_id in (%s) and kind<>%s)' % (','.join(
-    #                     [self._db.placeholder] * len(evt.e_tags)), self._db.placeholder),
-    #                 'args': evt.tags + [Event.KIND_DELETE]
-    #             }
-    #         )
-    #
-    #     self._prepare_delete_batch(evt, batch)
-    #     if batch:
-    #         ret = self._db.execute_batch(batch)
-    #     return ret
 
 
 class ClientSQLiteEventStore(SQLiteEventStore, ClientSQLEventStore,  ClientEventStoreInterface):
@@ -1300,7 +1283,7 @@ class ClientSQLiteEventStore(SQLiteEventStore, ClientSQLEventStore,  ClientEvent
 
         logging.debug('Experimental client sqllite fulltext search: %s' % self._full_text)
         super().__init__(db_file,
-                         sort_reversed=True)
+                         sort_direction=SortDirection.newest_first)
 
     def create(self):
         my_create_batch = ClientSQLiteEventStore.CREATE_SQL_BATCH.copy()
@@ -1332,7 +1315,7 @@ class ClientSQLiteEventStore(SQLiteEventStore, ClientSQLEventStore,  ClientEvent
     #     if is_add:
     #         self._db.execute_batch(evt_batch)
 
-    def get_filter(self, filter) -> [Event]:
+    def get_filter(self, filter, sort_reversed=None) -> [Event]:
         def my_custom(filter, join):
             ret = []
             if 'content' in filter:
@@ -1368,4 +1351,4 @@ class ClientSQLiteEventStore(SQLiteEventStore, ClientSQLEventStore,  ClientEvent
 
             return ret
 
-        return super().get_filter(filter, my_custom)
+        return super().get_filter(filter, my_custom, sort_reversed)

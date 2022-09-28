@@ -218,6 +218,22 @@ img{
     background-color : #221124;
 }
 
+
+.msg-container {
+  display: flex;
+  flex-direction: row;
+}
+
+.msg-picture {
+  min-width:96px;
+}
+
+.msg-content {
+  flex: auto;
+  background-color : #221124;
+  border-radius: 10px;
+}
+
 .profile-picture-area-selected{
     background-color: #333333;
 }

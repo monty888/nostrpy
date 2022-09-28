@@ -274,7 +274,7 @@ APP.nostr.gui.templates = function(){
                             '</span>',
                         '</div>'
         ],
-        'channel-list' : ['<div id="{{uid}}-{{pub_k}}" style="padding-top:2px;cursor:pointer;" >',
+        'channel-list' : ['<div id="{{uid}}-{{id}}" style="padding-top:2px;cursor:pointer;" >',
                             '<span class="profile-picture-area {{picture-selected}}" >',
                                 // TODO: do something if unable to load pic
                                 '{{#picture}}',
@@ -292,53 +292,49 @@ APP.nostr.gui.templates = function(){
                                 '{{#name}}',
                                     '{{name}}@',
                                 '{{/name}}',
-                                '{{#id}}',
-                                    '<span class="pubkey-text">{{id}}</span>',
-                                '{{/id}}',
+                                '<span class="pubkey-text">{{id_short}}</span>',
                                 '{{#about}}',
                                     '<div>',
                                         '{{{about}}}',
                                     '</div>',
                                 '{{/about}}',
-                                // action buttons that are shown to the right dependent on context
-                                '<span style="float:right;margin-right:8px;">',
-                                    '{{#can_dm}}',
-                                        '<svg id="{{uid}}-{{pub_k}}-profile-dm" class="nbi" >',
-                                            '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#envelope-fill"/>',
-                                        '</svg>',
-                                    '{{/can_dm}}',
-                                    // follow or not only if not our profile
-                                    '{{#other_profile}}',
-                                        '{{#follows}}',
-                                            '<svg id="{{uid}}-{{pub_k}}-profile-fol" class="nbi" >',
-                                                '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#star-fill"/>',
-                                            '</svg>',
-                                        '{{/follows}}',
-                                        '{{^follows}}',
-                                            '<svg id="{{uid}}-{{pub_k}}-profile-fol" class="nbi" >',
-                                                '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#star"/>',
-                                            '</svg>',
-                                        '{{/follows}}',
-                                    '{{/other_profile}}',
-                                    '{{#can_view}}',
-                                        '<svg id="{{uid}}-{{pub_k}}-profile-view" class="nbi" >',
-                                            '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#eye-fill"/>',
-                                        '</svg>',
-                                    '{{/can_view}}',
-                                    '{{#can_edit}}',
-                                        '<svg id="{{uid}}-{{pub_k}}-profile-edit" class="nbi" >',
-                                            '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#pencil-square"/>',
-                                        '</svg>',
-                                    '{{/can_edit}}',
-                                    '{{#can_switch}}',
-                                        '<svg id="{{uid}}-{{pub_k}}-profile-switch" class="nbi" >',
-                                            '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#box-arrow-right"/>',
-                                        '</svg>',
-                                    '{{/can_switch}}',
-                                '</span>',
+                                '<div id="{{uid}}-{{id}}-{{pub_k}}">',
+                                    'owner: ',
+                                    '{{#owner_picture}}',
+                                        '<img src="{{owner_picture}}" loading="lazy" class="profile-pic-verysmall""/>',
+                                    '{{/owner_picture}}',
+                                    '{{#owner_name}}',
+                                        '{{owner_name}}@',
+                                    '{{/owner_name}}',
+                                    '<span class="pubkey-text">{{short_pub_k}}</span>',
+                                '</div>',
                             '</span>',
                         '</div>'
         ],
+        'msg-list' : ['<div class="msg-container" id="{{uid}}-{{id}}" style="padding-top:2px;cursor:pointer;" >',
+                            '<span class="msg-picture {{picture-selected}}" >',
+                                // TODO: do something if unable to load pic
+                                '{{#picture}}',
+                                    '<img src="{{picture}}" loading="lazy" class="profile-pic-small""/>',
+                                '{{/picture}}',
+                                '{{^picture}}',
+                                    '<div class="header-button">',
+                                        '<svg class="nbi" style="height:100%;width:100%;">',
+                                            '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#person-circle"/>',
+                                        '</svg>',
+                                    '</div>',
+                                '{{/picture}}',
+                            '</span>',
+                            '<span class="msg-content" >',
+                                '{{#name}}',
+                                    '{{name}}@',
+                                '{{/name}}',
+                                '<span class="pubkey-text">{{short_key}}</span><br>',
+                                '{{content}}',
+                            '</span>',
+                        '</div>'
+        ],
+
         // event templates
         'event-profile' : [
             // publishers profile pic
@@ -529,8 +525,16 @@ APP.nostr.gui.templates = function(){
                 '<label for="pow-sel" class="form-label">Minimum required POW</label>',
                 '{{{pow_sel}}}',
             '</div>'
+        ],
+        'profile-search-filter-modal': [
+            // can't been done if not using profile
+            '{{#pub_k}}',
+                '<div class="mb-2" >',
+                    '<label for="include-sel" class="form-label">Include events from</label>',
+                    '{{{include_sel}}}',
+                '</div>',
+            '{{/pub_k}}'
         ]
-
     };
 
     return {

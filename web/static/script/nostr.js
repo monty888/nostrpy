@@ -42,6 +42,17 @@ var _ = (id) => {
             });
         }
 
+        ret.scrollTop = (func) => {
+            internal.forEach(function(el,i){
+                el.addEventListener('scroll', function(e){
+                    if(el.scrollTop===0){
+                        func(e);
+                    }
+                });
+            });
+        }
+
+
         ret.css = (property, val) => {
             internal.forEach(function(el,i){
                 el.style[property] = val;

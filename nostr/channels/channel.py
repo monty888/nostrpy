@@ -21,11 +21,13 @@ class Channel:
         :return:
         """
         return Channel(event_id=evt.id,
+                       create_pub_k=evt.pub_key,
                        attrs=evt.content,
                        created_at=evt.created_at)
 
-    def __init__(self, event_id: str, attrs=None, created_at: int = None, updated_at: int = None):
+    def __init__(self, event_id: str, create_pub_k: str, attrs=None, created_at: int = None, updated_at: int = None):
         self._event_id = event_id
+        self._create_pub_k = create_pub_k
         self._attrs = {}
         if attrs is not None:
             if isinstance(attrs, dict):
@@ -49,6 +51,7 @@ class Channel:
     def as_dict(self):
         return {
             'id': self.event_id,
+            'create_pub_k': self.create_pub_k,
             'name': self.name,
             'about': self.about,
             'picture': self.picture
@@ -69,6 +72,10 @@ class Channel:
     @property
     def event_id(self):
         return self._event_id
+
+    @property
+    def create_pub_k(self):
+        return self._create_pub_k
 
     @property
     def created_at(self):
