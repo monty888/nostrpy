@@ -204,7 +204,7 @@
         }
 
         // scroll for global only view (lurker)
-        _main_con.scrollBottom(function(e){
+        _main_con.scrolledBottom(function(e){
             let view;
             if(_current_profile.pub_k===undefined){
                 view_scroll(_views['global']);

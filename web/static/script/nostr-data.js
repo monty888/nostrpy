@@ -546,24 +546,14 @@ APP.nostr.data.profiles = function(){
     };
 
     function search(args){
-        let on_load = args.on_load,
-            limit = args.limit || 100,
-            offset = args.offset || 0,
-            match = args.match,
-            load_args = {
-                'success' : function(data){
-                    _do_store(data);
-                    if(typeof(on_load)==='function'){
-                        on_load(data);
-                    }
-                },
-                'limit': limit,
-                'offset': offset,
-                'match': match
-            };
-
-        APP.remote.load_profiles(load_args);
-
+        let load_func = args.on_load;
+        args.success = (data) =>{
+            _do_store(data);
+            if(typeof(load_func)==='function'){
+                load_func(data);
+            }
+        }
+        APP.remote.load_profiles(args);
     }
 
     function lookup(pub_k, callback){

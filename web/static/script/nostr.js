@@ -27,7 +27,7 @@ var _ = (id) => {
             });
         };
 
-        ret.scrollBottom = (func) => {
+        ret.scrolledBottom = (func) => {
             internal.forEach(function(el,i){
                 el.addEventListener('scroll', function(e){
                     let el = e.target,
@@ -42,7 +42,7 @@ var _ = (id) => {
             });
         }
 
-        ret.scrollTop = (func) => {
+        ret.scrolledTop = (func) => {
             internal.forEach(function(el,i){
                 el.addEventListener('scroll', function(e){
                     if(el.scrollTop===0){
@@ -258,3 +258,12 @@ dayjs.updateLocale('en', {
     yy: '%dy'
   }
 });
+
+APP.nostr.goto = {
+    view_profile(pub_k){
+        location.href = '/html/profile?pub_k='+pub_k;
+    },
+    view_channel(id){
+        location.href = '/html/channel_view?channel_id='+id;
+    }
+};

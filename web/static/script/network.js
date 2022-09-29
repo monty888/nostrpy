@@ -354,6 +354,8 @@ APP.remote = function(){
             _add_field('match', args);
             _add_field('limit', args);
             _add_field('offset', args);
+            _add_field('include', args);
+            _add_field('use_pub_k', args);
 
             // all followers contacts for this profile
             if(args.for_profile!==undefined){
@@ -430,6 +432,8 @@ APP.remote = function(){
         load_channels(args){
             args['url'] = _all_channels_url;
             args['params'] = {};
+            _add_field('pub_k', args);
+            _add_field('include', args);
             _add_field('match', args);
             _add_field('limit', args);
             _add_field('offset', args);

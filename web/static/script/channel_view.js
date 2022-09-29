@@ -55,13 +55,11 @@
         // main container where we'll draw out the events
         _main_con = _('#main-con');
         _main_con.css('overflowY','auto');
-        _main_con.scrollTop(function(){
+        _main_con.scrolledTop(function(){
             alert('top dude!!!');
         });
 
         load_messages();
-
-        APP.nostr.gui.post_button.create();
 
         APP.nostr_client.create();
 

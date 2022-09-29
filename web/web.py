@@ -366,12 +366,15 @@ class NostrWeb(StaticServer):
 
     def _profiles_list(self):
         c_p: Profile
+        use_profile: Profile
         limit = self._get_query_limit()
         offset = self._get_query_offset()
         # , list of pub_ks we want profiles for
         pub_k = request.query.pub_k
         match = request.query.match
-
+        # if given and we have include restriction then this is the profile its
+        # based on i.e there followers/ follower of follows etc.
+        use_pub_k = request.query.use_pub_k
 
         if request.method == 'POST':
             if 'pub_k' in request.forms:
@@ -391,7 +394,21 @@ class NostrWeb(StaticServer):
         # match style
         if match:
             for c_m in match.split(','):
-                all_keys = all_keys.union(self._get_profile_matches(c_m, ttl_hash=self.get_ttl_hash(60)))
+                p_matches = self._get_profile_matches(c_m, ttl_hash=self.get_ttl_hash(60))
+                p_matches = [c_p.public_key for c_p in p_matches]
+                all_keys = all_keys.union(p_matches)
+
+        # single pub_k, is there an include that restricts what we'll return?
+        # e.g. profile search page
+        if use_pub_k:
+            self._check_key(use_pub_k)
+            use_profile = self._profile_handler.profiles.lookup_pub_key(use_pub_k)
+            for_keys = self._get_for_pub_keys(use_profile)
+            if for_keys is not None:
+                if pub_k != '' or match != '':
+                    all_keys = all_keys.intersection(set(for_keys))
+                else:
+                    all_keys = set(for_keys)
 
         the_profile: Profile
         ret = {
@@ -400,7 +417,7 @@ class NostrWeb(StaticServer):
         # pub_k, or pub_ks, seperated by ,
         # possibly this will /profile and /profiles methods merged
         # note we don't check the pub_ks, if they're incorrect then nothing will be returned for that pk anyhow
-        if pub_k != '' or match != '':
+        if pub_k != '' or match != '' or all_keys:
             for c_pub_k in list(all_keys)[offset:offset+limit]:
                 the_profile = self._profile_handler.profiles.get_profile(c_pub_k)
                 # we could easily add in here contact and profile which would replace the
@@ -546,14 +563,22 @@ class NostrWeb(StaticServer):
     def _channels_list(self):
         limit = self._get_query_limit()
         offset = self._get_query_offset()
+        pub_k = request.query.pub_k
         match = request.query.match
+        use_profile: Profile
         channels = []
         c_c: Channel
         # match style
         for c_m in match.split(','):
             channels = channels + self._get_channel_matches(c_m, self.get_ttl_hash(60))
 
-
+        if pub_k:
+            self._check_key(pub_k)
+            use_profile = self._profile_handler.profiles.lookup_pub_key(pub_k)
+            for_keys = self._get_for_pub_keys(use_profile)
+            if for_keys is not None:
+                for_keys = set(for_keys)
+                channels = [c_c for c_c in channels if c_c.create_pub_k in for_keys]
 
         return {
             'channels': [c_c.as_dict() for c_c in channels[offset:offset+limit]]
@@ -968,6 +993,36 @@ class NostrWeb(StaticServer):
 
         return evts
 
+    def _get_for_pub_keys(self, use_profile: Profile):
+        """
+        for where we're restricting to set pub keys i.e. filter on search events page
+
+        :param use_profile: followers worked out from ths profile
+        :return: None=everyone not restricted else [pks]
+        """
+        ret = None
+        # shoule be one of followersplus, followers, self anything else is everyone/not applied
+        include = request.params.include.lower()
+        # restrict only to followers
+        if include and use_profile:
+            if include == 'followersplus':
+                followers = use_profile.load_contacts(self._profile_store).follow_keys()
+                c_p: Profile
+                all_follows = set(followers)
+                for k in followers:
+                    c_p = self._profile_handler.profiles.lookup_pub_key(k)
+                    if c_p:
+                        all_follows = all_follows.union(set(c_p.load_contacts(self._profile_store).follow_keys()))
+
+                ret = list(all_follows)
+
+            if include == 'followers':
+                ret = use_profile.load_contacts(self._profile_store).follow_keys()
+            elif include =='self':
+                ret = [use_profile.public_key]
+
+        return ret
+
     def _events_route(self):
         """
         returns events that match given nostr filter [{},...]
@@ -1070,25 +1125,10 @@ class NostrWeb(StaticServer):
         pow = request.params.pow.lower()
         if pow and pow != 'none':
             filter['ids'] = [pow]
-        include = request.params.include.lower()
-        # restrict only to followers
-        if include and use_profile:
-            if include == 'followersplus':
-                followers = use_profile.load_contacts(self._profile_store).follow_keys()
-                c_p: Profile
-                all_follows = set(followers)
-                for k in followers:
-                    c_p = self._profile_handler.profiles.lookup_pub_key(k)
-                    if c_p:
-                        all_follows = all_follows.union(set(c_p.load_contacts(self._profile_store).follow_keys()))
 
-                filter['authors'] = list(all_follows)
-
-            if include == 'followers':
-                followers = use_profile.load_contacts(self._profile_store).follow_keys()
-                filter['authors'] = followers
-            elif include =='self':
-                filter['authors'] = [use_profile.public_key]
+        for_followers = self._get_for_pub_keys(use_profile)
+        if for_followers is not None:
+            filter['authors'] = for_followers
 
         until = self._get_query_int('until', default_value='')
         if until != '':

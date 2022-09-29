@@ -742,13 +742,13 @@ APP.nostr.gui.tabs = function(){
             });
 
             // event on scroll to bottom
-           _('#'+_id+'-content').scrollBottom(function(e){
+           _('#'+_id+'-content').scrolledBottom(function(e){
                 if(typeof(_scroll_bottom)==='function'){
                     _scroll_bottom(_cur_index, _render_obj.tabs[_cur_index]['tab_content_con']);
                 }
             });
 
-            _('#'+_id+'-content').scrollTop(function(e){
+            _('#'+_id+'-content').scrolledTop(function(e){
                 if(typeof(_scroll_top)==='function'){
                     _scroll_top(_cur_index, _render_obj.tabs[_cur_index]['tab_content_con']);
                 }
@@ -866,7 +866,7 @@ APP.nostr.gui.list = function(){
             }
         }
 
-        function draw(start_pos){
+        function draw(){
             set_draw_length();
             clearInterval(_draw_timer);
             _con.html('');
@@ -888,12 +888,14 @@ APP.nostr.gui.list = function(){
 
         function _prog_draw(){
             _c_start = draw_chunk(_c_start, _c_end);
+
             if(!_last_block){
                 _c_end+=_chunk_size;
                 if(_c_end>= _to_draw){
                     _c_end = _to_draw;
                     _last_block = true
                 }
+
                 _draw_timer = setTimeout(_prog_draw,CHUNK_DELAY);
             }else{
                 _drawing = false;
@@ -917,7 +919,6 @@ APP.nostr.gui.list = function(){
 //            console.log(draw_arr);
 //            _con.append(draw_arr.join(''));
             _con.insertAdjacentHTML('beforeend',draw_arr.join(''));
-
             return pos;
         }
 
@@ -2602,8 +2603,8 @@ APP.nostr.gui.mapped_list = function (){
         }
 
 
-        function draw(){
-            _my_list.draw();
+        function draw(on_draw){
+            _my_list.draw(on_draw);
         };
 
         /*
@@ -2618,7 +2619,7 @@ APP.nostr.gui.mapped_list = function (){
         function append_render_data(data){
             let r_obj;
             data.forEach(function(c){
-                r_obj = _create_render_obj(c);
+                r_obj = _create_render_obj(c, _src_data[_render_arr.length-1]);
                 if(_key!==undefined){
                     _render_lookup[c[_key]] = r_obj;
                 }
@@ -2631,9 +2632,9 @@ APP.nostr.gui.mapped_list = function (){
             TODO - if we make a version of list that accepts the create_render_obj as a function
                 we can probably reduce down a lot of the list code
         */
-        function _create_render_obj(src_obj){
+        function _create_render_obj(src_obj, pre_obj){
             _map_func(src_obj);
-            let render_obj = _map_func(src_obj);
+            let render_obj = _map_func(src_obj, pre_obj);
             return render_obj;
         }
 
@@ -2669,13 +2670,15 @@ APP.nostr.gui.mapped_list = function (){
 APP.nostr.gui.channel_list = function(){
     let _util = APP.nostr.util,
         _gui = APP.nostr.gui,
-        _profiles = APP.nostr.data.profiles;
+        _profiles = APP.nostr.data.profiles,
+        _goto = APP.nostr.goto;
 
     function create(args){
         let uid = _gui.uid(),
             my_list,
             profiles_loading,
-            draw_required;
+            draw_required,
+            enable_media = APP.nostr.data.user.enable_media();
 
         function load_profiles(channels){
             profiles_loading = true;
@@ -2723,14 +2726,12 @@ APP.nostr.gui.channel_list = function(){
         args.template = args.template!==undefined ? args.template : _gui.templates.get('channel-list');
         args.click = args.click!==undefined ? args.click : (id) => {
             let splits = id.split('-');
-            console.log(splits);
             if(splits.length===3){
                 id = splits[2];
-                location.href = '/html/channel_view?channel_id='+id;
+                _goto.view_channel(id);
             }else if(splits.length===4){
-                window.location='/html/profile?pub_k='+splits[3];
+                _goto.view_profile(splits[3]);
             }
-
         };
 
         load_profiles(args.data);
@@ -2743,7 +2744,6 @@ APP.nostr.gui.channel_list = function(){
             load_profiles(data);
             o_add_data(data);
         };
-
         return my_list;
     }
 
@@ -2756,13 +2756,16 @@ APP.nostr.gui.channel_list = function(){
 APP.nostr.gui.channel_view_list = function(){
     let _util = APP.nostr.util,
         _gui = APP.nostr.gui,
-        _profiles = APP.nostr.data.profiles;
+        _profiles = APP.nostr.data.profiles,
+        _goto = APP.nostr.goto;
 
     function create(args){
         let my_list,
+            my_con = args.con,
             uid = _gui.uid(),
             profiles_loading,
-            draw_required;
+            draw_required,
+            enable_media = APP.nostr.data.user.enable_media();
 
         function load_profiles(msgs){
             profiles_loading = true;
@@ -2783,27 +2786,87 @@ APP.nostr.gui.channel_view_list = function(){
             });
         };
 
-        args.map_func = args.map_func!==undefined ? args.map_func : (src_obj) => {
+        function goto_bottom(){
+            /*   hacky pos to get to bottom of screen on first draw whci is a problem as
+            * we draw in chunks downwards and also pictures will probably come in later
+            * and make it so we're no longer at the bottom
+            */
+            if(args.data.length<1){
+                return;
+            }
+            let el_id = '#'+uid+'-'+args.data[args.data.length-1].id,
+                scroll_int = setInterval(() => {
+                let el = _(el_id)[0];
+                if(el!==undefined){
+                    clearInterval(scroll_int);
+                    el.scrollIntoView();
+                    // shit but gives chance for slow loading stuff to be rendered
+                    setTimeout(() => {
+                        el.scrollIntoView();
+                    },200);
+                }
+            },200);
+        }
+
+        args.map_func = args.map_func!==undefined ? args.map_func : (src_obj, pre_obj) => {
                 let render_obj = {
+                    'uid': uid,
+                    'id': src_obj.id,
                     'short_key': _util.short_key(src_obj.pubkey),
                     'pub_k': src_obj.pubkey,
-                    'content': src_obj.content
+                    'content': _gui.get_note_content_for_render(src_obj, true).content,
+                    render_msg(){
+                        let r_text = src_obj.content.replace(/\s/g,'');
+                        return r_text.length>0;
+                    },
+                    render_ident(){
+                        return pre_obj===undefined || pre_obj.pubkey!==src_obj.pubkey;
+                    }
                 },
                 p = _profiles.lookup(src_obj.pubkey);
 
             // if we have profile add info
             if(p!==null){
                 render_obj.name = p.attrs.name;
-                render_obj.picture = p.attrs.picture;
+                if(enable_media){
+                    render_obj.picture = p.attrs.picture;
+                }
+            }
+
+            if(render_obj.picture===undefined){
+                render_obj.picture = _gui.robo_images.get_url({
+                    'text': src_obj.pubkey
+                });
             }
 
             return render_obj;
         };
 
         args.template = args.template!==undefined ? args.template : _gui.templates.get('msg-list');
+        args.click = args.click !==undefined ? args.click : (id) => {
+            id = id.replace(uid+'-','');
+            const action_lookup = {
+                'pp': 'view_profile',
+                'pt': 'view_profile'
+            };
+
+            let splits = id.split('-'),
+                r_obj,
+                e_id, action;
+            if(splits.length==2){
+                e_id = splits[0];
+                action = action_lookup[splits[1]],
+                r_obj = my_list.lookup(e_id);
+                if(action==='view_profile'){
+                    _goto.view_profile(r_obj.pub_k);
+                }
+            }
+        },
+        args.key = 'id';
 
         load_profiles(args.data);
         my_list = _gui.mapped_list.create(args);
+        goto_bottom();
         return my_list;
     }
 
@@ -2964,110 +3027,6 @@ APP.nostr.gui.profile_list = function(){
     };
 
 }();
-
-
-//APP.nostr.gui.channel_view_list = function (){
-//        // lib shortcut
-//    let _gui = APP.nostr.gui,
-//        _util = APP.nostr.util;
-//
-//    function create(args){
-//            // container for list
-//        let _con = args.con,
-//            // src_data before mapping to render objs
-//            _src_data = args.data || [],
-//            // inline media where we can, where false just the link is inserted
-//            _enable_media = APP.nostr.data.user.enable_media(),
-//            // data in arr to be rendered
-//            _render_arr,
-//            // above on pub_k
-//            _render_lookup,
-//            // only profiles that pass this filter will be showing
-//            _filter_text = args.filter || '',
-//            // so ids will be unique per this list
-//            _uid = APP.nostr.gui.uid(),
-//            // list obj that actually does the rendering
-//            _my_list,
-//            // template to render into
-//            _row_tmpl = APP.nostr.gui.templates.get('msg-list'),
-//            _current_profile = APP.nostr.data.user.profile();
-//
-//        // methods
-//        function init(){
-//            // prep the intial render obj
-//            create_render_data();
-//            _my_list = APP.nostr.gui.list.create({
-//                'con' : _con,
-//                'data' : _render_arr,
-//                'row_tmpl': _row_tmpl,
-//                click(id){
-//                }
-//            });
-//            draw();
-//        }
-//
-//
-//        function draw(){
-//            _my_list.draw();
-//        };
-//
-//        /*
-//            fills data that'll be used with template to render
-//        */
-//        function create_render_data(){
-//            _render_arr = [];
-//            _render_lookup = {};
-//            append_render_data(_src_data);
-//        }
-//
-//        function append_render_data(data){
-//            let r_obj;
-//            data.forEach(function(c){
-//                r_obj = _create_render_obj(c);
-//                _render_lookup[c.id] = r_obj;
-//                _render_arr.push(r_obj);
-//            });
-//        }
-//
-//        /*
-//            TODO - if we make a version of list that accepts the create_render_obj as a function
-//                we can probably reduce down a lot of the list code
-//        */
-//        function _create_render_obj(src_obj){
-//            let render_obj = {
-//                    'short_key': _util.short_key(src_obj.pubkey),
-//                    'content': src_obj.content
-//                };
-//            return render_obj;
-//        }
-//
-//        // prep and draw the list
-//        init();
-//
-//        return {
-//            'draw': draw,
-//            'set_data': function(data){
-//                _view_channels = data;
-//                create_render_data();
-//                _my_list.set_data(_render_arr);
-//                _my_list.draw();
-//            },
-//            'add_data': function(data){
-//                _view_channels = _view_channels.concat(data);
-//                append_render_data(data);
-//                _my_list.append_draw(_view_channels.length - data.length);
-//            }
-//
-//
-//        }
-//    }
-//
-//    return {
-//        'create': create
-//    }
-//}();
-
-
 
 /*
    list component for messages page. On the messages page you only get the topmost event for each
@@ -4413,7 +4372,7 @@ APP.nostr.gui.profile_search_filter_modal = function(){
                         'value': 'followersplus'
                     },
                     {
-                        'text': 'only people I follow',
+                        'text': 'people I follow',
                         'value': 'followers'
                     }
                 ]
@@ -4448,6 +4407,65 @@ APP.nostr.gui.profile_search_filter_modal = function(){
     }
 }();
 
+APP.nostr.gui.channel_search_filter_modal = function(){
+    /*
+        modal of options to filter search profiles
+    */
+    const _gui = APP.nostr.gui,
+        _user = APP.nostr.data.user;
+
+    function show(args){
+        // set the modal as we want it
+        let c_profile = _user.profile(),
+            pub_k = c_profile.pub_k,
+            include_val = _user.get(pub_k+'.channel-search-include', 'anyone'),
+            o_val = include_val,
+            include_sel = _gui.select.create({
+                'id': 'include-sel',
+                'selected': include_val,
+                'options': [
+                    {
+                        'text': 'anyone'
+                    },
+                    {
+                        'text': 'people I follow and those they follow',
+                        'value': 'followersplus'
+                    },
+                    {
+                        'text': 'people I follow',
+                        'value': 'followers'
+                    }
+                ]
+            }),
+            // called on ok if user changed anything
+            on_change = args.on_change;
+
+        _gui.modal.create({
+            'title' : 'channel search filter',
+            'content' : Mustache.render(_gui.templates.get('channel-search-filter-modal'),{
+                'pub_k': c_profile.pub_k,
+                'include_sel': include_sel.html()
+            }),
+            'on_hide' : function(){
+                let n_val = include_val =  _('#include-sel').val();
+
+                // user changed values
+                if(o_val!==n_val){
+                    _user.put(pub_k+'.channel-search-include', include_val);
+                    if(typeof(on_change)==='function'){
+                        on_change();
+                    }
+                }
+
+            }
+        });
+        _gui.modal.show();
+    }
+
+    return {
+        'show' : show
+    }
+}();
 
 APP.nostr.gui.relay_view_modal = function(){
     const _gui = APP.nostr.gui;

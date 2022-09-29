@@ -4,6 +4,7 @@
     show all texts type events as they come in
 */
 !function(){
+    const _user = APP.nostr.data.user;
         // websocket to recieve event updates
     let _client,
         // main draw area
@@ -42,12 +43,22 @@
                 '</svg>',
                 '</button>',
             '</span>'
-        ].join('');
+        ].join(''),
+        _current_profile = APP.nostr.data.user.profile(),
+        _pub_k = _current_profile.pub_k;
 
         function reset_tab(tab_obj){
             tab_obj.maybe_more = false;
             tab_obj.c_off = 0;
             tab_obj.data = [];
+        }
+
+        function reset_selected_tab(){
+            let c_tab = _my_tabs.get_selected_index(),
+                tab_obj = _tab_objs[c_tab];
+
+            reset_tab(tab_obj);
+            tab_obj.load_func();
         }
 
         function load_profiles(){
@@ -57,8 +68,10 @@
             my_obj.loading = true;
             let load_str = _search_val;
             APP.nostr.data.profiles.search({
+                'use_pub_k': _pub_k,
                 'match': _search_val,
                 'limit': _chunk_size,
+                'include': _user.get(_pub_k+'.profile-search-include', 'everyone'),
                 'offset': my_obj.c_off,
                 on_load(data){
                     // old load
@@ -105,6 +118,8 @@
             my_obj.loading = true;
             let load_str = _search_val;
             APP.remote.load_channels({
+                'pub_k': _pub_k,
+                'include': _user.get(_pub_k+'.channel-search-include', 'anyone'),
                 'match': _search_val,
                 'limit': _chunk_size,
                 'offset': my_obj.c_off,
@@ -117,14 +132,10 @@
 
                     my_obj.data = my_obj.data.concat(data.channels);
                     if(my_obj.channels_list===undefined){
-                        try{
                         my_obj.channels_list = APP.nostr.gui.channel_list.create({
                             'con': my_obj.con,
                             'data' : my_obj.data
                         });
-                        }catch(e){
-                            console.log(e)
-                        }
                     }else{
                         if(my_obj.c_off===0){
                             my_obj.channels_list.set_data(my_obj.data);
@@ -183,7 +194,19 @@
             _my_tabs.get_tool_con().html(_tool_html);
             _filter_but = _('#filter_but');
             _filter_but.on('click', (e) => {
-                APP.nostr.gui.profile_search_filter_modal.show({});
+                let args = {
+                        on_change(){
+                            reset_selected_tab();
+                        }
+                    },
+                    c_tab = _my_tabs.get_selected_index();
+
+                if(c_tab===0){
+                    APP.nostr.gui.profile_search_filter_modal.show(args);
+                }else{
+                    APP.nostr.gui.channel_search_filter_modal.show(args);
+                }
+
             });
         }
 
@@ -196,11 +219,7 @@
                 _search_val = _search_in.val();
                 clearTimeout(_search_timer);
                 _search_timer = setTimeout(function(){
-                    let c_tab = _my_tabs.get_selected_index(),
-                        tab_obj = _tab_objs[c_tab];
-
-                    reset_tab(tab_obj);
-                    tab_obj.load_func();
+                    reset_selected_tab();
                 },200);
             });
 
