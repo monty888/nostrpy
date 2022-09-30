@@ -6,16 +6,16 @@ APP.nostr.gui = function(){
         // external_link
         _link_tmpl = '<a href="{{url}}">{{text}}</a>',
         // image types e.g. jpg, png
-        _img_tmpl = '<img src="{{url}}" width=100% height=auto style="display:block;border-radius:10px;" />',
+        _img_tmpl = '<img loading="lazy" src="{{url}}" width=100% height=auto style="display:block;border-radius:10px;" />',
         // where media not enabled this is the replacmenet for markdown images
         _md_img_tmpl = '![{{text}}]<a href="{{url}}">{{url}}</a> ',
         // video
-        _video_tmpl = '<video width=100% height=auto style="display:block" controls>' +
+        _video_tmpl = '<video loading="lazy" width=100% height=auto style="display:block" controls>' +
         '<source src="{{url}}" >' +
         'Your browser does not support the video tag.' +
         '</video>',
         // google just have to be cun***s
-        _youtube_tmpl = '<iframe width="100%" height=auto ' +
+        _youtube_tmpl = '<iframe loading="lazy" width="100%" height=auto ' +
             'src="{{url}}"' +
             'frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"' +
             ' allowfullscreen></iframe>',
@@ -886,8 +886,8 @@ APP.nostr.gui.list = function(){
             }
         }
 
-        function _prog_draw(){
-            _c_start = draw_chunk(_c_start, _c_end);
+        function _prog_draw(prepend){
+            _c_start = draw_chunk(_c_start, _c_end, prepend);
 
             if(!_last_block){
                 _c_end+=_chunk_size;
@@ -896,13 +896,15 @@ APP.nostr.gui.list = function(){
                     _last_block = true
                 }
 
-                _draw_timer = setTimeout(_prog_draw,CHUNK_DELAY);
+                _draw_timer = setTimeout(() =>{
+                    _prog_draw(prepend);
+                },CHUNK_DELAY);
             }else{
                 _drawing = false;
             }
         }
 
-        function draw_chunk(start,end){
+        function draw_chunk(start,end,prepend){
             let draw_arr = [],
                 r_obj,
                 pos;
@@ -918,7 +920,12 @@ APP.nostr.gui.list = function(){
             }
 //            console.log(draw_arr);
 //            _con.append(draw_arr.join(''));
-            _con.insertAdjacentHTML('beforeend',draw_arr.join(''));
+            if(prepend===true){
+                _con.insertAdjacentHTML('afterbegin',draw_arr.join(''));
+            }else{
+                _con.insertAdjacentHTML('beforeend',draw_arr.join(''));
+            }
+
             return pos;
         }
 
@@ -951,7 +958,22 @@ APP.nostr.gui.list = function(){
                 if(!_drawing){
                     _c_start = start_pos;
                     _c_end = _to_draw;
+                    _drawing = true;
                     _prog_draw();
+                }
+            },
+            'prepend_draw': function(end_pos){
+                // just incase.. we could track where we got to and continue after prepending?
+                if(_drawing){
+                    clearInterval(_draw_timer);
+                    set_draw_length();
+                    draw();
+                }else{
+                    set_draw_length();
+                    _c_start = 0;
+                    _c_end = end_pos;
+                    _drawing = true;
+                    _prog_draw(true);
                 }
             },
             'set_data' : function(data){
@@ -974,12 +996,9 @@ APP.nostr.gui.list = function(){
 
 APP.nostr.gui.event_view = function(){
         // short ref
-    let _gui = APP.nostr.gui,
-        _data = APP.nostr.data;
-
-    function _profile_clicked(pub_k){
-        location.href = '/html/profile?pub_k='+pub_k;
-    }
+    const _gui = APP.nostr.gui,
+        _data = APP.nostr.data,
+        _goto = APP.nostr.goto;
 
     function get_event_parent(evt){
         let parent = null,
@@ -1294,7 +1313,10 @@ APP.nostr.gui.event_view = function(){
                         if(type==='expand'){
                             _expand_event(evt);
                         }else if(type==='pt' || type==='pp'){
-                           _profile_clicked(evt.pubkey);
+                            if(evt.react_event){
+                                evt = evt.react_event;
+                            }
+                            _goto.view_profile(evt.pubkey);
                         }else if(_actions.has(type)){
                             do_action(type, event_id);
                         // anywhere else click to event, to change
@@ -1655,7 +1677,9 @@ APP.nostr.gui.profile_about = function(){
                     '</svg>',
                 '</span>',
             '{{/trail}}'
-        ].join('');
+        ].join(''),
+        _gui = APP.nostr.gui,
+        _goto = APP.nostr.goto;
 
     function create(args){
             // our container
@@ -1676,14 +1700,7 @@ APP.nostr.gui.profile_about = function(){
             _enable_media = APP.nostr.data.user.enable_media(),
             _show_follow_section = args.show_follows!=undefined ? args.show_follows : true,
             _current_profile = APP.nostr.data.user.profile(),
-            _render_obj,
-            _gui = APP.nostr.gui;
-
-        // called when one of our profiles either from follower or contact is clicked
-        function _profile_clicked(pub_k){
-            location.href = '/html/profile?pub_k='+pub_k;
-        }
-
+            _render_obj;
 
         function create_render_obj(){
             let attrs;
@@ -1804,7 +1821,7 @@ APP.nostr.gui.profile_about = function(){
                 })
 
                 _click_map[id] = {
-                    'func' : _profile_clicked,
+                    'func' : _goto.view_profile,
                     'data' : c_p.pub_k
                 };
             }
@@ -2342,220 +2359,6 @@ APP.nostr.gui.profile_edit = function(){
     }
 }();
 
-//APP.nostr.gui.profile_list = function (){
-//        // lib shortcut
-//    let _gui = APP.nostr.gui;
-//
-//    function create(args){
-//            // container for list
-//        let _con = args.con,
-//            // profiles passed into us
-//            _view_profiles = args.profiles || [],
-//            // inline media where we can, where false just the link is inserted
-//            _enable_media = APP.nostr.data.user.enable_media(),
-//            // data in arr to be rendered
-//            _render_arr,
-//            // above on pub_k
-//            _render_lookup,
-//            // so ids will be unique per this list
-//            _uid = APP.nostr.gui.uid(),
-//            // list obj that actually does the rendering
-//            _my_list,
-//            // template to render into
-//            _row_tmpl = APP.nostr.gui.templates.get('profile-list'),
-//            _current_profile = APP.nostr.data.user.profile();
-//
-//        // methods
-//        function init(){
-//            // prep the intial render obj
-//            create_render_data();
-//            _my_list = APP.nostr.gui.list.create({
-//                'con' : _con,
-//                'data' : _render_arr,
-//                'row_tmpl': _row_tmpl,
-//                'click' : function(id){
-//                    let click_data = get_click_info(id),
-//                        action = click_data.action,
-//                        pub_k = click_data.pub_k;
-//
-//                    if(action===undefined){
-//                        location.href = '/html/profile?pub_k='+pub_k;
-//                    }else if(action=='profile-edit'){
-//                        window.location='/html/edit_profile?pub_k='+pub_k;
-//                    }else if(action==='profile-switch'){
-//                        APP.nostr.data.user.profile({
-//                            'pub_k' : pub_k
-//                        });
-//                    }else if(action==='profile-dm'){
-//                        APP.nostr.gui.post_modal.show({
-//                            'kind' : 4,
-//                            'pub_k': pub_k
-//                        });
-//                    }else if(action==='profile-fol'){
-//                        APP.nostr.data.user.follow_toggle(pub_k, function(data){
-//                            // this is tmp but should be correct, it'll be overridden when we actually see
-//                            // the contacts event back from a relay
-//                            _current_profile = data.profile;
-//                            update_follow(pub_k);
-//                        });
-//                    }
-//                }
-//            });
-//            draw();
-//
-//            // happens when we get the update back from relay or if user is doing something in another window
-//            APP.nostr.data.event.add_listener('contacts_updated', function(of_type, data){
-//                let updates = [];
-//                // won't do anything for our own update as we should already be in sync
-//                if(data.contacts.join(':')!==_current_profile.contacts.join(':')){
-//
-//                    // any key not in BOTH arrs needs to be updated
-//                    updates = data.contacts.filter(function(pk){
-//                        return !_current_profile.contacts.includes(pk);
-//                    });
-//                    _current_profile.contacts.forEach(function(pk){
-//                        if(!data.contacts.includes(pk)){
-//                            updates.push(pk);
-//                        }
-//                    });
-//
-//                    _current_profile = APP.nostr.data.user.profile();
-//                    // actually render the updates
-//                    updates.forEach(function(pk){
-//                        update_follow(pk);
-//                    });
-//                }
-//            });
-//
-//        }
-//
-//        function update_follow(pub_k){
-//            let el = _('#'+_uid+'-'+pub_k+'-profile-fol'),
-//                follow = _current_profile.contacts.includes(pub_k),
-//                html = follow===true ? '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#star-fill"/>' :
-//                '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#star"/>';
-//
-//            // replace what is currently displayed
-//            el.html(html);
-//
-//            // replace if re-rendered
-//            if(_render_lookup[pub_k]!==undefined){
-//                _render_lookup[pub_k].follows = _current_profile.contacts.includes(pub_k);
-//            }
-//        }
-//
-//        function get_click_info(id){
-//                id = id.replace(_uid+'-','');
-//            let ret,
-//                pubk_eidx = id.indexOf('-');
-//            if(pubk_eidx>=0){
-//                ret = {
-//                    'pub_k' : id.substring(0,pubk_eidx),
-//                    'action' : id.substring(pubk_eidx+1)
-//                }
-//            }else{
-//                ret = {
-//                    'pub_k' : id
-//                };
-//            }
-//
-//            return ret;
-//        }
-//
-//        function draw(){
-//            _my_list.draw();
-//        };
-//
-//        /*
-//            fills data that'll be used with template to render
-//        */
-//        function create_render_data(){
-//            _render_arr = [];
-//            _render_lookup = {};
-//            append_render_data(_view_profiles);
-//        }
-//
-//        function append_render_data(data){
-//            let r_obj;
-//            data.forEach(function(p){
-//                r_obj = _create_render_profile(p);
-//                _render_lookup[p.pub_k] = r_obj;
-//                _render_arr.push(r_obj);
-//            });
-//        }
-//
-//        // create profile render obj to be put in _renderObj['profiles']
-//        function _create_render_profile(the_profile){
-//            let pub_k = the_profile.pub_k,
-//                render_profile = {
-//                    // required to make unique ids if page has more than one list showing same items on page
-//                    'uid' : _uid,
-//                    'pub_k' : pub_k,
-//                    'short_pub_k' : APP.nostr.util.short_key(pub_k),
-//                    'profile_name': the_profile.profile_name
-//                },
-//                attrs;
-//
-//            if(the_profile.attrs){
-//                attrs = the_profile['attrs'];
-//                render_profile['picture'] =attrs.picture;
-//                render_profile['name'] = attrs.name;
-//                render_profile['about'] = attrs.about;
-//                // be better to do this in our data class
-//                if(render_profile.about!==undefined && render_profile.about!==null){
-//                    render_profile.about = _gui.insert_links(render_profile.about);
-//                }
-//            }
-//
-//            if((render_profile.picture===undefined) ||
-//                (render_profile.picture===null) ||
-//                    (_enable_media===false)){
-//                render_profile.picture = APP.nostr.gui.robo_images.get_url({
-//                    'text': pub_k
-//                });
-//            }
-//
-//            if(_current_profile.pub_k!==undefined){
-//                render_profile.can_edit = the_profile.can_sign;
-//                render_profile.follows = _current_profile.contacts.includes(pub_k);
-//                if(_current_profile.pub_k!==the_profile.pub_k){
-//                    render_profile.other_profile = true;
-//                    render_profile.can_dm = true;
-//                    render_profile.can_switch = the_profile.can_sign;
-//                }
-//
-//            }
-//
-//            return render_profile;
-//        }
-//
-//        // prep and draw the list
-//        init();
-//
-//        return {
-//            'draw': draw,
-//            'set_data': function(data){
-//                _view_profiles = data;
-//                create_render_data();
-//                _my_list.set_data(_render_arr);
-//                _my_list.draw();
-//            },
-//            'add_data': function(data){
-//                _view_profiles = _view_profiles.concat(data);
-//                append_render_data(data);
-//                _my_list.append_draw(_view_profiles.length - data.length);
-//
-//            }
-//
-//
-//        }
-//    }
-//
-//    return {
-//        'create': create
-//    }
-//}();
-
 APP.nostr.gui.mapped_list = function (){
     /*
         wrap around gui.list that works with a mapping function for the data->data for render
@@ -2620,13 +2423,18 @@ APP.nostr.gui.mapped_list = function (){
             let r_obj;
             data.forEach(function(c){
                 r_obj = _create_render_obj(c, _src_data[_render_arr.length-1]);
-                if(_key!==undefined){
-                    _render_lookup[c[_key]] = r_obj;
-                }
-
                 _render_arr.push(r_obj);
             });
         }
+
+        function prepend_render_data(data){
+            let r_obj;
+            data.forEach(function(c){
+                r_obj = _create_render_obj(c, _src_data[_render_arr.length-1]);
+                _render_arr.unshift(r_obj);
+            });
+        }
+
 
         /*
             TODO - if we make a version of list that accepts the create_render_obj as a function
@@ -2635,6 +2443,12 @@ APP.nostr.gui.mapped_list = function (){
         function _create_render_obj(src_obj, pre_obj){
             _map_func(src_obj);
             let render_obj = _map_func(src_obj, pre_obj);
+            // look up by given key, we should probably give access to bot render_obj
+            // and scr_obj
+            if(_key!==undefined){
+                _render_lookup[src_obj[_key]] = render_obj;
+            }
+
             return render_obj;
         }
 
@@ -2642,6 +2456,9 @@ APP.nostr.gui.mapped_list = function (){
         init();
 
         return {
+            'data': function(){
+                return _my_list.data();
+            },
             'draw': draw,
             'lookup': function(id){
                 return _render_lookup[id];
@@ -2656,9 +2473,12 @@ APP.nostr.gui.mapped_list = function (){
                 _src_data = _src_data.concat(data);
                 append_render_data(data);
                 _my_list.append_draw(_src_data.length - data.length);
+            },
+            'prepend_data': function(data){
+                _src_data = data.concat(_src_data);
+                prepend_render_data(data);
+                _my_list.prepend_draw(data.length);
             }
-
-
         }
     }
 
@@ -2786,15 +2606,12 @@ APP.nostr.gui.channel_view_list = function(){
             });
         };
 
-        function goto_bottom(){
+        function goto_event(evt){
             /*   hacky pos to get to bottom of screen on first draw whci is a problem as
             * we draw in chunks downwards and also pictures will probably come in later
             * and make it so we're no longer at the bottom
             */
-            if(args.data.length<1){
-                return;
-            }
-            let el_id = '#'+uid+'-'+args.data[args.data.length-1].id,
+            let el_id = '#'+uid+'-'+evt.id,
                 scroll_int = setInterval(() => {
                 let el = _(el_id)[0];
                 if(el!==undefined){
@@ -2806,6 +2623,7 @@ APP.nostr.gui.channel_view_list = function(){
                     },200);
                 }
             },200);
+
         }
 
         args.map_func = args.map_func!==undefined ? args.map_func : (src_obj, pre_obj) => {
@@ -2866,7 +2684,21 @@ APP.nostr.gui.channel_view_list = function(){
 
         load_profiles(args.data);
         my_list = _gui.mapped_list.create(args);
-        goto_bottom();
+        // hacky way to go to last event
+        if(args.data.length>0){
+            goto_event(args.data[args.data.length-1]);
+        };
+
+
+        let o_prepend_data = my_list.prepend_data;
+        my_list.prepend_data = function(data){
+            let first_evt = my_list.data()[0];
+            load_profiles(data);
+            o_prepend_data(data);
+            //another hack, to keep first el in focus instead of being at 0
+            goto_event(first_evt);
+        };
+
         return my_list;
     }
 
@@ -2878,7 +2710,9 @@ APP.nostr.gui.channel_view_list = function(){
 
 APP.nostr.gui.profile_list = function(){
     let _util = APP.nostr.util,
-        _gui = APP.nostr.gui;
+        _gui = APP.nostr.gui,
+        _goto = APP.nostr.goto,
+        _user = APP.nostr.data.user;
 
     function create(args){
         let _uid = _gui.uid(),
@@ -2965,20 +2799,20 @@ APP.nostr.gui.profile_list = function(){
                 pub_k = click_data.pub_k;
 
             if(action===undefined){
-                location.href = '/html/profile?pub_k='+pub_k;
+                _goto.view_profile(pub_k);
             }else if(action=='profile-edit'){
                 window.location='/html/edit_profile?pub_k='+pub_k;
             }else if(action==='profile-switch'){
-                APP.nostr.data.user.profile({
+                _user.profile({
                     'pub_k' : pub_k
                 });
             }else if(action==='profile-dm'){
-                APP.nostr.gui.post_modal.show({
+                _gui.post_modal.show({
                     'kind' : 4,
                     'pub_k': pub_k
                 });
             }else if(action==='profile-fol'){
-                APP.nostr.data.user.follow_toggle(pub_k, function(data){
+                _user.follow_toggle(pub_k, function(data){
                     // this is tmp but should be correct, it'll be overridden when we actually see
                     // the contacts event back from a relay
                     _current_profile = data.profile;
@@ -3017,8 +2851,6 @@ APP.nostr.gui.profile_list = function(){
                 }
             });
 
-
-
         return _my_list;
     }
 
@@ -3039,8 +2871,8 @@ APP.nostr.gui.dm_list = function (){
     let _gui = APP.nostr.gui,
         _gui_util = _gui.util,
         _profiles = APP.nostr.data.profiles,
-        _nostr_event = APP.nostr.data.nostr_event;
-
+        _nostr_event = APP.nostr.data.nostr_event,
+        _goto = APP.nostr.goto;
 
     function create(args){
             // container for list
@@ -3134,10 +2966,10 @@ APP.nostr.gui.dm_list = function (){
 
             // goto the person we're msgings profile
             if(action==='pp' || action==='pt'){
-                window.location='/html/profile?pub_k='+to_pub_k;
+                _goto.view_profile(to_pub_k);
             // goto profile of whoever msged last, either us or same as above
             }else if(action==='lastpp'){
-                window.location='/html/profile?pub_k='+evt.pubkey;
+                _goto.view_profile(evt.pubkey);
             // all other cases go to message page for this profile
             }else{
                 window.location='/html/messages_profile?pub_k='+to_pub_k;
@@ -3641,6 +3473,8 @@ APP.nostr.gui.post_modal = function(){
 }();
 
 APP.nostr.gui.profile_select_modal = function(){
+    const _goto = APP.nostr.goto;
+
     let _uid = APP.nostr.gui.uid(),
         // short cut ot profiles helper
         _profiles_lookup,
@@ -3740,7 +3574,7 @@ APP.nostr.gui.profile_select_modal = function(){
                 }else if(cmd==='profile-edit'){
                     window.location='/html/edit_profile?pub_k='+pub_k;
                 }else if(cmd==='profile-view'){
-                    window.location='/html/profile?pub_k='+pub_k;
+                    _goto.view_profile(pub_k);
                 }
 
             }

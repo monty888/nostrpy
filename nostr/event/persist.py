@@ -177,6 +177,25 @@ class ClientEventStoreInterface(EventStoreInterface):
         order newest to oldest, one row per pub_k messaging the event_id, created_at is for the newest record we have
         """
 
+    @staticmethod
+    def clean_relay_names(relay_names: [str]) ->[str]:
+
+        def _do_clean(r_name: str):
+            ret = None
+            r_name = r_name.lower().lstrip()
+            if (r_name.startswith('wss://') or r_name.startswith('ws://')) \
+                    and 'localhost' not in r_name:
+                ret = r_name
+
+            return ret
+
+        ret = []
+        for c_r in relay_names:
+            name = _do_clean(c_r)
+            if name is not None:
+                ret.append(name)
+        return ret
+
     @abstractmethod
     def relay_list(self, pub_k: str = None) -> []:
         """
@@ -1103,50 +1122,49 @@ order by created_at desc
                                    args=[pub_k]*4)
 
     def relay_list(self, pub_k: str = None) -> []:
-        # https://stackoverflow.com/questions/18807276/how-to-make-my-postgresql-database-use-a-case-insensitive-collation
-        # this might work in postgres if we create the collation
-        # just used lower!
 
-        # all order by how many unique pub_k recommended
-        all_sql = """
-select lower(trim(trim(trim(content),X'09'),'/')) as relay
-from events where kind=2 
-group by relay
-order by count(pubkey) desc, relay  
-        """
+        def _get_query(pub_k=None):
+            args = []
+            sql_arr = [
+                """
+                select content as relay
+                    from events where kind=2
+                """
+            ]
+            if pub_k:
+                sql_arr.append("""
+                    and 
+                        pubkey in (
+                            select pub_k_contact from contacts where pub_k_owner=%s
+                        )
+                """)
+                args.append(pub_k)
+            sql_arr.append('group by relay order by count(pubkey) desc, relay')
 
-        # same but using recomendations of followers of pub_k
-        relative_pub_k_sql = """
-select lower(trim(trim(trim(content),X'09'),'/')) as relay
-from events where kind=2 and 
-pubkey in (
-	select pub_k_contact from contacts where pub_k_owner=%s
-)
-group by relay
-order by count(pubkey) desc, relay
-        """ % self._db.placeholder
+            return ''.join(sql_arr).replace('%s', self._db.placeholder), args
 
-        ret = []
+
         for_pub_k = None
 
         if pub_k:
-            data = self._db.select_sql(sql=relative_pub_k_sql,
-                                        args=[pub_k])
+            sql, args = _get_query(pub_k)
+            data = self._db.select_sql(sql=sql,
+                                       args=args)
             for_pub_k = [row['relay'] for row in data]
 
-        data = self._db.select_sql(sql=all_sql)
+        data = self._db.select_sql(sql=_get_query()[0])
         for_all = [row['relay'] for row in data]
 
         if for_pub_k:
-            ret = for_pub_k
+            relays = for_pub_k
             test_set = set(for_pub_k)
             for url in for_all:
                 if url not in test_set:
-                    ret.append(url)
+                    relays.append(url)
         else:
-            ret = for_all
+            relays = for_all
 
-        return ret
+        return self.clean_relay_names(relays)
 
     def reactions(self, pub_k: str=None, for_event_id: str=None, react_event_id: str=None, limit=None, until=None) -> DataSet:
         sql = """

@@ -116,7 +116,7 @@
             load_notes();
         });
 
-        _list_con.scrollBottom(function(e){
+        _list_con.scrolledBottom(function(e){
             if(!_maybe_more || _loading){
                 return;
             }

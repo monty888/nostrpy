@@ -183,7 +183,9 @@ def run_web(clients,
             event_store: ClientEventStoreInterface,
             profile_store: ProfileStoreInterface,
             channel_store: ChannelStoreInterface,
-            web_dir: str):
+            web_dir: str,
+            host: str = 'localhost',
+            port: int = 8080):
 
     # we'll persist events, not done automatically by nostrweb
     evt_persist = PersistEventHandler(event_store)
@@ -208,7 +210,8 @@ def run_web(clients,
             get_latest_event_filter(the_client, event_store, Event.KIND_CONTACT_LIST),
             get_latest_event_filter(the_client, event_store, Event.KIND_ENCRYPT),
             get_latest_event_filter(the_client, event_store, Event.KIND_CHANNEL_CREATE),
-            get_latest_event_filter(the_client, event_store, Event.KIND_CHANNEL_MESSAGE)
+            get_latest_event_filter(the_client, event_store, Event.KIND_CHANNEL_MESSAGE),
+            get_latest_event_filter(the_client, event_store, Event.KIND_RELAY_REC)
         ])
 
     my_peh = ProfileEventHandler(profile_store)
@@ -247,7 +250,7 @@ def run_web(clients,
     hook_signals()
 
     try:
-        my_server.start(host='192.168.0.14')
+        my_server.start(host=host, port=port)
     except OSError as oe:
         print(oe)
     finally:
@@ -263,6 +266,8 @@ def run():
     full_text = True
     is_tor = False
     web_dir = os.getcwd()
+    host = 'localhost'
+    port = 8080
 
     # who to attach to
     clients = [
@@ -280,7 +285,8 @@ def run():
 
 
     try:
-        opts, args = getopt.getopt(sys.argv[1:], 'ht', ['help', 'db-file=', 'tor'])
+        opts, args = getopt.getopt(sys.argv[1:], 'ht', ['help', 'db-file=', 'tor','host=','port='])
+
 
         # first pass
         for o, a in opts:
@@ -290,6 +296,14 @@ def run():
         for o, a in opts:
             if o in ('-t', '--tor'):
                 is_tor = True
+            if o == '--host':
+                host = a
+            if o == '--port':
+                try:
+                    port = int(a)
+                except ValueError as ve:
+                    print('port %s not a valid value' % a)
+                    sys.exit(2)
             if o == '--db-file':
                 db_file = a
                 if os.path.pathsep not in db_file:
@@ -325,156 +339,15 @@ def run():
                 event_store=event_store,
                 profile_store=profile_store,
                 channel_store=channel_store,
-                web_dir=web_dir)
+                web_dir=web_dir,
+                host=host,
+                port=port)
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
     run()
-    # import re
-    # def extract_tag(tag_prefix, text, with_pat=None):
-    #     if with_pat is None:
-    #         with_pat = '\\%s(\w*)' % tag_prefix
-    #
-    #
-    #     matches = re.findall(with_pat, text)
-    #     for c_match in matches:
-    #         text = text.replace(tag_prefix + c_match, '')
-    #
-    #     return matches, text
-    #
-    # print(extract_tag('$', 'test with #hashtag $test ok cool',
-    #                   with_pat='\$([\s\w]*)'))
+    # e_s = ClientSQLiteEventStore( WORK_DIR + 'delete-reactions.db')
+    # for r in e_s.relay_list():
+    #     print(r)
 
-    # my_str="👍"
-    # print(my_str.encode())
-
-    # with Client('wss://relay.damus.io') as c:
-    #     events = c.query(filters=[{
-    #                         'since': 0,
-    #                         'kinds': [Event.KIND_CHANNEL_MESSAGE, Event.KIND_CHANNEL_CREATE]
-    #                      }])
-    #
-    from nostr.channels.channel import Channel
-    from nostr.channels.persist import SQLiteSQLChannelStore
-    # c_evt: Event
-    # c_ch: Channel
-    # es = ClientSQLiteEventStore(WORK_DIR + 'reactions.db')
-    # events = es.get_filter(filter=[{
-    #     'since': 0,
-    #     'kinds': [Event.KIND_CHANNEL_CREATE]
-    # }])
-    #
-    # channels = [Channel.from_event(Event.from_JSON(c_evt)) for c_evt in events]
-    #
-    # channels = [c_ch for c_ch in channels if c_ch.name]
-    #
-    # for c_channel in channels:
-    #     print(c_channel)
-
-
-    channel_store = SQLiteSQLChannelStore(WORK_DIR + 'reactions.db')
-    # channel_store.put(channels)
-    # channel_store.create()
-    channels = channel_store.select()
-    channels = channels.matches(m_str='')
-
-    channels.sort()
-
-    for c_c in channels:
-        print(c_c)
-
-
-
-    # from nostr.client.event_handlers import EventHandler
-    # is_done = False
-    #
-    # class my_printer(EventHandler):
-    #
-    #     def do_event(self, sub_id, evt: Event, relay):
-    #         print(evt)
-    # my_handler = my_printer()
-    #
-    # def my_eose(the_client: Client, sub_id: str, events: []):
-    #     for c_evt in events:
-    #         my_handler.do_event(sub_id, c_evt, the_client)
-    #
-    # def my_stuff(the_client: Client):
-    #     print(the_client.relay_information)
-    #
-    #     the_client.subscribe(filters={
-    #         'since': util_funcs.date_as_ticks(datetime.now() - timedelta(days=100))
-    #     }, handlers=my_handler)
-    #
-    # from nostr.ident.profile import Profile
-    # def my_post_test(the_client:Client):
-    #     store = SQLiteProfileStore(WORK_DIR + 'nostr-client-test.db')
-    #
-    #     p: Profile = store.select_profiles({
-    #         'profile_name': 'squizal'
-    #     })[0]
-    #
-    #
-    #     e = Event(kind=10000,
-    #               content='this is a replaceable dude bad hombre 3rd!!!',
-    #               pub_key=p.public_key,
-    #               tags=[
-    #                   ['e','5294b71fd914015d07d9fe40ae9bbcd2393cd2a1175ddaa693f55d720fbcbea9']
-    #               ])
-    #     e.sign(p.private_key)
-    #     the_client.publish(e)
-    #
-    #     time.sleep(1)
-    #     # the_client.end()
-    #
-    #
-    # complete = False
-    # my_store = ClientMemoryEventStore()
-    # def my_eose(the_client: Client, sub_id: str, events):
-    #     global complete
-    #     my_store.add_event(events)
-    #     my_store.relay_list()
-    #     complete = True
-    #
-    # with Client('ws://localhost:8081', on_eose=my_eose) as c:
-    #     c.subscribe(filters={
-    #         'kinds': [Event.KIND_RELAY_REC]
-    #     },wait_connect=True)
-    #
-    #     while complete is False:
-    #         time.sleep(0.1)
-
-
-    # pub_k = '32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245'
-    # from nostr.encrypt import Keys
-    # print(Keys.bech32(pub_k))
-
-
-
-    #
-    # f = {
-    #     'ids': []
-    # }
-    # dms = e_store.direct_messages('40e162e0a8d139c9ef1d1bcba5265d1953be1381fb4acd227d8f3c391f9b9486')
-    # for c_dm in dms:
-    #     f['ids'].append(c_dm['event_id'])
-    #
-    # print(len(e_store.get_filter(f)))
-
-
-    #
-    # k1 = '32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245'
-    # k2 = '9ec7a778167afb1d30c4833de9322da0c08ba71a69e1911d5578d3144bb56437'
-    # p = p_store.select({
-    #     'pub_k': [k1, k2]
-    # })
-    # from nostr.ident.profile import ContactList
-    # p1 = p.lookup_pub_key(k1)
-    # c1 = ContactList(p1.load_contacts(p_store),owner_pub_k=p1.public_key)
-    # p2 = p.lookup_pub_key(k2)
-    # c2 = ContactList(p2.load_contacts(p_store), owner_pub_k=p2.public_key)
-    #
-    # print(len(c1))
-    # print(len(c2))
-    #
-    # print(len(c1.diff(c2)))
 

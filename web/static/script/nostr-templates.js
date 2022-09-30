@@ -318,7 +318,7 @@ APP.nostr.gui.templates = function(){
                                     // TODO: do something if unable to load pic
                                     '{{#render_ident}}',
                                         '{{#picture}}',
-                                            '<img id="{{uid}}-{{id}}-pp"  src="{{picture}}" loading="lazy" class="profile-pic-small""/>',
+                                            '<img id="{{uid}}-{{id}}-pp"  src="{{picture}}" loading="lazy" class="profile-pic-small"/>',
                                         '{{/picture}}',
                                     '{{/render_ident}}',
                                 '</span>',

@@ -439,7 +439,7 @@ APP.remote = function(){
             _add_field('offset', args);
             do_query(args);
         },
-        'load_events' : function(args){
+        load_events(args){
             let filter = args.filter===undefined ? APP.nostr.data.filter.create({'kinds':[1]}) : args.filter,
                 o_success = args.success;
 
@@ -447,12 +447,8 @@ APP.remote = function(){
             args['method'] = 'POST';
             // this should be pub_k of the profile were using and is only required
             // if decrypt is needed
-            args.params = {};
-            if(args.pub_k){
-                args.params.pub_k = args.pub_k;
-            }
-            args.params.limit = args.limit || 100;
-
+            _add_field('pub_k', args);
+            _add_field('limit', args);
             args['data'] = 'filter='+filter.as_str()
 
             args.success = function (data){
