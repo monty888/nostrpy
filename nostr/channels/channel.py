@@ -169,7 +169,7 @@ class ChannelList:
 
     def channel(self, channel_id):
         ret = None
-        if id in self._lookup:
+        if channel_id in self._lookup:
             ret = self._lookup[channel_id]
         return ret
 

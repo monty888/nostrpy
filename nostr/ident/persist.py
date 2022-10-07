@@ -723,9 +723,9 @@ class SQLProfileStore(ProfileStoreInterface):
 
     @property
     def newest(self):
-        ret = self._db.select_sql('select updated_at from profiles order by updated_at desc limit 1')[0]
+        ret = self._db.select_sql('select updated_at from profiles order by updated_at desc limit 1')
         if ret:
-            ret = ret[0]
+            ret = ret[0][0]
         else:
             ret = 0
         return ret

@@ -20,6 +20,25 @@ APP.nostr.gui.templates = function(){
                 '</div>',
             '</div>'
         ],
+        // above to go use flexbox style layouts
+        'screen-flex': [
+            '<div class="flex-screen">',
+                '<div class="flex-header" >',
+                    '<div id="header-con">',
+                    '</div>',
+                '</div>',
+                '<div class="flex-body" id="main-con" >',
+//                    '<div id="main-con" style="height" >',
+//                    '</div>',
+                '</div>',
+                '<div class="flex-footer" >',
+                    '<div style="width:100%" id="footer-con">',
+                    '</div>',
+                '</div>',
+            '</div>'
+        ],
+
+        // TODO - these are not screens i think but get rendered in main-con, rename to content-XXXX
         'screen-profiles-search' : [
             //the input
             '<div style="width:100%;overflow:hidden; height:40px;">',
@@ -33,6 +52,33 @@ APP.nostr.gui.templates = function(){
                 'loading...',
             '</div>',
             '<div class="profile-view-tab-pane" id="tab-pane"  >',
+            '</div>'
+        ],
+        'content-channel-view': [
+            // this sticky channel header info
+            '<div class="channel-info-header" id="channel-info">',
+            '</div>',
+            // channel messages
+            '<div id="channel-msgs" >',
+            '</div>'
+        ],
+        'channel-view-post-area': [
+            '<div class="input-group mb-2" id="user-input" >',
+                '<textarea style="width: calc(100% - 64px);" id="post-text" rows=1 placeholder="write a message"></textarea>',
+                '<button id="post-but" type="button" class="btn" aria-label="filter" >',
+                    '<svg class="nbi-btn">',
+                        '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#send-plus"/>',
+                    '</svg>',
+                '</button>',
+            '</div>'
+        ],
+        'floating-panel': [
+            '<div id="{{uid}}" style="display:{{display}};position:fixed;right:5px;bottom:64px;z-Index:100;" >',
+                '{{#buttons}}',
+                        '<svg id="{{uid}}-{{id}}" class="nbi-btn" style="background-color:#337ab7;border-radius:50%" >',
+                            '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#{{image}}"/>',
+                        '</svg>',
+                '{{/buttons}}',
             '</div>'
         ],
         // same as above, maybe will end up different or myabe this will be the template for basic search page
@@ -299,21 +345,44 @@ APP.nostr.gui.templates = function(){
                                     '</div>',
                                 '{{/about}}',
                                 '<br>',
-                                '<span id="{{uid}}-{{id}}-{{pub_k}}">',
-                                    'owner: ',
-                                    '{{#owner_picture}}',
-                                        '<img src="{{owner_picture}}" loading="lazy" class="profile-pic-verysmall""/>',
-                                    '{{/owner_picture}}',
-                                    '{{#owner_name}}',
-                                        '{{owner_name}}@',
-                                    '{{/owner_name}}',
-                                    '<span class="pubkey-text">{{short_pub_k}}</span>',
+                                '<span id="{{uid}}-{{id}}-{{owner_pub_k}}">',
+                                    '{{> owner_info}}',
                                 '</span>',
                             '</span>',
                         '</div>'
         ],
+        'channel-info-head': [
+            '<div class="msg-container">',
+                '{{#picture}}',
+                    '<img id="channel-info-pp"  src="{{picture}}" loading="lazy" class="profile-pic-small"/>',
+                '{{/picture}}',
+                '<p>',
+                    '{{#name}}',
+                        '{{name}}@',
+                    '{{/name}}',
+                    '<span class="pubkey-text">{{short_key}}</span>',
+                    '<span>',
+                        '{{#about}}',
+                            '<br>{{about}}',
+                        '{{/about}}',
+                    '</span>',
+                    '<br>',
+                    '{{> owner_info}}',
+                '</p>',
+            '</div>'
+        ],
+        'channel-owner-info': [
+            'owner: ',
+            '{{#owner_picture}}',
+                '<img src="{{owner_picture}}" loading="lazy" class="profile-pic-verysmall""/>',
+            '{{/owner_picture}}',
+            '{{#owner_name}}',
+                '{{owner_name}}@',
+            '{{/owner_name}}',
+            '<span class="pubkey-text">{{short_owner_pub_k}}</span>'
+        ],
         'msg-list' : [  '{{#render_msg}}',
-                            '<div class="msg-container" id="{{uid}}-{{id}}" style="padding-top:2px;cursor:pointer;" >',
+                            '<div class="{{container_class}}" id="{{uid}}-{{id}}" style="padding-top:2px;cursor:pointer;" >',
                                 '<span class="msg-picture {{picture-selected}}" >',
                                     // TODO: do something if unable to load pic
                                     '{{#render_ident}}',
@@ -322,7 +391,7 @@ APP.nostr.gui.templates = function(){
                                         '{{/picture}}',
                                     '{{/render_ident}}',
                                 '</span>',
-                                '<span class="msg-content" >',
+                                '<span class="{{content_class}}" >',
                                     '{{#render_ident}}',
                                         '<div id="{{uid}}-{{id}}-pt">',
                                             '{{#name}}',

@@ -1,5 +1,6 @@
 html {
     height:100vh;
+    min-height: 100vh;
 }
 body {
     height:100vh;
@@ -10,7 +11,27 @@ body {
     font-size: 16px;
 }
 
+.flex-screen{
+    flex-direction: column;
+    display: flex;
+    min-height: 100vh;
+    max-height: 100vh;
+}
+
+.flex-header{
+}
+.flex-body{
+    flex: 1 auto;
+    max-height:100%;
+    overflow-y: auto;
+}
+.flex-footer{
+}
+
 .header-row{
+    position: sticky;
+    top: 0px;
+    background-color:  black;
     height :64px;
 }
 
@@ -131,6 +152,12 @@ img{
     fill: currentColor;
 }
 
+.nbi-btn-large{
+    width: 64px;
+    height: 64px;
+    fill: currentColor;
+}
+
 .nbi-post{
     width: 100%;
     height: 100%;
@@ -218,20 +245,50 @@ img{
     background-color : #221124;
 }
 
+.channel-info-header {
+    position: sticky;
+    top: 0px;
+    max-height:75px;
+    width: 100%;
+    background-color:  #221124;
+    overflow: hidden;
+    white-space: nowrap;
+}
 
-.msg-container {
+.msg-container, .msg-container-own {
   display: flex;
   flex-direction: row;
+}
+
+.msg-container-own {
+  justify-content: end;
+}
+
+.msg-content, .msg-content-own {
+  flex: auto;
+  background-color : #221124;
+  border-radius: 10px;
+  word-wrap: break-word;
+  max-width: 80%;
+}
+
+.msg-content-own {
+    background-color: #554457;
 }
 
 .msg-picture {
   min-width:96px;
 }
 
-.msg-content {
-  flex: auto;
-  background-color : #221124;
-  border-radius: 10px;
+#channel-msgs{
+    display: flex;
+    flex-flow: column;
+}
+
+.msg-enter {
+    position: sticky;
+    bottom:0;
+    width:100%;
 }
 
 .profile-picture-area-selected{
@@ -326,7 +383,9 @@ img{
     }
 
     .main-row{
+        padding-top:32px;
         height: calc(100% - 32px);
+        max-height: calc(100% - 32px);
     }
 
     .profile-view-about-pane{

@@ -345,9 +345,9 @@ APP.nostr.gui.tag_text_replacement = function(){
     */
     let _preregex = {},
         _replacements = {
-            'hashtag': {
+            't': {
                 'get_match': function(val){
-                    return get_regex('#'+val+'($|\\s)');
+                    return get_regex('#'+val+'(\\b)');
                 },
                 'get_replacement': function(val){
                     return '<a href="/html/event_search.html?search_str=%23'+ val +'" style="color:cyan;cursor:pointer;text-decoration: none;">#'+ val +'</a>'
@@ -621,9 +621,76 @@ APP.nostr.gui.post_button = function(){
 
         }
     }
-
     return {
         'create' : create
+    }
+}();
+
+APP.nostr.gui.floating_panel = function(){
+    const _gui = APP.nostr.gui;
+
+    function create(args){
+        let uid = _gui.uid(),
+            tmpl = _gui.templates.get('floating-panel'),
+            click_map = {},
+            buttons = create_buttons(args.buttons),
+            is_showing = args.is_showing,
+            my_con;
+
+        function init(){
+            _(document.body).insertAdjacentHTML('afterbegin', Mustache.render(tmpl,{
+                'display': is_showing ? 'block' : 'none',
+                'uid': uid,
+                'buttons': buttons
+            }));
+            my_con = _('#'+uid);
+
+            my_con.on('click', (e) =>{
+                let id = _gui.get_clicked_id(e).replace(uid+'-', ''),
+                    click_func = click_map[id];
+                if(typeof(click_func)==='function'){
+                    click_func();
+                }
+            });
+
+        }
+
+        function create_buttons(btn_args){
+            let ret = [];
+            if(btn_args!==undefined){
+                btn_args.forEach((args,i) => {
+                    let id = _gui.uid(),
+                        to_add = {
+                            'id': id
+                        };
+                    to_add.image = args.image;
+                    click_map[id] = args.click;
+                    ret.push(to_add);
+                });
+            };
+            return ret;
+        }
+
+        function show(){
+            is_showing = true;
+            my_con.css('display','block');
+        }
+
+        function hide(){
+            is_showing = false;
+            my_con.css('display','none');
+        }
+
+        init();
+
+        return {
+            'show': show,
+            'hide': hide
+        }
+    }
+
+    return {
+        'create': create
     }
 }();
 
@@ -2389,8 +2456,10 @@ APP.nostr.gui.mapped_list = function (){
             _map_func = args.map_func,
             // key that can be used fo look ups - allow multi?
             _key = args.key,
-            // either this or row_render func not yet implemented
-            _row_tmpl = args.template;
+            // either this or row_render
+            _row_tmpl = args.template,
+            _row_render = args.row_render;
+
 
         // methods
         function init(){
@@ -2399,6 +2468,7 @@ APP.nostr.gui.mapped_list = function (){
             _my_list = APP.nostr.gui.list.create({
                 'con' : _con,
                 'data' : _render_arr,
+                'row_render': _row_render,
                 'row_tmpl': _row_tmpl,
                 'click': args.click
             });
@@ -2421,7 +2491,7 @@ APP.nostr.gui.mapped_list = function (){
 
         function append_render_data(data){
             let r_obj;
-            data.forEach(function(c){
+            data.forEach((c) => {
                 r_obj = _create_render_obj(c, _src_data[_render_arr.length-1]);
                 _render_arr.push(r_obj);
             });
@@ -2429,8 +2499,12 @@ APP.nostr.gui.mapped_list = function (){
 
         function prepend_render_data(data){
             let r_obj;
-            data.forEach(function(c){
-                r_obj = _create_render_obj(c, _src_data[_render_arr.length-1]);
+            data.forEach((c,i) => {
+                let p;
+                if(i>0){
+                    p = data[i-1];
+                }
+                r_obj = _create_render_obj(c, p);
                 _render_arr.unshift(r_obj);
             });
         }
@@ -2441,7 +2515,6 @@ APP.nostr.gui.mapped_list = function (){
                 we can probably reduce down a lot of the list code
         */
         function _create_render_obj(src_obj, pre_obj){
-            _map_func(src_obj);
             let render_obj = _map_func(src_obj, pre_obj);
             // look up by given key, we should probably give access to bot render_obj
             // and scr_obj
@@ -2490,15 +2563,17 @@ APP.nostr.gui.mapped_list = function (){
 APP.nostr.gui.channel_list = function(){
     let _util = APP.nostr.util,
         _gui = APP.nostr.gui,
-        _profiles = APP.nostr.data.profiles,
-        _goto = APP.nostr.goto;
+        _goto = APP.nostr.goto,
+        _profiles = APP.nostr.data.profiles;
 
     function create(args){
         let uid = _gui.uid(),
             my_list,
             profiles_loading,
             draw_required,
-            enable_media = APP.nostr.data.user.enable_media();
+            enable_media = APP.nostr.data.user.enable_media(),
+            row_tmpl = _gui.templates.get('channel-list'),
+            owner_tmpl = _gui.templates.get('channel-owner-info');
 
         function load_profiles(channels){
             profiles_loading = true;
@@ -2530,8 +2605,8 @@ APP.nostr.gui.channel_list = function(){
                     'name': channel.name,
                     'picture': channel.picture,
                     'about': channel.about,
-                    'pub_k': channel.create_pub_k,
-                    'short_pub_k': _util.short_key(channel.create_pub_k)
+                    'owner_pub_k': channel.create_pub_k,
+                    'short_owner_pub_k': _util.short_key(channel.create_pub_k)
                 };
 
             // plug in owner profile info if we have it
@@ -2543,7 +2618,12 @@ APP.nostr.gui.channel_list = function(){
             return render_channel;
         };
 
-        args.template = args.template!==undefined ? args.template : _gui.templates.get('channel-list');
+        args.row_render = (r_obj, i)=>{
+            return Mustache.render(row_tmpl, r_obj, {
+                'owner_info' : owner_tmpl
+            });
+        };
+
         args.click = args.click!==undefined ? args.click : (id) => {
             let splits = id.split('-');
             if(splits.length===3){
@@ -2564,6 +2644,7 @@ APP.nostr.gui.channel_list = function(){
             load_profiles(data);
             o_add_data(data);
         };
+
         return my_list;
     }
 
@@ -2577,6 +2658,8 @@ APP.nostr.gui.channel_view_list = function(){
     let _util = APP.nostr.util,
         _gui = APP.nostr.gui,
         _profiles = APP.nostr.data.profiles,
+        _data = APP.nostr.data,
+        _user = _data.user,
         _goto = APP.nostr.goto;
 
     function create(args){
@@ -2585,7 +2668,25 @@ APP.nostr.gui.channel_view_list = function(){
             uid = _gui.uid(),
             profiles_loading,
             draw_required,
-            enable_media = APP.nostr.data.user.enable_media();
+            enable_media = _user.enable_media(),
+            current_profile = _user.profile(),
+            filter = args.filter,
+            focus_el = args.focus_el,
+            panel = _gui.floating_panel.create({
+                'is_showing': false,
+                'buttons' : [{
+                    'image': 'arrow-down',
+                    click(){
+                        let last_evt = my_list.data().at(-1);
+                        goto_event(last_evt);
+                        panel.hide();
+                        if(focus_el!==undefined){
+                            focus_el.focus();
+                        }
+
+                    }
+                }]
+            });
 
         function load_profiles(msgs){
             profiles_loading = true;
@@ -2623,7 +2724,37 @@ APP.nostr.gui.channel_view_list = function(){
                     },200);
                 }
             },200);
+        };
 
+        function is_own_event(evt){
+            return current_profile!==undefined && current_profile.pub_k=== evt.pubkey;
+        }
+
+        function is_scroll_max(){
+            let el = my_con[0].parentElement,
+                max_y = el.scrollHeight,
+                // ceil fix for brave on mobile..
+                c_y = Math.ceil(el.scrollTop+el.offsetHeight);
+                return max_y <= c_y;
+        }
+
+        function on_event(evt){
+            // event in this channel?
+            if(filter.test(evt)){
+                let data = [evt];
+                load_profiles(data);
+                my_list.add_data(data);
+                // either scroll to or put up new button that will scroll to bottom
+                if(evt.pubkey===current_profile.pub_k){
+                    goto_event(evt);
+                    panel.hide();
+                }else{
+                    if(!is_scroll_max()){
+                        panel.show();
+                    }
+                }
+
+            }
         }
 
         args.map_func = args.map_func!==undefined ? args.map_func : (src_obj, pre_obj) => {
@@ -2634,12 +2765,20 @@ APP.nostr.gui.channel_view_list = function(){
                     'pub_k': src_obj.pubkey,
                     'content': _gui.get_note_content_for_render(src_obj, true).content,
                     render_msg(){
-                        let r_text = src_obj.content.replace(/\s/g,'');
-                        return r_text.length>0;
+                          return true;
+//                        let r_text = src_obj.content.replace(/\s/g,'');
+//                        return r_text.length>0;
                     },
                     render_ident(){
-                        return pre_obj===undefined || pre_obj.pubkey!==src_obj.pubkey;
+                        return (pre_obj===undefined || pre_obj.pubkey!==src_obj.pubkey) && !(is_own_event(src_obj));
+                    },
+                    container_class(){
+                        return is_own_event(src_obj)? 'msg-container-own' : 'msg-container';
+                    },
+                    content_class(){
+                        return is_own_event(src_obj)? 'msg-content-own' : 'msg-content';
                     }
+
                 },
                 p = _profiles.lookup(src_obj.pubkey);
 
@@ -2698,6 +2837,17 @@ APP.nostr.gui.channel_view_list = function(){
             //another hack, to keep first el in focus instead of being at 0
             goto_event(first_evt);
         };
+
+        // add event that looks for new msgs in this channel
+        _data.event.add_listener('event', (type, evt) =>{
+            on_event(evt)
+        });
+
+        // remove scroll down arrow if showing when reach end of msgs
+        _(my_con[0].parentElement).scrolledBottom(() => {
+            panel.hide();
+        });
+
 
         return my_list;
     }
@@ -3409,7 +3559,7 @@ APP.nostr.gui.post_modal = function(){
                             // fixes the matches we got... theres probably a better group based way to do this
                             // but this is simple
                             hash_tags.forEach(function(c_tag){
-                                n_tags.push(['hashtag',c_tag.substring(c_tag.indexOf('#')+1)]);
+                                n_tags.push(['t',c_tag.substring(c_tag.indexOf('#')+1)]);
                             });
                         }
 

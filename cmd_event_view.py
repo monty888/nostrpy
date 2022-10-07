@@ -9,10 +9,11 @@ from datetime import datetime, timedelta
 import getopt
 from db.db import SQLiteDatabase
 from nostr.ident.profile import Profile, ProfileList, Contact
+from nostr.ident.event_handlers import ProfileEventHandler
 from nostr.ident.persist import SQLProfileStore, MemoryProfileStore, ProfileStoreInterface
 from nostr.client.client import ClientPool, Client
 from nostr.event.persist import ClientSQLEventStore, ClientSQLiteEventStore, ClientMemoryEventStore, ClientEventStoreInterface
-from nostr.client.event_handlers import PrintEventHandler, PersistEventHandler, EventAccepter, DeduplicateAcceptor, LengthAcceptor, ProfileEventHandler
+from nostr.client.event_handlers import PrintEventHandler, PersistEventHandler, EventAccepter, DeduplicateAcceptor, LengthAcceptor
 from nostr.util import util_funcs
 from nostr.event.event import Event
 from nostr.encrypt import Keys

@@ -245,7 +245,8 @@ class NostrWeb(StaticServer):
         self._app.route('/link_profile', method='POST', callback=_get_err_wrapped(self._link_profile))
         self._app.route('/update_follows',  callback=_get_err_wrapped(self._do_contact_update))
 
-        self._app.route('/channels', method=['POST', 'GET'], callback=_get_err_wrapped(self._channels_list))
+        self._app.route('/channel_for_id', method=['GET'], callback=_get_err_wrapped(self._get_channel_route))
+        self._app.route('/channel_matches', method=['POST', 'GET'], callback=_get_err_wrapped(self._channels_list_route))
 
         # self._app.route('/set_profile', method='POST', callback=_get_err_wrapped(self._set_profile))
         # self._app.route('/current_profile', callback=_get_err_wrapped(self._get_profile))
@@ -560,7 +561,26 @@ class NostrWeb(StaticServer):
                                                       max_match=None,
                                                       search_about=True)
 
-    def _channels_list(self):
+    def _get_channel_route(self):
+        """
+        get a single channel via its id
+        :return:
+        """
+        channel_id = request.query.id
+        if not channel_id:
+            raise NostrWebException('id is required')
+
+        self._check_key(channel_id, 'id')
+        print(channel_id)
+        the_channel = self._channel_handler.channels.channel(channel_id)
+        # similar to profiles not having hte channel info doesn't mean there might not be messages for a given
+        # channel key
+        if the_channel is None:
+            raise NostrWebException('channel info not found')
+
+        return the_channel.as_dict()
+
+    def _channels_list_route(self):
         limit = self._get_query_limit()
         offset = self._get_query_offset()
         pub_k = request.query.pub_k
@@ -568,6 +588,9 @@ class NostrWeb(StaticServer):
         use_profile: Profile
         channels = []
         c_c: Channel
+
+
+
         # match style
         for c_m in match.split(','):
             channels = channels + self._get_channel_matches(c_m, self.get_ttl_hash(60))
@@ -1167,7 +1190,7 @@ class NostrWeb(StaticServer):
             # event id
             ids_pres, search_str = extract_tag('&', search_str)
             if ids_pres:
-                if not filter['ids']:
+                if 'ids' not in filter:
                     filter['ids'] = ids_pres
                 # where pow and & then the pow is added before user given prefix
                 else:

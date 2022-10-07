@@ -18,7 +18,9 @@ APP.remote = function(){
         _export_profile_url = '/export_profile',
         _link_profile_url = '/link_profile',
         _set_profile_url = '/set_profile',
-        _all_channels_url = '/channels',
+        _all_channels_url = '/channel_matches',
+        _channel_for_id = '/channel_for_id',
+
 //        _current_profile_url = '/current_profile',
         // details on a single profile
         _profile_url = '/profile',
@@ -429,6 +431,7 @@ APP.remote = function(){
             };
             do_query(args);
         },
+        // search for channels
         load_channels(args){
             args['url'] = _all_channels_url;
             args['params'] = {};
@@ -437,6 +440,14 @@ APP.remote = function(){
             _add_field('match', args);
             _add_field('limit', args);
             _add_field('offset', args);
+            do_query(args);
+        },
+        // get a single channels info
+        load_channel(args){
+            args.url = _channel_for_id;
+            args.params = {
+                'id': args.id
+            };
             do_query(args);
         },
         load_events(args){

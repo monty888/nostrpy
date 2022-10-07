@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from nostr.event.event import Event
 from app.post import PostApp
 from nostr.ident.profile import ProfileList, Profile
-from nostr.client.event_handlers import ProfileEventHandler
+from nostr.ident.event_handlers import ProfileEventHandler
 from prompt_toolkit import print_formatted_text
 from prompt_toolkit.formatted_text import FormattedText
 
