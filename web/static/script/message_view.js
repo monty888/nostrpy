@@ -84,6 +84,7 @@
 
         // start client for future notes....
         APP.nostr_client.create();
+        APP.nostr.gui.pack();
 
     });
 }();

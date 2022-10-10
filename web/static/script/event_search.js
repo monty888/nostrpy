@@ -155,6 +155,7 @@
 
         // for relay updates, note this screen is testing events as they come in
         APP.nostr_client.create();
+        APP.nostr.gui.pack();
 
 
     });

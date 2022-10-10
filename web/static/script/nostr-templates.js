@@ -6,17 +6,15 @@ APP.nostr.gui.templates = function(){
         // basic template for screen we use
         'screen' : [
             '<div class="row header-row" >',
-                '<div class="col-sm-12" style="height:100%;">',
-                    '<div id="header-con" style="height:100%">',
-                    '</div>',
+                '<div class="col-sm-12" style="height:100%;" id="header-con">',
                 '</div>',
             '</div>',
             '<div class="row main-row" >',
-                '<div class="col-sm-12" style="height:100%;">',
-                    '<div style="height:100%;">',
-                        '<div id="main-con" style="height:100%;" >',
-                        '</div>',
-                    '</div>',
+                '<div class="col-sm-12" style="height:100%;" id="main-con">',
+                '</div>',
+            '</div>',
+            '<div class="row footer-row" >',
+                '<div class="col-sm-12" style="height:100%;" id="footer-con">',
                 '</div>',
             '</div>'
         ],
@@ -52,14 +50,6 @@ APP.nostr.gui.templates = function(){
                 'loading...',
             '</div>',
             '<div class="profile-view-tab-pane" id="tab-pane"  >',
-            '</div>'
-        ],
-        'content-channel-view': [
-            // this sticky channel header info
-            '<div class="channel-info-header" id="channel-info">',
-            '</div>',
-            // channel messages
-            '<div id="channel-msgs" >',
             '</div>'
         ],
         'channel-view-post-area': [

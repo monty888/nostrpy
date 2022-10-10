@@ -262,7 +262,16 @@ APP.nostr.gui = function(){
         'media_lookup' : media_lookup,
         'insert_links': insert_links,
         'notification' : notification,
-        'get_note_content_for_render' : get_note_content_for_render
+        'get_note_content_for_render' : get_note_content_for_render,
+        /* fits main body will calc its size based minus footer and header */
+        pack(){
+            let footer = _('#footer-con'),
+                header = _('#header-con'),
+                main = _(_('#main-con')[0].parentElement),
+                used_space = footer[0].parentElement.offsetHeight+header[0].parentElement.offsetHeight;
+            main.css('height', 'calc(100% - '+used_space+'px)');
+        }
+
     }
 
 }();

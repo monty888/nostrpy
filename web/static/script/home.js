@@ -230,6 +230,12 @@
 
         render_screen();
         APP.nostr_client.create();
+        try{
+            APP.nostr.gui.pack();
+        }catch(e){
+            console.log(e);
+        }
+
 
     });
 

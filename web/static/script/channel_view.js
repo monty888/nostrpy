@@ -8,7 +8,8 @@
     const _user = APP.nostr.data.user,
         _util = APP.nostr.util,
         _filter = APP.nostr.data.filter,
-        _templates = APP.nostr.gui.templates,
+        _gui = APP.nostr.gui,
+        _templates = _gui.templates,
         _remote = APP.remote,
         _profiles = APP.nostr.data.profiles;
         // websocket to recieve event updates
@@ -44,7 +45,7 @@
             'id': _channel_id,
             success(data){
                 if(data.error!==undefined){
-                    _header_con.html('Error getting channel data: '+data.error);
+                    _header_con.insertAdjacentHTML('beforeend', 'Error getting channel data: '+data.error);
                 }else{
                     data.short_key = data.id;
                     data.short_owner_pub_k = data.create_pub_k;
@@ -56,10 +57,10 @@
                                 data.owner_picture = owner_p.attrs.picture;
                                 data.owner_name = owner_p.attrs.name;
                             }
-
-                            _header_con.html(Mustache.render(_templates.get('channel-info-head'),data,{
+                            _header_con.insertAdjacentHTML('beforeend',Mustache.render(_templates.get('channel-info-head'),data,{
                                 'owner_info': _templates.get('channel-owner-info')
                             }));
+                            _gui.pack();
                         }
                     });
                 }
@@ -94,7 +95,7 @@
                     if(_my_list===undefined){
                         draw_channel_head();
                         _my_list = APP.nostr.gui.channel_view_list.create({
-                            'con': _msg_con,
+                            'con': _main_con,
                             'data': sorted_data,
                             'filter': _my_filter,
                             'focus_el': _post_txt
@@ -117,16 +118,17 @@
 
     // make main screen scafold
     function construct_scr(){
-        _('#main_container').html(_templates.get('screen-flex'));
+        _('#main_container').html(_templates.get('screen'));
         APP.nostr.gui.header.create();
 //        // main container where we'll draw out the events
         _main_con = _('#main-con');
-        _main_con.html(_templates.get('content-channel-view'));
-//        _main_con.css('overflowY','auto');
+        _main_con.css('overflowY','auto');
+        _main_con.css('max-height', '200px;')
 //        // grab render areas
-        _header_con = _('#channel-info');
-        _msg_con = _('#channel-msgs');
-        _msg_con.css('overflowY','auto');
+//        _header_con = _('#channel-info');
+        _header_con = _('#header-con');
+
+//        _msg_con.css('overflowY','auto');
 //
         _footer_con = _('#footer-con');
         if(_current_profile.pub_k!==undefined){

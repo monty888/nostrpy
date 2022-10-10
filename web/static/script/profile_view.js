@@ -283,6 +283,7 @@
         // for relay updates, note this screen is testing events as they come in
         APP.nostr.gui.post_button.create();
         APP.nostr_client.create();
+        APP.nostr.gui.pack();
 
     });
 }();

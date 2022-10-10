@@ -105,6 +105,7 @@
 
 
         APP.nostr_client.create();
+        APP.nostr.gui.pack();
 
     });
 }();
