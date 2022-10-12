@@ -90,6 +90,9 @@ class util_funcs:
             my_profiles.create()
             my_channels = SQLiteSQLChannelStore(db_file)
             my_channels.create()
+            db = SQLiteDatabase(db_file)
+            # should perform better for us i think, esp on backfill
+            db.execute_sql('PRAGMA journal_mode = WAL;')
 
         return SQLiteDatabase(db_file)
 

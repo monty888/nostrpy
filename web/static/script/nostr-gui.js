@@ -2773,6 +2773,7 @@ APP.nostr.gui.channel_view_list = function(){
                     'short_key': _util.short_key(src_obj.pubkey),
                     'pub_k': src_obj.pubkey,
                     'content': _gui.get_note_content_for_render(src_obj, true).content,
+                    'at_time':  dayjs.unix(src_obj.created_at).fromNow(),
                     render_msg(){
                           return true;
 //                        let r_text = src_obj.content.replace(/\s/g,'');
