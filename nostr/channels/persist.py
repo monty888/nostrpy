@@ -82,8 +82,8 @@ class SQLiteSQLChannelStore(ChannelStoreInterface):
             c.event_id,
             json.dumps(c.attrs),
             c.name, c.picture, c.about, c.create_pub_k,
-            util_funcs.date_as_ticks(c.created_at),
-            util_funcs.date_as_ticks(c.updated_at)
+            c.created_at,
+            c.updated_at
         ]
 
         batch.append({

@@ -271,7 +271,7 @@ img{
   justify-content: end;
 }
 
-.msg-content, .msg-content-own {
+.msg-content, .msg-content-own{
   flex: auto;
   background-color : #221124;
   border-radius: 10px;
@@ -282,6 +282,19 @@ img{
 .msg-content-own {
     background-color: #554457;
 }
+
+.msg-reply {
+    /*background-color: #776679;*/
+    padding-left:10px;
+    margin-left: 10px;
+    border-left: 2px solid cyan;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 90%;
+    display: inline-block;
+    white-space: nowrap;
+}
+
 
 .msg-picture {
     min-width: 64px;

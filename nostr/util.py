@@ -122,6 +122,9 @@ class util_funcs:
 
                 else:
                     is_done = True
+                    print('shit needs fixing!!!!')
+                    print(de)
+                    sys.exit(0)
 
 
 

@@ -27,7 +27,7 @@ from gevent.pywsgi import WSGIServer
 from geventwebsocket import WebSocketError
 from geventwebsocket.websocket import WebSocket
 from geventwebsocket.handler import WebSocketHandler
-from nostr.event.event import Event
+from nostr.event.event import Event, EventTags
 from nostr.ident.profile import ProfileList, Profile, Contact, ContactList, ValidatedProfile
 from nostr.ident.persist import SQLiteProfileStore, ProfileType
 from nostr.event.persist import ClientEventStoreInterface, SQLiteEventStore
@@ -571,7 +571,6 @@ class NostrWeb(StaticServer):
             raise NostrWebException('id is required')
 
         self._check_key(channel_id, 'id')
-        print(channel_id)
         the_channel = self._channel_handler.channels.channel(channel_id)
         # similar to profiles not having hte channel info doesn't mean there might not be messages for a given
         # channel key
@@ -588,8 +587,6 @@ class NostrWeb(StaticServer):
         use_profile: Profile
         channels = []
         c_c: Channel
-
-
 
         # match style
         for c_m in match.split(','):
@@ -936,7 +933,9 @@ class NostrWeb(StaticServer):
         return ret
 
     def _get_events(self, filter, use_profile: Profile = None,
-                    embed_reactions=True, add_reactions_flag=True):
+                    embed_reactions=True,
+                    add_reactions_flag=True,
+                    embed_replies=False):
         c_evt: Event
         events = self._event_store.get_filter(filter)
 
@@ -946,6 +945,8 @@ class NostrWeb(StaticServer):
         # for reaction events to be useful you'll probbaly want to embed the event that is being reacted to
         if embed_reactions:
             self._add_reaction_events(events)
+        if embed_replies:
+            self._add_reply_events(events)
 
         return [self._serialise_event(c_evt, use_profile) for c_evt in events]
 
@@ -1016,6 +1017,33 @@ class NostrWeb(StaticServer):
 
         return evts
 
+    def _add_reply_events(self, evts:[], offset=1, max_reply=1):
+        """
+        add reply_events []
+        :param evts:
+        :return:
+        """
+        # evts that have been replied too
+        reply_events = [evt for evt in evts if len(EventTags(evt['tags']).e_tags) > offset]
+
+        # create lookup of events we have
+        evts_lookup = {evt['id']: evt for evt in evts}
+
+        # embed reply events if we already have them and not missing ids for store q
+        for c_evt in reply_events:
+            c_evt['reply_events'] = []
+            for r_evt_id in EventTags(c_evt['tags']).e_tags[offset:offset+max_reply]:
+                if r_evt_id in evts_lookup:
+                    c_evt['reply_events'].append(evts_lookup[r_evt_id])
+                else:
+                    c_evt['reply_events'].append({
+                        'content': 'missing event, todo add sql query!!!!!'
+                    })
+
+
+
+        return evts
+
     def _get_for_pub_keys(self, use_profile: Profile):
         """
         for where we're restricting to set pub keys i.e. filter on search events page
@@ -1053,6 +1081,7 @@ class NostrWeb(StaticServer):
         """
         pub_k = request.query.pub_k
         use_profile: Profile = None
+        embed_replies = request.query.embed_replies.lower() == 'true'
 
         if pub_k:
             self._check_key(pub_k)
@@ -1079,7 +1108,8 @@ class NostrWeb(StaticServer):
 
         return {
             'events': self._get_events(filter,
-                                       use_profile=use_profile)
+                                       use_profile=use_profile,
+                                       embed_replies=embed_replies)
         }
 
     def _messages(self):

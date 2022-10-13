@@ -6,6 +6,7 @@ if TYPE_CHECKING:
 from datetime import datetime
 import json
 from json import JSONDecodeError
+from nostr.util import util_funcs
 import logging
 
 
@@ -23,7 +24,7 @@ class Channel:
         return Channel(event_id=evt.id,
                        create_pub_k=evt.pub_key,
                        attrs=evt.content,
-                       created_at=evt.created_at)
+                       created_at=util_funcs.date_as_ticks(evt.created_at))
 
     def __init__(self, event_id: str, create_pub_k: str, attrs=None, created_at: int = None, updated_at: int = None):
         self._event_id = event_id
@@ -42,7 +43,7 @@ class Channel:
 
         self._created_at = created_at
         if self._created_at is None:
-            self._created_at = datetime.now()
+            self._created_at = util_funcs.date_as_ticks(datetime.now())
 
         self._updated_at = self._created_at
         if updated_at is not None:

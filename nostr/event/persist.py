@@ -672,7 +672,7 @@ class SQLEventStore(EventStoreInterface):
                    'values(%s,%s,%s,%s,%s,%s,%s)'.replace('%s', self._db.placeholder),
             'args': [
                 evt.id, evt.pub_key, evt.created_at_ticks,
-                evt.kind, json.dumps(evt.tags), evt.content, evt.sig
+                evt.kind, str(evt.tags), evt.content, evt.sig
             ]
         })
 

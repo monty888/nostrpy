@@ -13,9 +13,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import getopt
 from nostr.client.client import ClientPool, Client
-from nostr.client.event_handlers import PersistEventHandler
 from nostr.event.persist import ClientSQLiteEventStore, ClientEventStoreInterface
 from nostr.event.event import Event
+from nostr.event.event_handlers import PersistEventHandler
 from nostr.ident.persist import SQLiteProfileStore, ProfileStoreInterface, MemoryProfileStore
 from nostr.ident.event_handlers import ProfileEventHandler
 from nostr.channels.persist import SQLiteSQLChannelStore, ChannelStoreInterface
@@ -261,7 +261,7 @@ def run_web(clients,
 
 
 def run():
-    db_file = WORK_DIR + 'delete-reactions.db'
+    db_file = WORK_DIR + 'nostrpy-client.db'
     db_type = 'sqlite'
     full_text = True
     is_tor = False
@@ -344,7 +344,7 @@ def run():
                 port=port)
 
 if __name__ == "__main__":
-    logging.getLogger().setLevel(logging.DEBUG)
+    logging.getLogger().setLevel(logging.ERROR)
     run()
     # e_s = ClientSQLiteEventStore( WORK_DIR + 'delete-reactions.db')
     # for r in e_s.relay_list():

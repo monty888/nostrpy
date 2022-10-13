@@ -460,6 +460,7 @@ APP.remote = function(){
             // if decrypt is needed
             _add_field('pub_k', args);
             _add_field('limit', args);
+            _add_field('embed_replies', args);
             args['data'] = 'filter='+filter.as_str()
 
             args.success = function (data){

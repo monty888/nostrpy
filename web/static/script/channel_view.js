@@ -83,6 +83,7 @@
         _remote.load_events({
             'filter' : _my_filter,
             'limit': _chunk_size,
+            'embed_replies': true,
             'pub_k' : _current_profile.pub_k,
             'success': function(data){
                 if(data['error']!==undefined){

@@ -208,33 +208,6 @@ class EventTimeHandler:
     def do_event(self, sub_id, evt, relay):
         self._callback(evt['created_at'])
 
-
-class PersistEventHandler:
-    """
-        persists event we have seen to storage, profiles created/updated for meta_data type
-        TODO: either add back in persist profile here or move to own handler
-    """
-
-    def __init__(self,
-                 store: ClientEventStoreInterface,
-                 max_insert_batch=500):
-        self._store = store
-        self._max_insert_batch = max_insert_batch
-        # to check if new or update profile
-        # self._profiles = DataSet.from_sqlite(db_file,'select pub_k from profiles')
-
-    def do_event(self, sub_id, evt: Event, relay):
-
-        def get_store_func(the_chunk):
-            def the_func():
-                self._store.add_event_relay(the_chunk, relay)
-            return the_func
-
-        for c_evt_chunk in util_funcs.chunk(evt, self._max_insert_batch):
-            util_funcs.retry_db_func(get_store_func(c_evt_chunk))
-            time.sleep(0.1)
-
-
 class RepostEventHandler:
     """
     reposts events seen  on to given Client/ClientPool object

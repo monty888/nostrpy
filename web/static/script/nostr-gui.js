@@ -2541,6 +2541,9 @@ APP.nostr.gui.mapped_list = function (){
             'data': function(){
                 return _my_list.data();
             },
+            'src_data': function(){
+                return _src_data;
+            },
             'draw': draw,
             'lookup': function(id){
                 return _render_lookup[id];
@@ -2787,8 +2790,32 @@ APP.nostr.gui.channel_view_list = function(){
                     },
                     content_class(){
                         return is_own_event(src_obj)? 'msg-content-own' : 'msg-content';
-                    }
+                    },
+                    reply_event(){
+                        let ret = false,
+                            r_evt = src_obj.reply_events,
+                            p;
+                        if(r_evt!==undefined){
+                            r_evt = r_evt[0];
+                            if(r_evt.pubkey!==undefined){
+                                p = _profiles.lookup(r_evt.pubkey);
+                                ret = {
+                                    'name': p===null ? null : p.attrs.name,
+                                    'short_key': _util.short_key(r_evt.pubkey),
+                                    'content': r_evt.content
+                                }
+                            }else{
+                                ret = {
+                                    'short_key': '?',
+                                    'content': r_evt.content
+                                }
+                            }
 
+
+
+                        }
+                        return ret;
+                    }
                 },
                 p = _profiles.lookup(src_obj.pubkey);
 
@@ -2858,6 +2885,18 @@ APP.nostr.gui.channel_view_list = function(){
             panel.hide();
         });
 
+        // update time_at of messages
+        // TODO sheck to stop if we're killed... don't think we ever do at the moment though
+        // also for older (>mins) we don't really need to be updating as frequently
+        let at_time_interval = setInterval(()=>{
+            my_list.src_data().forEach((evt,i) => {
+                let ntime = dayjs.unix(evt.created_at).fromNow(),
+                    el_id = uid+'-'+evt.id+'-time';
+
+                _('#'+el_id).html(ntime);
+
+            });
+        },1000*60);
 
         return my_list;
     }

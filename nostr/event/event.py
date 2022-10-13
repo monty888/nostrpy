@@ -9,6 +9,74 @@ from nostr.util import util_funcs
 from nostr.encrypt import SharedEncrypt
 
 
+class EventTags:
+    """
+        split out so we can use event tags without have to create the whole event
+    """
+    def __init__(self, tags):
+        self.tags = tags
+
+    @property
+    def tags(self):
+        return self._tags
+
+    @tags.setter
+    def tags(self, tags):
+
+        # if passed in as json str e.g. as event is received over ws
+        if isinstance(tags, str):
+            try:
+                tags = json.loads(tags)
+            except JSONDecodeError as je:
+                tags = None
+
+        if tags is None:
+            tags = []
+        self._tags = tags
+
+    def get_tags(self, tag_name):
+        """
+        returns tag data for tag_name, no checks on the data e..g. that #e, event id is long enough to be valid event
+        :param tag_name:
+        :return:
+        """
+        return [t[1:] for t in self._tags if len(t) >= 1 and t[0] == tag_name]
+
+    def get_tags_value(self, tag_name):
+        """
+        returns the first val of data for given tags in most cases this would be what we want otherwise use get_tags
+        :param tag_name:
+        :return:
+        """
+        return [t[0] for t in self.get_tags(tag_name)]
+
+    @property
+    def e_tags(self):
+        """
+        :return: all ref'd events/#e tag in [evt_id, evt_id,...] makes sure evt_id is correct len
+        """
+        return [t[0] for t in self.get_tags('e') if len(t[0]) == 64]
+
+    @property
+    def p_tags(self):
+        """
+        :return: all ref'd profile/#p tag in [pub_k, pub_k,...] makes sure pub_k is correct len
+        """
+        return [t[0] for t in self.get_tags('p') if len(t[0]) == 64]
+
+    def __str__(self):
+        return json.dumps(self._tags)
+
+    def __len__(self):
+        return len(self._tags)
+
+    def __getitem__(self, item):
+        return self._tags[item]
+
+    def __iter__(self):
+        for c_tag in self._tags:
+            yield c_tag
+
 class Event:
     """
         base class for nost events currently used just as placeholder for the kind type consts
@@ -78,7 +146,7 @@ class Event:
 
         self._pub_key = pub_key
 
-        self.tags = tags
+        self._tags = EventTags(tags)
 
     def serialize(self):
         """
@@ -92,7 +160,7 @@ class Event:
             self._pub_key,
             util_funcs.date_as_ticks(self._created_at),
             self._kind,
-            self._tags,
+            self._tags.tags,
             self._content
         ], separators=(',', ':'))
 
@@ -146,7 +214,7 @@ class Event:
             'pubkey': self._pub_key,
             'created_at': util_funcs.date_as_ticks(self._created_at),
             'kind': self._kind,
-            'tags': self._tags,
+            'tags': self._tags.tags,
             'content': self._content,
             'sig': self._sig
         }
@@ -227,53 +295,28 @@ class Event:
 
         return ret
 
-    def get_tags(self, tag_name):
-        """
-        returns tag data for tag_name, no checks on the data e..g. that #e, event id is long enough to be valid event
-        :param tag_name:
-        :return:
-        """
-        return [t[1:] for t in self._tags if len(t) >= 1 and t[0] == tag_name]
-
-    def get_tags_value(self, tag_name):
-        """
-        returns the first val of data for given tags in most cases this would be what we want otherwise use get_tags
-        :param tag_name:
-        :return:
-        """
-        return [t[0] for t in self.get_tags(tag_name)]
-
     @property
     def tags(self):
         return self._tags
 
     @tags.setter
     def tags(self, tags):
+        self._tags = EventTags(tags)
 
-        # if passed in as json str e.g. as event is received over ws
-        if isinstance(tags, str):
-            try:
-                tags = json.loads(tags)
-            except JSONDecodeError as je:
-                tags = None
+    def get_tags(self, tag_name):
+        return self._tags.get_tags(tag_name)
 
-        if tags is None:
-            tags = []
-        self._tags = tags
+    def get_tags_value(self, tag_name):
+        return self._tags.get_tags_value(tag_name)
 
     @property
     def e_tags(self):
-        """
-        :return: all ref'd events/#e tag in [evt_id, evt_id,...] makes sure evt_id is correct len
-        """
-        return [t[0] for t in self.get_tags('e') if len(t[0]) == 64]
+        return self._tags.e_tags
 
     @property
     def p_tags(self):
-        """
-        :return: all ref'd profile/#p tag in [pub_k, pub_k,...] makes sure pub_k is correct len
-        """
-        return [t[0] for t in self.get_tags('p') if len(t[0]) == 64]
+        return self._tags.p_tags
+
 
     """
         get/set various event properties
@@ -281,6 +324,10 @@ class Event:
         of this but might do something to make this clear 
 
     """
+
+
+
+
 
     @property
     def pub_key(self):
@@ -369,5 +416,6 @@ class Event:
         ret = super(Event, self).__str__()
         # on signed events we can retrn something more useful
         if self.id:
-            ret =  '%s@%s' % (self.id,self._created_at)
+            ret =  '%s@%s' % (self.id, self._created_at)
         return ret
+
