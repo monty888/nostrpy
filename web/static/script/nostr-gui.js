@@ -2523,7 +2523,6 @@ APP.nostr.gui.mapped_list = function (){
             });
         }
 
-
         /*
             TODO - if we make a version of list that accepts the create_render_obj as a function
                 we can probably reduce down a lot of the list code
@@ -3019,11 +3018,13 @@ APP.nostr.gui.profile_list = function(){
             // replace what is currently displayed
             el.html(html);
 
+            // don't think this is doing anything...
             // replace if re-rendered
-            profile = _my_list.lookup(pub_k);
-            if(profile!==undefined){
-                profile.follows = _current_profile.contacts.includes(pub_k);
-            }
+//            profile = _my_list.lookup(pub_k);
+//            console.log(profile);
+//            if(profile!==undefined){
+//                profile.follows = _current_profile.contacts.includes(pub_k);
+//            }
         }
 
         function click(id){

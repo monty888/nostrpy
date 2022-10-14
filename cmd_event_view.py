@@ -13,7 +13,8 @@ from nostr.ident.event_handlers import ProfileEventHandler
 from nostr.ident.persist import SQLProfileStore, MemoryProfileStore, ProfileStoreInterface
 from nostr.client.client import ClientPool, Client
 from nostr.event.persist import ClientSQLEventStore, ClientSQLiteEventStore, ClientMemoryEventStore, ClientEventStoreInterface
-from nostr.client.event_handlers import PrintEventHandler, PersistEventHandler, EventAccepter, DeduplicateAcceptor, LengthAcceptor
+from nostr.client.event_handlers import PrintEventHandler, EventAccepter, DeduplicateAcceptor, LengthAcceptor
+from nostr.event.event_handlers import PersistEventHandler
 from nostr.util import util_funcs
 from nostr.event.event import Event
 from nostr.encrypt import Keys
@@ -27,9 +28,9 @@ DB_FILE = '%s/nostr-client-test.db' % WORK_DIR
 # RELAYS = ['wss://rsslay.fiatjaf.com','wss://nostr-pub.wellorder.net']
 # RELAYS = ['wss://rsslay.fiatjaf.com']
 # RELAYS = ['wss://relay.damus.io']
-# RELAYS = ['ws://localhost:8081','wss://nostr-pub.wellorder.net','wss://rsslay.fiatjaf.com','wss://relay.damus.io']
+RELAYS = ['ws://localhost:8081','wss://nostr-pub.wellorder.net','wss://rsslay.fiatjaf.com','wss://relay.damus.io']
 # RELAYS = ['wss://nostr-pub.wellorder.net']
-RELAYS = ['ws://localhost:8081']
+# RELAYS = ['ws://localhost:8081']
 AS_PROFILE = None
 VIEW_PROFILE = None
 INBOX = None
