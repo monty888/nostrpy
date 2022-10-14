@@ -394,7 +394,7 @@ APP.nostr.gui.templates = function(){
                                         '{{at_time}}',
                                     '</span>',
                                     '{{#reply_event}}',
-                                        '<span class="msg-reply" >',
+                                        '<span id="{{uid}}-{{id}}-reply" class="msg-reply" >',
                                             '{{#name}}',
                                                 '{{name}}@',
                                             '{{/name}}',

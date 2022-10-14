@@ -2452,8 +2452,6 @@ APP.nostr.gui.mapped_list = function (){
             _enable_media = APP.nostr.data.user.enable_media(),
             // data in arr to be rendered
             _render_arr,
-            // above on pub_k
-            _render_lookup,
             // only profiles that pass this filter will be showing
             _filter_text = args.filter || '',
             // so ids will be unique per this list
@@ -2465,6 +2463,12 @@ APP.nostr.gui.mapped_list = function (){
             _map_func = args.map_func,
             // key that can be used fo look ups - allow multi?
             _key = args.key,
+            // a lookup on _key
+            // {
+            //      src_obj: {original object},
+            //      r_obj: {objected after map func applied - the render obj}
+            // }
+            _render_lookup,
             // either this or row_render
             _row_tmpl = args.template,
             _row_render = args.row_render;
@@ -2507,12 +2511,13 @@ APP.nostr.gui.mapped_list = function (){
         }
 
         function prepend_render_data(data){
-            let r_obj;
+            let r_obj,
+                p;
+
+                data = data.slice().reverse();
+
             data.forEach((c,i) => {
-                let p;
-                if(i>0){
-                    p = data[i-1];
-                }
+                p = data[i+1];
                 r_obj = _create_render_obj(c, p);
                 _render_arr.unshift(r_obj);
             });
@@ -2528,7 +2533,10 @@ APP.nostr.gui.mapped_list = function (){
             // look up by given key, we should probably give access to bot render_obj
             // and scr_obj
             if(_key!==undefined){
-                _render_lookup[src_obj[_key]] = render_obj;
+                _render_lookup[src_obj[_key]] = {
+                    'src_obj': src_obj,
+                    'r_obj': render_obj
+                };
             }
 
             return render_obj;
@@ -2684,6 +2692,7 @@ APP.nostr.gui.channel_view_list = function(){
             current_profile = _user.profile(),
             filter = args.filter,
             focus_el = args.focus_el,
+            need_event = args.need_event,
             panel = _gui.floating_panel.create({
                 'is_showing': false,
                 'buttons' : [{
@@ -2720,22 +2729,63 @@ APP.nostr.gui.channel_view_list = function(){
         };
 
         function goto_event(evt){
-            /*   hacky pos to get to bottom of screen on first draw whci is a problem as
+            /*   hacky pos to get to bottom of screen on first draw which is a problem as
             * we draw in chunks downwards and also pictures will probably come in later
             * and make it so we're no longer at the bottom
             */
             let el_id = '#'+uid+'-'+evt.id,
-                scroll_int = setInterval(() => {
-                let el = _(el_id)[0];
-                if(el!==undefined){
-                    clearInterval(scroll_int);
-                    el.scrollIntoView();
-                    // shit but gives chance for slow loading stuff to be rendered
-                    setTimeout(() => {
-                        el.scrollIntoView();
-                    },200);
+                el = _(el_id)[0];
+            if(el!==undefined){
+                el.scrollIntoView();// shit but gives chance for slow loading stuff to be rendered
+            }
+            return el;
+        };
+
+        function goto_latest(){
+            let data = my_list.data(),
+                el,
+                my_int;
+            if(data.length>0){
+                // TODO: fix this so it does a better job waiting for images to load
+                my_int = setInterval(()=>{
+                    el = goto_event(data.at(-1));
+                    if(el!==undefined){
+                        setTimeout(()=>{
+                            clearInterval(my_int);
+                        },300);
+                    }
+                },200)
+
+            }
+        };
+
+        function goto_reply(evt){
+            let r_evt = evt.reply_events[0],
+                el;
+
+            if(my_list.lookup(r_evt.id)!==undefined){
+                el = goto_event(r_evt);
+                el.style.transition = '';
+                el.style.backgroundColor = '';
+                // highlighter
+                requestAnimationFrame(()=>{
+                    el.style.backgroundColor = 'cyan';
+                    requestAnimationFrame(()=>{
+                        el.style.backgroundColor = 'black';
+                        el.style.transition = 'background-color 2s';
+                    });
+
+                });
+            }else{
+                if(typeof(need_event)==='function'){
+                    need_event(()=>{
+                        goto_reply(evt);
+                    });
+                }else{
+                    alert('click reply to event that is out of view and no need_event function supplied');
                 }
-            },200);
+            }
+
         };
 
         function is_own_event(evt){
@@ -2841,18 +2891,21 @@ APP.nostr.gui.channel_view_list = function(){
             id = id.replace(uid+'-','');
             const action_lookup = {
                 'pp': 'view_profile',
-                'pt': 'view_profile'
+                'pt': 'view_profile',
+                'reply': 'goto_reply'
             };
 
             let splits = id.split('-'),
-                r_obj,
+                click_objs,
                 e_id, action;
             if(splits.length==2){
                 e_id = splits[0];
                 action = action_lookup[splits[1]],
-                r_obj = my_list.lookup(e_id);
+                click_objs = my_list.lookup(e_id);
                 if(action==='view_profile'){
-                    _goto.view_profile(r_obj.pub_k);
+                    _goto.view_profile(click_objs.src_obj.pubkey);
+                }else if(action==='goto_reply'){
+                    goto_reply(click_objs.src_obj);
                 }
             }
         },
@@ -2860,11 +2913,7 @@ APP.nostr.gui.channel_view_list = function(){
 
         load_profiles(args.data);
         my_list = _gui.mapped_list.create(args);
-        // hacky way to go to last event
-        if(args.data.length>0){
-            goto_event(args.data[args.data.length-1]);
-        };
-
+        goto_latest();
 
         let o_prepend_data = my_list.prepend_data;
         my_list.prepend_data = function(data){

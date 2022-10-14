@@ -70,7 +70,7 @@
 
     }
 
-    function load_messages(){
+    function load_messages(callback){
         _loading = true;
         let c_filter = _my_filter;
 
@@ -99,7 +99,8 @@
                             'con': _main_con,
                             'data': sorted_data,
                             'filter': _my_filter,
-                            'focus_el': _post_txt
+                            'focus_el': _post_txt,
+                            'need_event': need_event
                         });
                     }else{
                         _my_list.prepend_data(sorted_data);
@@ -113,8 +114,20 @@
                 }
                 _maybe_more = data.events.length === _chunk_size;
                 _loading = false;
+                if(typeof(callback)==='function'){
+                    callback();
+                }
             }
         });
+    }
+
+    function need_event(loaded){
+        if(_maybe_more){
+            _until = _events[0].created_at-1;
+            load_messages();
+        }else{
+            alert('i give up!!!!');
+        }
     }
 
     // make main screen scafold

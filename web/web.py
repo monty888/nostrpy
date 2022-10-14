@@ -1030,17 +1030,44 @@ class NostrWeb(StaticServer):
         evts_lookup = {evt['id']: evt for evt in evts}
 
         # embed reply events if we already have them and not missing ids for store q
+        missing_ids = []
+        missing_map = {}
         for c_evt in reply_events:
             c_evt['reply_events'] = []
+
+            # TODO: remove max_reply, would it ever make sense to reply ti more than one event?!
             for r_evt_id in EventTags(c_evt['tags']).e_tags[offset:offset+max_reply]:
                 if r_evt_id in evts_lookup:
                     c_evt['reply_events'].append(evts_lookup[r_evt_id])
                 else:
-                    c_evt['reply_events'].append({
-                        'content': 'missing event, todo add sql query!!!!!'
-                    })
+                    missing_ids.append(r_evt_id)
+                    # because there may be multiple events that reply to the same event
+                    if r_evt_id not in missing_map:
+                        missing_map[r_evt_id] = []
+                    missing_map[r_evt_id].append(c_evt)
+                    c_evt['reply_events'] = []
 
-
+        # ok see if we can find any of those missing events.. thats is replies to events that
+        # are not in evts (not unexpected)
+        if missing_ids:
+            m_evts = self._event_store.get_filter({
+                'ids': missing_ids
+            })
+            # lookup by id of events we found
+            m_evts_lookup = {evt['id']: evt for evt in m_evts}
+            for m_id in missing_ids:
+                # found
+                if m_id in m_evts_lookup:
+                    for c_evt in missing_map[m_id]:
+                        c_evt['reply_events'].append(m_evts_lookup[m_id])
+                # not in our store
+                else:
+                    for c_evt in missing_map[m_id]:
+                        c_evt['reply_events'].append({
+                            'id': m_id,
+                            'pubkey': '?',
+                            'content': 'unable to find reply to event id: %s' % m_id
+                        })
 
         return evts
 
