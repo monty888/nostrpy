@@ -194,18 +194,22 @@
                 // create list objs
                 _contacts_list = APP.nostr.gui.profile_list.create({
                     'con': contact_tab['content-con'],
-                    'profiles': _profile.contacts,
+                    'data': _profile.contacts,
                     'view_type': 'contacts'
                 });
                 _followers_list = APP.nostr.gui.profile_list.create({
                     'con': follow_tab['content-con'],
-                    'profiles': _profile.followed_by,
+                    'data': _profile.followed_by,
                     'view_type': 'followers'
                 });
 
 
             }
         });
+
+        APP.nostr.gui.post_button.create();
         APP.nostr_client.create();
+        APP.nostr.gui.pack();
+
     });
 }();

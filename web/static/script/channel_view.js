@@ -25,6 +25,12 @@
         // msgs
         _msg_con,
         _footer_con,
+        // reply info con, txt area and cancle but
+        _reply_info_con,
+        _reply_info_txt,
+        _reply_cancel_but,
+        _reply_evt = null,
+        // txt are and post button
         _post_but,
         _post_txt,
         _chunk_size = 100,
@@ -100,7 +106,8 @@
                             'data': sorted_data,
                             'filter': _my_filter,
                             'focus_el': _post_txt,
-                            'need_event': need_event
+                            'need_event': need_event,
+                            'on_reply': do_reply
                         });
                     }else{
                         _my_list.prepend_data(sorted_data);
@@ -124,11 +131,56 @@
     function need_event(loaded){
         if(_maybe_more){
             _until = _events[0].created_at-1;
-            load_messages();
+            load_messages(loaded);
         }else{
-            alert('i give up!!!!');
+            _gui.notification({
+                'text' : 'unable to find the replied to event'
+            });
         }
     }
+
+    function do_reply(evt){
+        _reply_evt = evt;
+        _reply_info_con.css('display','');
+        _reply_info_txt[0].textContent = evt.content;
+        _gui.pack();
+        _post_txt.focus();
+    }
+
+    function cancel_reply(){
+        _reply_evt = null;
+        _reply_info_con.css('display','none');
+        _gui.pack();
+    }
+
+    function do_post(){
+       let evt = {
+                'pub_k' : _current_profile.pub_k,
+                'content': _post_txt.val(),
+                'tags' : [['e',_channel_id]],
+                'kind' : 42
+            };
+        _post_txt.val('');
+        _post_txt[0].focus();
+
+        if(_reply_evt!==null){
+            evt.tags.push(
+                ['e', _reply_evt.id, '', 'reply'],
+                ['p', evt.pub_k]
+            );
+            cancel_reply();
+        }
+
+        APP.remote.post_event({
+            'event' : evt,
+            'pub_k' : _current_profile.pub_k,
+            'success' : function(data){
+                console.log(data);
+            }
+        });
+
+    }
+
 
     // make main screen scafold
     function construct_scr(){
@@ -137,7 +189,6 @@
 //        // main container where we'll draw out the events
         _main_con = _('#main-con');
         _main_con.css('overflowY','auto');
-        _main_con.css('max-height', '200px;')
 //        // grab render areas
 //        _header_con = _('#channel-info');
         _header_con = _('#header-con');
@@ -148,11 +199,14 @@
         if(_current_profile.pub_k!==undefined){
             _footer_con.html(_templates.get('channel-view-post-area'));
         }
-//        _footer_con.html('hi there!!');
 
+        // grab post gui els
         _post_but = _('#post-but');
         _post_txt = _('#post-text');
-
+        // and reply info els
+        _reply_info_con = _('#reply-info');
+        _reply_info_txt = _('#reply-info-txt');
+        _reply_cancel_but = _('#reply-cancel-but');
     }
 
     // start when everything is ready
@@ -163,26 +217,12 @@
         }
 
         construct_scr();
-        _post_but.on('click', (e)=>{
-
-            let evt = {
-                'pub_k' : _current_profile.pub_k,
-                'content': _post_txt.val(),
-                'tags' : [['e',_channel_id]],
-                'kind' : 42
-            };
-            _post_txt.val('');
-            _post_txt[0].focus();;
-
-            APP.remote.post_event({
-                'event' : evt,
-                'pub_k' : _current_profile.pub_k,
-                'success' : function(data){
-                    console.log(data);
-                }
-            });
-
+        _post_but.on('click', do_post);
+        _reply_cancel_but.on('click', cancel_reply)
+        _post_txt.on('input', ()=>{
+            _post_but[0].disabled = _post_txt.val()==='';
         });
+
         _main_con.scrolledTop(function(){
             if(_maybe_more){
                 _until = _events[0].created_at-1;
@@ -191,9 +231,8 @@
         });
 
         load_messages();
-        if(_post_txt!==undefined){
-            _post_txt[0].focus();;
-        }
+        // focus into the msg txt which exists if we have a profile selected
+        _post_txt[0] && _post_txt[0].focus();
 
         APP.nostr_client.create();
 

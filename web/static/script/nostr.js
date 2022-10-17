@@ -19,12 +19,15 @@ var _ = (id) => {
 
         ret.on = (type, func) => {
             let args = {};
-            internal.forEach(function(el,i){
-                if(type==='scroll'){
-                    args.passive = true;
-                }
-                el.addEventListener(type, func, args);
+            type.split(',').forEach((type) =>{
+                internal.forEach(function(el,i){
+                    if(type==='scroll'){
+                        args.passive = true;
+                    }
+                    el.addEventListener(type, func, args);
+                });
             });
+
         };
 
         ret.scrolledBottom = (func) => {

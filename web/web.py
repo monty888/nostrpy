@@ -930,6 +930,9 @@ class NostrWeb(StaticServer):
         if 'react_event' in ret:
             ret['react_event'] = self._serialise_event(c_evt['react_event'], use_profile)
 
+        if 'reply_events' in ret:
+            ret['reply_events'] = [self._serialise_event(c_evt, use_profile) for c_evt in ret['reply_events']]
+
         return ret
 
     def _get_events(self, filter, use_profile: Profile = None,
@@ -946,7 +949,12 @@ class NostrWeb(StaticServer):
         if embed_reactions:
             self._add_reaction_events(events)
         if embed_replies:
-            self._add_reply_events(events)
+            # channels
+            use_offset = 1
+            if Event.KIND_ENCRYPT in filter[0]['kinds']:
+                use_offset = 0
+
+            self._add_reply_events(events, offset=use_offset)
 
         return [self._serialise_event(c_evt, use_profile) for c_evt in events]
 
@@ -1019,7 +1027,7 @@ class NostrWeb(StaticServer):
 
     def _add_reply_events(self, evts:[], offset=1, max_reply=1):
         """
-        add reply_events []
+        add reply_events [] change to single
         :param evts:
         :return:
         """

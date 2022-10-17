@@ -2692,6 +2692,7 @@ APP.nostr.gui.channel_view_list = function(){
             filter = args.filter,
             focus_el = args.focus_el,
             need_event = args.need_event,
+            on_reply = args.on_reply,
             panel = _gui.floating_panel.create({
                 'is_showing': false,
                 'buttons' : [{
@@ -2777,6 +2778,7 @@ APP.nostr.gui.channel_view_list = function(){
                 });
             }else{
                 if(typeof(need_event)==='function'){
+                    // this could result in lots of loads... maybe we should restrict the max n back it looks...
                     need_event(()=>{
                         goto_reply(evt);
                     });
@@ -2792,35 +2794,59 @@ APP.nostr.gui.channel_view_list = function(){
         }
 
         function is_scroll_max(){
-            let el = my_con[0].parentElement,
+            let el = my_con[0],
                 max_y = el.scrollHeight,
                 // ceil fix for brave on mobile..
                 c_y = Math.ceil(el.scrollTop+el.offsetHeight);
                 return max_y <= c_y;
         }
 
+        function add_reply(evt){
+            let e_tags = evt.get_tag_values('e'),
+                replied_evt;
+            // we'll take e 1 as who we're replying too.. we should probably look to see if one is taged as reply
+            if(e_tags.length>1){
+                replied_evt = my_list.lookup(e_tags[1]);
+                if(replied_evt){
+                    evt.reply_events = [replied_evt.src_obj];
+                // TODO: try and fetch the event... as is this only works if reply event is in those we have pulled already
+                }else{
+                    evt.reply_events = [{
+                        'id': e_tags[1],
+                        'p': '?',
+                        'content': 'unable to find reply to event id: '+ e_tags[1]
+                    }];
+                }
+            }
+        }
+
         function on_event(evt){
+            let scroll_with = is_scroll_max() || (evt.pubkey===current_profile.pub_k);
             // event in this channel?
             if(filter.test(evt)){
+                // when we recieve events like this the replies won't be embedded so we have to do ourself
+                add_reply(evt);
                 let data = [evt];
                 load_profiles(data);
+
                 my_list.add_data(data);
                 // either scroll to or put up new button that will scroll to bottom
-                if(evt.pubkey===current_profile.pub_k){
+                if(scroll_with){
                     goto_event(evt);
                     panel.hide();
                 }else{
-                    if(!is_scroll_max()){
-                        panel.show();
-                    }
+                    panel.show();
                 }
 
             }
         }
 
+        // so we can look up via event id
+        args.key = 'id';
         args.map_func = args.map_func!==undefined ? args.map_func : (src_obj, pre_obj) => {
                 let render_obj = {
                     'uid': uid,
+                    'can_reply': current_profile.pub_k!==undefined && current_profile.pub_k!==src_obj.pubkey,
                     'id': src_obj.id,
                     'short_key': _util.short_key(src_obj.pubkey),
                     'pub_k': src_obj.pubkey,
@@ -2860,8 +2886,6 @@ APP.nostr.gui.channel_view_list = function(){
                                 }
                             }
 
-
-
                         }
                         return ret;
                     }
@@ -2891,7 +2915,8 @@ APP.nostr.gui.channel_view_list = function(){
             const action_lookup = {
                 'pp': 'view_profile',
                 'pt': 'view_profile',
-                'reply': 'goto_reply'
+                'reply': 'goto_reply',
+                'doreply': 'reply_to'
             };
 
             let splits = id.split('-'),
@@ -2905,6 +2930,8 @@ APP.nostr.gui.channel_view_list = function(){
                     _goto.view_profile(click_objs.src_obj.pubkey);
                 }else if(action==='goto_reply'){
                     goto_reply(click_objs.src_obj);
+                }else if(action==='reply_to'){
+                    on_reply && on_reply(my_list.lookup(e_id).src_obj);
                 }
             }
         },
