@@ -631,6 +631,10 @@ APP.nostr.gui.templates = function(){
                     '<label for="include-sel" class="form-label">Include channels created by</label>',
                     '{{{include_sel}}}',
                 '</div>',
+                '<div class="mb-2" >',
+                    '<label for="from-sel" class="form-label">Include channels with posts from</label>',
+                    '{{{from_sel}}}',
+                '</div>',
             '{{/pub_k}}'
         ]
     };

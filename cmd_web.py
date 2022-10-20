@@ -346,6 +346,15 @@ def run():
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.ERROR)
     run()
+    # from db.db import QueryFromFilter, SQLiteDatabase
+    # from nostr.ident.persist import ProfileType
+    # p_store = SQLiteProfileStore(db_file=WORK_DIR + 'nostrpy-client.db')
+    #
+    # p_store.select_profiles(profile_type=ProfileType.LOCAL)
+
+
+
+
     # e_s = ClientSQLiteEventStore( WORK_DIR + 'delete-reactions.db')
     # for r in e_s.relay_list():
     #     print(r)

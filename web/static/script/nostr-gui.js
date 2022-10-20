@@ -4529,7 +4529,7 @@ APP.nostr.gui.channel_search_filter_modal = function(){
         let c_profile = _user.profile(),
             pub_k = c_profile.pub_k,
             include_val = _user.get(pub_k+'.channel-search-include', 'anyone'),
-            o_val = include_val,
+            o_include_val = include_val,
             include_sel = _gui.select.create({
                 'id': 'include-sel',
                 'selected': include_val,
@@ -4547,6 +4547,29 @@ APP.nostr.gui.channel_search_filter_modal = function(){
                     }
                 ]
             }),
+            from_val = _user.get(pub_k+'.channel-search-from', 'anyone'),
+            o_from_val = from_val,
+            from_sel = _gui.select.create({
+                'id': 'from-sel',
+                'selected': from_val,
+                'options': [
+                    {
+                        'text': 'anyone'
+                    },
+                    {
+                        'text': 'people I follow and those they follow',
+                        'value': 'followersplus'
+                    },
+                    {
+                        'text': 'people I follow',
+                        'value': 'followers'
+                    },
+                    {
+                        'text': 'me',
+                        'value': 'self'
+                    }
+                ]
+            }),
             // called on ok if user changed anything
             on_change = args.on_change;
 
@@ -4554,14 +4577,19 @@ APP.nostr.gui.channel_search_filter_modal = function(){
             'title' : 'channel search filter',
             'content' : Mustache.render(_gui.templates.get('channel-search-filter-modal'),{
                 'pub_k': c_profile.pub_k,
-                'include_sel': include_sel.html()
+                'include_sel': include_sel.html(),
+                'from_sel': from_sel.html()
             }),
             'on_hide' : function(){
-                let n_val = include_val =  _('#include-sel').val();
+                let n_include_val = _('#include-sel').val(),
+                    n_from_val = _('#from-sel').val(),
+                    o_state = [o_include_val, o_from_val].join(':'),
+                    n_state = [n_include_val, n_from_val].join(':');
 
                 // user changed values
-                if(o_val!==n_val){
-                    _user.put(pub_k+'.channel-search-include', include_val);
+                if(o_state!==n_state){
+                    _user.put(pub_k+'.channel-search-include', n_include_val);
+                    _user.put(pub_k+'.channel-search-from', n_from_val);
                     if(typeof(on_change)==='function'){
                         on_change();
                     }

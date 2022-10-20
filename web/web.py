@@ -404,7 +404,8 @@ class NostrWeb(StaticServer):
         if use_pub_k:
             self._check_key(use_pub_k)
             use_profile = self._profile_handler.profiles.lookup_pub_key(use_pub_k)
-            for_keys = self._get_for_pub_keys(use_profile)
+            for_keys = self._get_for_pub_keys(for_str=request.params.include,
+                                              use_profile=use_profile)
             if for_keys is not None:
                 if pub_k != '' or match != '':
                     all_keys = all_keys.intersection(set(for_keys))
@@ -595,10 +596,21 @@ class NostrWeb(StaticServer):
         if pub_k:
             self._check_key(pub_k)
             use_profile = self._profile_handler.profiles.lookup_pub_key(pub_k)
-            for_keys = self._get_for_pub_keys(use_profile)
-            if for_keys is not None:
-                for_keys = set(for_keys)
-                channels = [c_c for c_c in channels if c_c.create_pub_k in for_keys]
+
+            # channels created by these keys
+            create_keys = self._get_for_pub_keys(for_str=request.params.include,
+                                                 use_profile=use_profile)
+            if create_keys:
+                create_keys = set(create_keys)
+                channels = [c_c for c_c in channels if c_c.create_pub_k in create_keys]
+
+            # channels with post by these keys
+            post_keys = self._get_for_pub_keys(for_str=request.params.post_from,
+                                               use_profile=use_profile)
+            if post_keys:
+                post_channels = self._channel_handler.store.channels_for_keys(post_keys)
+                channels = [c_c for c_c in channels if c_c.event_id in post_channels]
+
 
         return {
             'channels': [c_c.as_dict() for c_c in channels[offset:offset+limit]]
@@ -1048,10 +1060,10 @@ class NostrWeb(StaticServer):
                 if r_evt_id in evts_lookup:
                     c_evt['reply_events'].append(evts_lookup[r_evt_id])
                 else:
-                    missing_ids.append(r_evt_id)
-                    # because there may be multiple events that reply to the same event
                     if r_evt_id not in missing_map:
+                        # do we really want to support multi to 1 ?
                         missing_map[r_evt_id] = []
+                        missing_ids.append(r_evt_id)
                     missing_map[r_evt_id].append(c_evt)
                     c_evt['reply_events'] = []
 
@@ -1073,25 +1085,28 @@ class NostrWeb(StaticServer):
                     for c_evt in missing_map[m_id]:
                         c_evt['reply_events'].append({
                             'id': m_id,
+                            'sig': None,
                             'pubkey': '?',
-                            'content': 'unable to find reply to event id: %s' % m_id
+                            'kind': Event.KIND_TEXT_NOTE,
+                            'content': 'unable to find reply to event id: %s' % m_id,
+                            'tags': [],
+                            'created_at': 0
                         })
 
         return evts
 
-    def _get_for_pub_keys(self, use_profile: Profile):
+    def _get_for_pub_keys(self, for_str, use_profile: Profile):
         """
         for where we're restricting to set pub keys i.e. filter on search events page
-
+        :param for_str: followersplus, followers, self anything else is everyone/not applied
         :param use_profile: followers worked out from ths profile
         :return: None=everyone not restricted else [pks]
         """
         ret = None
-        # shoule be one of followersplus, followers, self anything else is everyone/not applied
-        include = request.params.include.lower()
+        for_str = for_str.lower()
         # restrict only to followers
-        if include and use_profile:
-            if include == 'followersplus':
+        if for_str and use_profile:
+            if for_str == 'followersplus':
                 followers = use_profile.load_contacts(self._profile_store).follow_keys()
                 c_p: Profile
                 all_follows = set(followers)
@@ -1102,9 +1117,9 @@ class NostrWeb(StaticServer):
 
                 ret = list(all_follows)
 
-            if include == 'followers':
+            if for_str == 'followers':
                 ret = use_profile.load_contacts(self._profile_store).follow_keys()
-            elif include =='self':
+            elif for_str =='self':
                 ret = [use_profile.public_key]
 
         return ret
@@ -1214,7 +1229,8 @@ class NostrWeb(StaticServer):
         if pow and pow != 'none':
             filter['ids'] = [pow]
 
-        for_followers = self._get_for_pub_keys(use_profile)
+        for_followers = self._get_for_pub_keys(for_str=request.params.include,
+                                               use_profile=use_profile)
         if for_followers is not None:
             filter['authors'] = for_followers
 
@@ -1588,9 +1604,20 @@ class NostrWeb(StaticServer):
             raise NostrWebException('parameter for_url is required')
         return self._get_web_preview(for_url)
 
+    def is_spam(self, evt:Event):
+        """
+        obv this should be something handed in that can be more configurable but ok for now
+        :param evt:
+        :return:
+        """
+        return evt.content == '' or evt.content.startswith('{')
+
     def do_event(self, sub_id, evt: Event, relay):
+        if self.is_spam(evt):
+            return
+
         if self._dedup.accept_event(evt):
-            print(evt, relay, evt.kind)
+
             # will update our profiles if meta/contact type data
             self._profile_handler.do_event(sub_id, evt, relay)
 

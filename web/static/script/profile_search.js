@@ -120,6 +120,7 @@
             APP.remote.load_channels({
                 'pub_k': _pub_k,
                 'include': _user.get(_pub_k+'.channel-search-include', 'anyone'),
+                'post_from': _user.get(_pub_k+'.channel-search-from', 'anyone'),
                 'match': _search_val,
                 'limit': _chunk_size,
                 'offset': my_obj.c_off,

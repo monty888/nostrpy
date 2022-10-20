@@ -27,6 +27,14 @@ class ChannelStoreInterface(ABC):
         :return:
         """
 
+    @abstractmethod
+    def channels_for_keys(self, keys: [str]):
+        """
+        :param keys:
+        :return:
+        """
+
+
     def import_from_events(self,
                            event_store: ClientEventStoreInterface,
                            evts: [Event] = None,
@@ -118,6 +126,26 @@ class SQLiteSQLChannelStore(ChannelStoreInterface):
                                created_at=c_c['created_at'],
                                updated_at=c_c['updated_at']))
         return ChannelList(ret)
+
+    def channels_for_keys(self, keys: [str]):
+        my_q = QueryFromFilter("""
+            select distinct et.value 
+            from events e
+            inner join event_tags et on et.id = e.id
+            inner join channels c on et.value = c.event_id
+        """,
+                               filter=[
+                                   {
+                                       'kind': 42
+                                   },
+                                   'and',
+                                   {
+                                       'pubkey': keys
+                                   }
+                               ],
+                               placeholder='?').get_query()
+        return self._db.select_sql(sql=my_q['sql'],
+                                   args=my_q['args']).data_arr('value')
 
     def create(self):
         self._db.execute_batch([

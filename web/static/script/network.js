@@ -437,6 +437,7 @@ APP.remote = function(){
             args['params'] = {};
             _add_field('pub_k', args);
             _add_field('include', args);
+            _add_field('post_from', args);
             _add_field('match', args);
             _add_field('limit', args);
             _add_field('offset', args);

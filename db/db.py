@@ -306,24 +306,45 @@ class PostgresDatabase(Database, ABC):
 
 
 class QueryFromFilter:
+    OR_JOIN = 'OR'
+    AND_JOIN = 'AND'
 
-    def __init__(self, select_sql:str, filter={}, placeholder='?', alias={}):
+    def __init__(self, select_sql:str, filter={}, placeholder='?', alias={}, def_join='OR'):
         self._sql_base = select_sql
         self._filter = filter
+        if isinstance(self._filter,dict):
+            self._filter = [self._filter]
         self._placeholder = placeholder
         self._alias = alias
+        self._join = ' where '
+        if ' where ' in select_sql:
+            self._join = ' or '
+
+        self._def_join = def_join
+
 
     def _construct(self):
 
         sql_arr = [self._sql_base]
         args = []
-        join = ' where '
 
-        def _add_for_field(f_name):
+        def _add_filter(c_filter):
+            opened = False
+            for k in c_filter:
+                if not opened:
+                    sql_arr.append(self._join)
+                    sql_arr.append(' (')
+                    opened = True
+                _add_for_field(c_filter, k)
+
+            if opened:
+                sql_arr.append(') ')
+                self._join = self._def_join
+
+        def _add_for_field(c_filter, f_name):
             nonlocal args
-            nonlocal join
 
-            values = self._filter[f_name]
+            values = c_filter[f_name]
             db_field = f_name
             if f_name in self._alias:
                 db_field = self._alias[db_field]
@@ -332,21 +353,22 @@ class QueryFromFilter:
                 values = [values]
 
             sql_arr.append(
-                ' %s %s in (%s) ' % (join,
-                                     db_field,
+                ' %s in (%s) ' % (db_field,
                                      ','.join([self._placeholder] * len(values)))
             )
 
             args = args + values
-            join = ' or '
 
-        for k in self._filter:
-            _add_for_field(k)
+        for f in self._filter:
+            if isinstance(f, dict):
+                _add_filter(f)
+            if isinstance(f, str):
+                self._join = ' %s ' % f
 
         return {
             'sql': ''.join(sql_arr),
             'args': args,
-            'join': join
+            'join': self._join
         }
 
     def get_query(self):
