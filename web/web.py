@@ -36,6 +36,7 @@ from nostr.client.client import ClientPool, Client
 from nostr.client.event_handlers import DeduplicateAcceptor
 from nostr.channels.channel import Channel
 from nostr.util import util_funcs
+from nostr.spam_handlers.spam_handlers import SpamHandlerInterface
 import beaker.middleware
 
 class DateTimeEncoder(JSONEncoder):
@@ -183,12 +184,14 @@ class NostrWeb(StaticServer):
                  event_store: ClientEventStoreInterface,
                  profile_handler: ProfileEventHandler,
                  channel_handler: ChannelEventHandler,
-                 client: ClientPool):
+                 client: ClientPool,
+                 spam_handler: SpamHandlerInterface=None):
 
         self._event_store = event_store
         self._profile_handler = profile_handler
         self._profile_store = profile_handler.store
         self._channel_handler = channel_handler
+        self._spam_handler = spam_handler
 
         self._web_sockets = {}
         super(NostrWeb, self).__init__(file_root)
@@ -556,7 +559,6 @@ class NostrWeb(StaticServer):
         }
         return ret
 
-    @lru_cache(maxsize=10)
     def _get_channel_matches(self, match_str, ttl_hash=None):
         return self._channel_handler.channels.matches(match_str,
                                                       max_match=None,
@@ -1613,7 +1615,8 @@ class NostrWeb(StaticServer):
         return evt.content == '' or evt.content.startswith('{')
 
     def do_event(self, sub_id, evt: Event, relay):
-        if self.is_spam(evt):
+        if self._spam_handler and self._spam_handler.is_spam(evt):
+            logging.debug('ignoring spam event: %s' % evt)
             return
 
         if self._dedup.accept_event(evt):

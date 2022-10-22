@@ -1,7 +1,6 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from nostr.event.event import Event
     from nostr.event.persist import ClientEventStoreInterface
 
 import json
@@ -9,6 +8,8 @@ from abc import ABC, abstractmethod
 from nostr.channels.channel import Channel, ChannelList
 from nostr.util import util_funcs
 from db.db import SQLiteDatabase, QueryFromFilter
+from data.data import DataSet
+from nostr.event.event import Event
 
 
 class ChannelStoreInterface(ABC):
@@ -111,21 +112,80 @@ class SQLiteSQLChannelStore(ChannelStoreInterface):
 
         return self._db.execute_batch(batch)
 
-    def select(self, filter={}):
-        my_q = QueryFromFilter('select * from channels',
-                               filter=filter,
-                               placeholder=self._db.placeholder).get_query()
+    def select(self, limit=None, until=None) -> DataSet:
+        my_sql ="""
+			select 
+				c.event_id as c_id,
+                c.create_pub_k as c_create_pub_k,
+                c.attrs as c_attrs,
+                c.created_at as c_created_at,
+                c.updated_at as c_updated_at,
+                last_post_pub_k,
+                last_post_text,
+                last_post_time
+			from channels c
+			left outer join 
+			(select 
+                c_id,
+                c_create_pub_k,
+                c_attrs,
+                c_created_at,
+                c_updated_at,
+                last_post_pub_k,
+                last_post_text,
+                last_post_time
+                from (
+                select 
+                c.event_id as c_id,
+                c.create_pub_k as c_create_pub_k,
+                c.attrs as c_attrs,
+                c.created_at as c_created_at,
+                c.updated_at as c_updated_at,
+                e.content as last_post_text,
+                e.pubkey as last_post_pub_k,
+                e.created_at as last_post_time,
+                row_number() over (PARTITION by et.value order by e.created_at desc) as rn
+                from channels c
+                inner join event_tags et on et.type='e' and et.value=c.event_id
+                inner join events e on et.id = e.id
+                where e.kind=42
+                ) as channels
+                where channels.rn=1) as with_posts on c.event_id = c_id
+        """
+        args = []
 
-        channels = self._db.select_sql(sql=my_q['sql'],
-                                       args=my_q['args'])
+        if until:
+            my_sql = my_sql + 'and last_post_time < %s' % self._db.placeholder
+            args.append(until)
+
+        my_sql = my_sql + ' order by last_post_time desc'
+
+        if limit:
+            my_sql = my_sql + ' limit %s' % self._db.placeholder
+            args.append(limit)
+
+        channels = self._db.select_sql(sql=my_sql, args=args)
+
         ret = []
+        new_c: Channel
         for c_c in channels:
-            ret.append(Channel(event_id=c_c['event_id'],
-                               create_pub_k=c_c['create_pub_k'],
-                               attrs=c_c['attrs'],
-                               created_at=c_c['created_at'],
-                               updated_at=c_c['updated_at']))
+            new_c = Channel(event_id=c_c['c_id'],
+                            create_pub_k=c_c['c_create_pub_k'],
+                            attrs=c_c['c_attrs'],
+                            created_at=c_c['c_created_at'],
+                            updated_at=c_c['c_updated_at'])
+
+            if c_c['last_post_pub_k']:
+                new_c.last_post = Event(
+                    kind=Event.KIND_CHANNEL_MESSAGE,
+                    content=c_c['last_post_text'],
+                    pub_key=c_c['last_post_pub_k'],
+                    created_at=c_c['last_post_time']
+                )
+
+            ret.append(new_c)
         return ChannelList(ret)
+
 
     def channels_for_keys(self, keys: [str]):
         my_q = QueryFromFilter("""

@@ -2599,6 +2599,9 @@ APP.nostr.gui.channel_list = function(){
             let pub_ks = new Set([]);
             channels.forEach(function(c){
                 pub_ks.add(c.create_pub_k);
+                if(c.last_post){
+                    pub_ks.add(c.last_post.pubkey);
+                }
             });
 
             _profiles.fetch({
@@ -2616,6 +2619,9 @@ APP.nostr.gui.channel_list = function(){
         args.map_func = args.map_func!==undefined ? args.map_func :  (channel) => {
             let id = channel.id,
                 owner_p = _profiles.lookup(channel.create_pub_k),
+                last_post,
+                last_post_p,
+                last_post_r,
                 render_channel = {
                     // required to make unique ids if page has more than one list showing same items on page
                     'uid' : uid,
@@ -2625,7 +2631,8 @@ APP.nostr.gui.channel_list = function(){
                     'picture': channel.picture,
                     'about': channel.about,
                     'owner_pub_k': channel.create_pub_k,
-                    'short_owner_pub_k': _util.short_key(channel.create_pub_k)
+                    'short_owner_pub_k': _util.short_key(channel.create_pub_k),
+                    'label': 'owner'
                 };
 
             // plug in owner profile info if we have it
@@ -2634,6 +2641,24 @@ APP.nostr.gui.channel_list = function(){
                 render_channel['owner_picture'] = owner_p.attrs.picture;
             }
 
+            // add last post info if any
+            last_post = channel.last_post;
+            if(last_post!==null){
+                last_post_p = _profiles.lookup(last_post.pubkey),
+                    last_post_r = {
+                        'short_owner_pub_k':  _util.short_key(last_post.pubkey)
+                    };
+                if(last_post_p!==null){
+                    last_post_r['owner_name'] = last_post_p.attrs.name;
+                    last_post_r['owner_picture'] = last_post_p.attrs.picture;
+                }
+                render_channel.last_post = {
+                    'user': Mustache.render(owner_tmpl, last_post_r),
+                    'content': last_post.content,
+                    'at_time': dayjs.unix(last_post.created_at).fromNow()
+                }
+
+            }
             return render_channel;
         };
 

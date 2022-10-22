@@ -22,6 +22,7 @@ from nostr.channels.persist import SQLiteSQLChannelStore, ChannelStoreInterface
 from nostr.channels.event_handlers import ChannelEventHandler
 from nostr.util import util_funcs
 from web.web import NostrWeb
+from nostr.spam_handlers.spam_handlers import ContentBasedDespam
 
 # TODO: also postgres
 # defaults here if no config given???
@@ -188,7 +189,11 @@ def run_web(clients,
             port: int = 8080):
 
     # we'll persist events, not done automatically by nostrweb
-    evt_persist = PersistEventHandler(event_store)
+    my_spam = ContentBasedDespam()
+
+    evt_persist = PersistEventHandler(event_store, spam_handler=my_spam)
+    my_peh = ProfileEventHandler(profile_store)
+    my_ceh = ChannelEventHandler(channel_store)
 
     # called on connect and any reconnect
     def my_connect(the_client: Client):
@@ -202,20 +207,25 @@ def run_web(clients,
         # if since < less_30days:
         #     since = less_30days
 
-        the_client.subscribe(handlers=[evt_persist, my_server], filters=[
+        the_client.subscribe(handlers=[evt_persist, my_peh, my_ceh, my_server], filters=[
             get_latest_event_filter(the_client, event_store, Event.KIND_REACTION),
             get_latest_event_filter(the_client, event_store, Event.KIND_DELETE),
-            get_latest_event_filter(the_client, event_store, Event.KIND_META),
             get_latest_event_filter(the_client, event_store, Event.KIND_TEXT_NOTE),
-            get_latest_event_filter(the_client, event_store, Event.KIND_CONTACT_LIST),
             get_latest_event_filter(the_client, event_store, Event.KIND_ENCRYPT),
-            get_latest_event_filter(the_client, event_store, Event.KIND_CHANNEL_CREATE),
-            get_latest_event_filter(the_client, event_store, Event.KIND_CHANNEL_MESSAGE),
             get_latest_event_filter(the_client, event_store, Event.KIND_RELAY_REC)
         ])
 
-    my_peh = ProfileEventHandler(profile_store)
-    my_ceh = ChannelEventHandler(channel_store)
+        the_client.subscribe(handlers=[evt_persist, my_peh, my_server], filters=[
+            get_latest_event_filter(the_client, event_store, Event.KIND_META),
+            get_latest_event_filter(the_client, event_store, Event.KIND_CONTACT_LIST)
+        ])
+
+        the_client.subscribe(handlers=[evt_persist, my_ceh, my_server], filters=[
+            get_latest_event_filter(the_client, event_store, Event.KIND_CHANNEL_CREATE),
+            get_latest_event_filter(the_client, event_store, Event.KIND_CHANNEL_MESSAGE)
+        ])
+
+
 
     def my_eose(the_client: Client, sub_id: str, events):
         print('eose', the_client.url)
@@ -243,6 +253,7 @@ def run_web(clients,
                          event_store=event_store,
                          profile_handler=my_peh,
                          channel_handler=my_ceh,
+                         spam_handler=my_spam,
                          client=my_client)
 
     my_client.start()
@@ -346,17 +357,27 @@ def run():
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.ERROR)
     run()
-    # from db.db import QueryFromFilter, SQLiteDatabase
-    # from nostr.ident.persist import ProfileType
-    # p_store = SQLiteProfileStore(db_file=WORK_DIR + 'nostrpy-client.db')
+
+    # from nostr.channels.persist import SQLiteSQLChannelStore
     #
-    # p_store.select_profiles(profile_type=ProfileType.LOCAL)
+    # c_s = SQLiteSQLChannelStore(db_file=WORK_DIR + 'nostrpy-client.db')
+    # print(c_s.select(limit=10, until=1666147754))
+    # from nostr.spam_handlers.spam_handlers import ContentBasedDespam
+    # e_s = ClientSQLiteEventStore( WORK_DIR + 'nostrpy-client.db')
+    # e_data = e_s.get_filter({
+    #     'ids': '8de658c8d7c18a19fec24a07bafab7fe190a15349b73133d626809ff7f796daa'
+    # })[0]
+    #
+    # my_spam = ContentBasedDespam()
+    # test_e = Event.from_JSON(e_data)
+    # print(my_spam.is_spam(test_e))
 
-
-
-
-    # e_s = ClientSQLiteEventStore( WORK_DIR + 'delete-reactions.db')
-    # for r in e_s.relay_list():
-    #     print(r)
+    #
+    # parts = ''.split(' ')
+    # if len(parts) <= 1:
+    #     if parts[0] == '' or len(parts[0]) > 10 and not parts[0].startswith('http:'):
+    #         print('potential spam')
+    #
+    # print('>',''.split(' '))
 
 

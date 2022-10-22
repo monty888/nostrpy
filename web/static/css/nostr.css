@@ -51,6 +51,7 @@ body {
 
 img{
     width:100%;
+    max-width:100%;
 }
 
 .web-preview{
@@ -279,8 +280,24 @@ img{
   max-width: 80%;
 }
 
+.channel-info{
+  flex: auto;
+  background-color : #221124;
+  word-wrap: break-word;
+  max-width: 100%;
+}
+
 .msg-content-own {
     background-color: #554457;
+}
+
+.inline-text, .msg-reply{
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 90%;
+    min-width: 90%;
+    display: inline-block;
+    white-space: nowrap;
 }
 
 .msg-reply {
@@ -288,11 +305,6 @@ img{
     padding-left:10px;
     margin-left: 10px;
     border-left: 2px solid cyan;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 90%;
-    display: inline-block;
-    white-space: nowrap;
 }
 
 

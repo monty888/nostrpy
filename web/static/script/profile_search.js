@@ -133,10 +133,15 @@
 
                     my_obj.data = my_obj.data.concat(data.channels);
                     if(my_obj.channels_list===undefined){
+                        try{
                         my_obj.channels_list = APP.nostr.gui.channel_list.create({
                             'con': my_obj.con,
                             'data' : my_obj.data
                         });
+                        }catch(e){
+                            console.log(e);
+                        }
+
                     }else{
                         if(my_obj.c_off===0){
                             my_obj.channels_list.set_data(my_obj.data);

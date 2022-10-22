@@ -3,10 +3,12 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from nostr.event.event import Event
 
+from threading import BoundedSemaphore
 from datetime import datetime
 import json
 from json import JSONDecodeError
 from nostr.util import util_funcs
+
 import logging
 
 
@@ -26,7 +28,9 @@ class Channel:
                        attrs=evt.content,
                        created_at=util_funcs.date_as_ticks(evt.created_at))
 
-    def __init__(self, event_id: str, create_pub_k: str, attrs=None, created_at: int = None, updated_at: int = None):
+    def __init__(self, event_id: str, create_pub_k: str, attrs=None,
+                 created_at: int = None, updated_at: int = None,
+                 last_post: Event = None):
         self._event_id = event_id
         self._create_pub_k = create_pub_k
         self._attrs = {}
@@ -49,13 +53,20 @@ class Channel:
         if updated_at is not None:
             self._updated_at = updated_at
 
+        self._last_post = last_post
+
     def as_dict(self):
+        last_post = None
+        if self._last_post:
+            last_post = self._last_post.event_data()
+
         return {
             'id': self.event_id,
             'create_pub_k': self.create_pub_k,
             'name': self.name,
             'about': self.about,
-            'picture': self.picture
+            'picture': self.picture,
+            'last_post': last_post
         }
 
     @property
@@ -104,6 +115,14 @@ class Channel:
     def set_attr(self, name, value):
         self._attrs[name] = value
 
+    @property
+    def last_post(self) -> Event:
+        return self._last_post
+
+    @last_post.setter
+    def last_post(self, evt: Event):
+        self._last_post = evt
+
     def __str__(self):
         name = self.name
         if name is None:
@@ -128,6 +147,8 @@ class ChannelList:
         c_c: Channel
         for c_c in self._channels:
             self._lookup[c_c.event_id] = c_c
+
+        self._lock = BoundedSemaphore()
 
     def matches(self, m_str, max_match=None, search_about=False):
         if m_str.replace(' ', '') == '':
@@ -173,6 +194,17 @@ class ChannelList:
         if channel_id in self._lookup:
             ret = self._lookup[channel_id]
         return ret
+
+    def sort(self):
+        def keyFunc(c: Channel):
+            ret = 0
+            if c.last_post:
+                ret = c.last_post.created_at_ticks
+            return ret
+
+        with self._lock:
+            self._channels.sort(key=keyFunc,
+                                reverse=True)
 
     def __len__(self):
         return len(self._channels)

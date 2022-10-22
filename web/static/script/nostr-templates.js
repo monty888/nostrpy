@@ -318,8 +318,8 @@ APP.nostr.gui.templates = function(){
                             '</span>',
                         '</div>'
         ],
-        'channel-list' : ['<div id="{{uid}}-{{id}}" style="padding-top:2px;cursor:pointer;" >',
-                            '<span class="profile-picture-area {{picture-selected}}" >',
+        'channel-list' : ['<div class="msg-container" id="{{uid}}-{{id}}" style="padding-top:2px;cursor:pointer;" >',
+                            '<span class="msg-picture" >',
                                 // TODO: do something if unable to load pic
                                 '{{#picture}}',
                                     '<img src="{{picture}}" loading="lazy" class="profile-pic-small""/>',
@@ -332,7 +332,7 @@ APP.nostr.gui.templates = function(){
                                     '</div>',
                                 '{{/picture}}',
                             '</span>',
-                            '<span class="profile-detail-area {{detail-selected}}" >',
+                            '<span class="channel-info" >',
                                 '{{#name}}',
                                     '{{name}}@',
                                 '{{/name}}',
@@ -346,6 +346,14 @@ APP.nostr.gui.templates = function(){
                                 '<span id="{{uid}}-{{id}}-{{owner_pub_k}}">',
                                     '{{> owner_info}}',
                                 '</span>',
+                                '{{#last_post}}',
+                                    '<span style="float:right" >{{at_time}}</span>',
+                                    // this will overflow but should look ok...
+                                    '<span class="msg-reply" style="max-width:100px" >',
+                                        '{{{user}}}  ',
+                                        '{{content}}',
+                                    '</span>',
+                                '{{/last_post}}',
                             '</span>',
                         '</div>'
         ],
@@ -370,7 +378,7 @@ APP.nostr.gui.templates = function(){
             '</div>'
         ],
         'channel-owner-info': [
-            'owner: ',
+            '{{label}} ',
             '{{#owner_picture}}',
                 '<img src="{{owner_picture}}" loading="lazy" class="profile-pic-verysmall""/>',
             '{{/owner_picture}}',

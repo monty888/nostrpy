@@ -116,7 +116,7 @@ class Event:
             content=evt_json['content'],
             tags=evt_json['tags'],
             pub_key=evt_json['pubkey'],
-            created_at=util_funcs.ticks_as_date(evt_json['created_at'])
+            created_at=evt_json['created_at']
         )
 
     @staticmethod
@@ -141,7 +141,11 @@ class Event:
         self._created_at = created_at
         # normally the case when creating a new event
         if created_at is None:
-            self._created_at = datetime.now()
+            self._created_at = util_funcs.date_as_ticks(datetime.now())
+        elif isinstance(self._created_at, datetime):
+            self._created_at = util_funcs.date_as_ticks(self._created_at)
+
+
         self._content = content
 
         self._pub_key = pub_key
@@ -158,7 +162,7 @@ class Event:
         ret = json.dumps([
             0,
             self._pub_key,
-            util_funcs.date_as_ticks(self._created_at),
+            self._created_at,
             self._kind,
             self._tags.tags,
             self._content
@@ -212,7 +216,7 @@ class Event:
         return {
             'id': self._id,
             'pubkey': self._pub_key,
-            'created_at': util_funcs.date_as_ticks(self._created_at),
+            'created_at': self._created_at,
             'kind': self._kind,
             'tags': self._tags.tags,
             'content': self._content,
@@ -347,12 +351,12 @@ class Event:
         return util_funcs.str_tails(self.id, 4)
 
     @property
-    def created_at(self):
-        return self._created_at
+    def created_at(self) -> datetime:
+        return util_funcs.ticks_as_date(self._created_at)
 
     @property
     def created_at_ticks(self):
-        return util_funcs.date_as_ticks(self._created_at)
+        return self._created_at
 
     @property
     def kind(self):
@@ -416,6 +420,6 @@ class Event:
         ret = super(Event, self).__str__()
         # on signed events we can retrn something more useful
         if self.id:
-            ret =  '%s@%s' % (self.id, self._created_at)
+            ret =  '%s@%s' % (self.id, self.created_at)
         return ret
 
