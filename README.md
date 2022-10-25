@@ -30,6 +30,7 @@ live nostr events view from the command line
 
 ## web ##
 web interface to nostr
+![alt feed page](feed_page.png "feed")
 
 > python3 cmd_web.py 
 
