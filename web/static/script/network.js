@@ -446,9 +446,11 @@ APP.remote = function(){
         // get a single channels info
         load_channel(args){
             args.url = _channel_for_id;
-            args.params = {
-                'id': args.id
-            };
+            _add_field('id', args);
+            _add_field('pub_k', args);
+            _add_field('include', args);
+            _add_field('post_from', args);
+            _add_field('match', args);
             do_query(args);
         },
         load_events(args){
@@ -537,7 +539,7 @@ APP.remote = function(){
             args['method'] = 'POST';
             let evt = _.extend({}, args.event);
             let content = encodeURIComponent(evt.content);
-            evt.content = '';
+//            evt.content = '';
             args['data'] = 'event=' + JSON.stringify(evt);
             args['data'] += '&content='+content;
 
@@ -555,7 +557,7 @@ APP.remote = function(){
 
             args['url'] = _update_profile_url;
             args['method'] = 'POST';
-            args['data'] = 'profile=' + JSON.stringify(args.profile)+ '&save='+save+'&publish='+publish+'&mode='+mode
+            args['data'] = 'profile=' + encodeURIComponent(JSON.stringify(args.profile))+ '&save='+save+'&publish='+publish+'&mode='+mode
             do_query(args);
         },
         'export_profile' : function(args){
@@ -644,11 +646,15 @@ APP.nostr_client = function(){
                 console.log(data);
             },
             _on_open = args.on_open || function(){},
-            _protocol = location.protocol==='https' ? 'wss://' : 'ws://';
+            _protocol = location.protocol==='https' ? 'wss://' : 'ws://',
+            _current_profile = APP.nostr.data.user.profile();
 
        // default where no url supplied, mostly this will be wants required
         if(_url===undefined){
-            _url = _protocol + location.host + '/websocket'
+            _url = _protocol + location.host + '/websocket';
+            if(_current_profile.pub_k){
+                _url += '?pub_k='+_current_profile.pub_k;
+            }
         }
         // now we can open
         _socket = new WebSocket(_url);
@@ -693,16 +699,15 @@ APP.nostr_client = function(){
 
         _create_ws({
             'on_data' : function(data){
+                console.log(data);
                 let n_relay_status;
                 if(data[0]==='relay_status'){
                     // relay modal uses this, it fires for every status we get so we can update times
                     APP.nostr.data.event.fire_event('relay_status', data[1]);
-                // assumed event
-                }else{
-                    // nostr event
-                    if(data.kind!==undefined){
-                        APP.nostr.data.event.fire_event('event', APP.nostr.data.nostr_event(data));
-                    }
+
+                // basic nostr event
+                }else if(data[0]=='event'){
+                    APP.nostr.data.event.fire_event('event', APP.nostr.data.nostr_event(data[1]));
                 }
             }
         });

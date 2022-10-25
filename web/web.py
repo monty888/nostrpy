@@ -34,7 +34,7 @@ from nostr.event.persist import ClientEventStoreInterface, SQLiteEventStore
 from nostr.encrypt import Keys
 from nostr.client.client import ClientPool, Client
 from nostr.client.event_handlers import DeduplicateAcceptor
-from nostr.channels.channel import Channel
+from nostr.channels.channel import Channel, ChannelList
 from nostr.util import util_funcs
 from nostr.spam_handlers.spam_handlers import SpamHandlerInterface
 import beaker.middleware
@@ -564,6 +564,32 @@ class NostrWeb(StaticServer):
                                                       max_match=None,
                                                       search_about=True)
 
+    def _channels_filter(self, channels):
+        pub_k = request.query.pub_k
+        if pub_k:
+            self._check_key(pub_k)
+            use_profile = self._profile_handler.profiles.lookup_pub_key(pub_k)
+
+            # channels created by these keys
+            create_keys = request.params.include
+            if create_keys:
+                create_keys = self._get_for_pub_keys(for_str=create_keys,
+                                                     use_profile=use_profile)
+                if create_keys:
+                    create_keys = set(create_keys)
+                    channels = [c_c for c_c in channels if c_c.create_pub_k in create_keys]
+
+            # channels with post by these keys
+            post_keys = request.params.post_from
+            if post_keys:
+                post_keys = self._get_for_pub_keys(for_str=request.params.post_from,
+                                                   use_profile=use_profile)
+                if post_keys:
+                    post_channels = self._channel_handler.store.channels_for_keys(post_keys)
+                    channels = [c_c for c_c in channels if c_c.event_id in post_channels]
+
+        return channels
+
     def _get_channel_route(self):
         """
         get a single channel via its id
@@ -580,7 +606,14 @@ class NostrWeb(StaticServer):
         if the_channel is None:
             raise NostrWebException('channel info not found')
 
-        return the_channel.as_dict()
+        match = request.query.match
+        cl = ChannelList([the_channel])
+        the_channel = self._channels_filter(cl.matches(match))
+
+        if the_channel:
+            return the_channel[0].as_dict()
+        else:
+            return {}
 
     def _channels_list_route(self):
         limit = self._get_query_limit()
@@ -595,24 +628,7 @@ class NostrWeb(StaticServer):
         for c_m in match.split(','):
             channels = channels + self._get_channel_matches(c_m, self.get_ttl_hash(60))
 
-        if pub_k:
-            self._check_key(pub_k)
-            use_profile = self._profile_handler.profiles.lookup_pub_key(pub_k)
-
-            # channels created by these keys
-            create_keys = self._get_for_pub_keys(for_str=request.params.include,
-                                                 use_profile=use_profile)
-            if create_keys:
-                create_keys = set(create_keys)
-                channels = [c_c for c_c in channels if c_c.create_pub_k in create_keys]
-
-            # channels with post by these keys
-            post_keys = self._get_for_pub_keys(for_str=request.params.post_from,
-                                               use_profile=use_profile)
-            if post_keys:
-                post_channels = self._channel_handler.store.channels_for_keys(post_keys)
-                channels = [c_c for c_c in channels if c_c.event_id in post_channels]
-
+        channels = self._channels_filter(channels)
 
         return {
             'channels': [c_c.as_dict() for c_c in channels[offset:offset+limit]]
@@ -1102,7 +1118,7 @@ class NostrWeb(StaticServer):
         for where we're restricting to set pub keys i.e. filter on search events page
         :param for_str: followersplus, followers, self anything else is everyone/not applied
         :param use_profile: followers worked out from ths profile
-        :return: None=everyone not restricted else [pks]
+        :return: None = everyone
         """
         ret = None
         for_str = for_str.lower()
@@ -1624,69 +1640,42 @@ class NostrWeb(StaticServer):
             # will update our profiles if meta/contact type data
             self._profile_handler.do_event(sub_id, evt, relay)
 
-            if evt.kind == Event.KIND_ENCRYPT:
-                decrypted = 'unable to decrypt...'
-                try:
-                    """
-                        would prefer to use _decrypt_event_content_as_user here but we have a problem that we don't have
-                        a request so we can't get the current user...
-                        This means we'll decrypted anything we can with the profiles we have which may not be the profile the user 
-                        is currently using... Obvs this isn't great, possibly we can get the session user from the ws when we send data?
-                        It doesn't really matter at teh moment as front end will only show events for current view but most 
-                        importantly we're only really worried about a single user and all this profiles are theres so they could 
-                        just switch profile and see the text we decrypt anyhow
-
-                    """
-                    p_tags = evt.p_tags
-                    if p_tags:
-                        to_p = p_tags[0]
-                        if to_p == evt.pub_key:
-                            to_p = p_tags[1]
-
-                    send: Profile = self._profile_handler.profiles.lookup_pub_key(evt.pub_key)
-                    if send and send.private_key:
-                        decrypted = evt.decrypted_content(priv_key=send.private_key,
-                                                          pub_key=to_p)
-                    else:
-                        rec: Profile = self._profile_handler.profiles.lookup_pub_key(to_p)
-                        if rec and rec.private_key:
-                            decrypted = evt.decrypted_content(priv_key=rec.private_key,
-                                                              pub_key=evt.pub_key)
-
-                except:
-                    pass
-                evt.content = decrypted
-
             # push the event to our web sockets, only those events that have a time
             # otherwise client will get flooded with events if server is being started and there
             # are a lot of events to catch up on or db has just been created and maybe all old events
             # are being imported
             if evt.created_at_ticks > self._started_at:
-                print('doing event send?')
-                the_data = evt.event_data()
-                if the_data['kind'] == Event.KIND_REACTION:
-                    the_data = self._add_reaction_events([the_data])[0]
+                evt_data = evt.event_data()
+                if evt.kind == Event.KIND_REACTION:
+                    evt_data = self._add_reaction_events([evt_data])[0]
 
-                # eventual we should try to track who the user is then this could decrypt for us
-                the_data = self._serialise_event(the_data)
-
-                self.send_data(the_data)
+                self.send_data(['event', evt_data])
 
     def send_data(self, the_data):
         for c_sock in self._web_sockets:
             try:
-                ws = self._web_sockets[c_sock]
-                ws.send(DateTimeEncoder().encode(the_data))
+                ws = self._web_sockets[c_sock]['ws']
+                pub_k = self._web_sockets[c_sock]['pub_k']
+                send_data = the_data
+                if the_data[0] == 'event':
+                    use_profile = self._profile_handler.profiles.lookup_pub_key(pub_k)
+                    send_data = ['event', self._serialise_event(the_data[1], use_profile)]
+
+                ws.send(DateTimeEncoder().encode(send_data))
             except Exception as e:
                 logging.debug('NostrWeb::send_data - %s' % e)
 
     def _handle_websocket(self):
-        logging.debug('Websocket opened')
+        pub_k = request.query.pub_k
+        logging.debug('Websocket opened given pub_k - %s' % pub_k)
         wsock = request.environ.get('wsgi.websocket')
         if not wsock:
             abort(400, 'Expected WebSocket request.')
 
-        self._web_sockets[str(wsock)] = wsock
+        self._web_sockets[str(wsock)] = {
+            'ws': wsock,
+            'pub_k': pub_k
+        }
         while True:
             try:
                 # this is just to keep alive, currently we're doing nothing with dead sockets....

@@ -237,6 +237,7 @@ def run_web(clients,
         print('evt complete', the_client.url)
 
 
+
     # so server can send out client status messages
     def my_status(status):
         my_server.send_data([

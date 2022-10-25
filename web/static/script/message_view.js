@@ -23,15 +23,10 @@
                 if(data['error']!==undefined){
                     alert(data['error']);
                 }else{
-                    try{
-                        _main_con.html('<div style="position:sticky;top: 0;width:100%;background-color:black">stuff here</div><div id="msgs" ></div>');
-                        _my_view = APP.nostr.gui.dm_list.create({
-                            'con' : _('#msgs'),
-                            'events' : data['events']
-                        });
-                    }catch(e){
-                        console.log(e);
-                    }
+                    _my_view = APP.nostr.gui.dm_list.create({
+                        'con' : _main_con,
+                        'events' : data['events']
+                    });
                 }
             }
         });
@@ -59,28 +54,6 @@
         ]);
 
         load_notes();
-        // init the profiles data
-//        APP.nostr.data.profiles.init({
-//            'on_load' : function(){
-//                _my_event_view.profiles_loaded();
-//            }
-//        });
-
-
-        APP.nostr.gui.post_button.create();
-        // our own listeners
-        // profile has changed
-        APP.nostr.data.event.add_listener('profile_set',function(of_type, data){
-            // it'll go to home now anyhow
-        });
-
-        // any post
-        APP.nostr.data.event.add_listener('post-success', function(type, event){
-            // its just a post better go back to the reply screen
-            if(event.type!=='reply'){
-                window.location = '/';
-            }
-        });
 
         // start client for future notes....
         APP.nostr_client.create();

@@ -284,10 +284,10 @@ class MemoryEventStore(EventStoreInterface):
                         if self.test_event(c_evt, c_filter):
                             ret.add(c_evt)
 
-        def _updated_sort(evt: Event):
-            return evt.created_at
+        def _updated_sort(evt_data):
+            return evt_data['created_at']
 
-        ret = list(ret)
+        ret = [c_evt.event_data() for c_evt in ret]
         if self._sort_direction != SortDirection.natural:
             ret.sort(key=_updated_sort, reverse=self._sort_direction==SortDirection.newest_first)
 

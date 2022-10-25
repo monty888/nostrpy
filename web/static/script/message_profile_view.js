@@ -172,10 +172,17 @@
         load_notes();
 
         _post_but.on('click', do_post);
-        _reply_cancel_but.on('click', cancel_reply)
+        _reply_cancel_but.on('click', cancel_reply);
         _post_txt.on('input', ()=>{
             _post_but[0].disabled = _post_txt.val()==='';
         });
+
+        _(document).on('keydown', function(e){
+            if(e.key==='Escape'){
+                cancel_reply();
+            }
+        });
+
 
         // start client for future notes....
         APP.nostr_client.create();

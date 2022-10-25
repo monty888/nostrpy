@@ -13,7 +13,7 @@ from nostr.encrypt import Keys
 
 # TODO: also postgres
 WORK_DIR = '%s/.nostrpy/' % Path.home()
-DB_FILE = 'nostr-client.db'
+DB_FILE = 'nostrpy-client.db'
 
 def usage():
     print("""
@@ -145,7 +145,11 @@ def view_profiles(profile_store:ProfileStoreInterface):
         name = c_p.name
         if name is None:
             name = '-'
-        print('%s %s [%s]' % (c_p.public_key, name[:15].ljust(15), c_p.profile_name[:20].ljust(20)))
+        profile_name = c_p.profile_name
+        if profile_name is None:
+            profile_name = '-'
+
+        print('%s %s [%s]' % (c_p.public_key, name[:15].ljust(15), profile_name[:20].ljust(20)))
 
 def profile_edit():
     try:
@@ -202,5 +206,5 @@ def test_store():
 
 
 if __name__ == "__main__":
-    logging.getLogger().setLevel(logging.ERROR)
+    logging.getLogger().setLevel(logging.DEBUG)
     profile_edit()

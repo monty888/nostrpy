@@ -40,7 +40,8 @@ class Profile:
                           update_at=evt.created_at_ticks)
         return ret
 
-    def __init__(self, priv_k=None, pub_k=None, attrs=None, profile_name=None, update_at=None):
+    def __init__(self, priv_k=None, pub_k=None, attrs=None, profile_name=None,
+                 update_at: int = None):
         """
             create a new ident/person that posts can be followed etc.
             having the priv key means we can sign and so post (it's us)
@@ -74,9 +75,9 @@ class Profile:
         # we'll always want a date when this profile was valid, if its not provided then its now
         self._update_at = update_at
         if update_at is None:
-            self._update_at = datetime.now()
-        elif not isinstance(self._update_at, datetime):
-            self._update_at = util_funcs.ticks_as_date(self._update_at)
+            self._update_at = util_funcs.date_as_ticks(datetime.now())
+        elif isinstance(self._update_at, datetime):
+            self._update_at = util_funcs.date_as_ticks(self._update_at)
 
     """
         only exists if us, we use this name to load the profile from db, it doesn't have to match
@@ -182,12 +183,11 @@ class Profile:
         self._attrs[name] = value
 
     @property
-    def update_at(self):
-        # note as datetime - convert to ticks before storing in dd
+    def update_at(self)-> int:
         return self._update_at
 
     @update_at.setter
-    def update_at(self, at_date):
+    def update_at(self, at_date:int):
         self._update_at = at_date
 
     def get_meta_event(self):
@@ -229,7 +229,8 @@ class Profile:
         ret = {
             'pub_k': self.public_key,
             'attrs': self.attrs,
-            'can_sign': self.private_key is not None
+            'can_sign': self.private_key is not None,
+            'updated_at': self.update_at
         }
         if with_private_key:
             ret['private_key'] = self.private_key
@@ -379,14 +380,14 @@ class ProfileList:
             # if we have del old profile_name ref if any as it may have changed
             if our_p.profile_name:
                 del self._pname_lookup[our_p.profile_name]
-            # if things are being done properly then these shouldn't change but wont
-            # hurt to wipe them...
+
+            # it makes no sense to change keys
+            # updates we as nostr events wouldn't contain the priv_k
+            # so if we have it we copy it back in here
             if our_p.private_key is not None:
-                del self._priv_key_lookup[our_p.private_key]
-            del self._pub_key_lookup[our_p.public_key]
-
-
-
+                profile.private_key = our_p.private_key
+            #     del self._priv_key_lookup[our_p.private_key]
+            # del self._pub_key_lookup[our_p.public_key]
 
         # add/update lookups
         self._pub_key_lookup[profile.public_key] = profile

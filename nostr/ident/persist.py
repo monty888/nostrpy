@@ -558,7 +558,7 @@ class SQLProfileStore(ProfileStoreInterface):
                 p.private_key, p.public_key,
                 p.profile_name, json.dumps(p.attrs),
                 p.get_attr('name'), p.get_attr('picture'),
-                util_funcs.date_as_ticks(p.update_at)
+                p.update_at
             ]
         else:
             sql = """
@@ -577,7 +577,7 @@ class SQLProfileStore(ProfileStoreInterface):
                 p.public_key,
                 json.dumps(p.attrs),
                 p.get_attr('name'), p.get_attr('picture'),
-                util_funcs.date_as_ticks(p.update_at)
+                p.update_at
             ]
         batch.append({
             'sql': sql,

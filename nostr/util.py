@@ -1,10 +1,11 @@
+import time
 import sys
 from datetime import datetime, timedelta
 import logging
 import os
 from pathlib import Path
 from db.db import SQLiteDatabase
-from datetime import time
+
 
 """
     just a place to hand any util funcs that don't easily fit anywhere else

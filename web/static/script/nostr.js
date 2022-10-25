@@ -175,24 +175,24 @@ _.fadeOut = (el, callback, ms) => {
 APP.nostr = {
     'data' : {},
     'util' : {
-        'short_key': function (key){
+        short_key(key){
             return key.substring(0, 3) + '...' + key.substring(key.length-4)
         },
-        'html_escape': function (in_str, ignore){
-            let _replacements = [
-                [/\<script\>/g,'&ltscript&gt'],
-                [/\<\/script>/g,'&lt/script&gt'],
-
-            ];
-            _replacements.forEach(function(c_rep,i){
-                let val = c_rep[0],
-                    rep = c_rep[1];
-                if(ignore===undefined || ignore[val]===undefined){
-                    in_str = in_str.replace(val, rep);
-                }
-            });
-            return in_str;
-        },
+//        html_escape(in_str, ignore){
+//            let _replacements = [
+//                [/\<script\>/g,'&ltscript&gt'],
+//                [/\<\/script>/g,'&lt/script&gt'],
+//
+//            ];
+//            _replacements.forEach(function(c_rep,i){
+//                let val = c_rep[0],
+//                    rep = c_rep[1];
+//                if(ignore===undefined || ignore[val]===undefined){
+//                    in_str = in_str.replace(val, rep);
+//                }
+//            });
+//            return in_str;
+//        },
 
 
         // copied from https://stackoverflow.com/questions/17678694/replace-html-entities-e-g-8217-with-character-equivalents-when-parsing-an

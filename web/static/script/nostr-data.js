@@ -350,6 +350,7 @@ APP.nostr.data.user = function(){
     Profiles should be accessed through here, don't use network methods directly...
 */
 APP.nostr.data.profiles = function(){
+    const _data = APP.nostr.data;
     let _lookup = {},
         _in_progress_count = 0,
         _wait_load = [],
@@ -586,6 +587,24 @@ APP.nostr.data.profiles = function(){
         }
         return c_val;
     }
+
+    _data.event.add_listener('event', (type, evt) =>{
+        // if we have update our cache, if we don't have cached we'll just let it get pulled normally
+        let local_p,
+            attrs;
+
+        if((evt.kind==0) && (local_p = lookup(evt.pubkey)) && (evt.created_at>local_p.updated_at)){
+            try{
+                local_p.attrs = JSON.parse(evt.content);
+                _clean_profile(local_p);
+                // we should fire event here to sync
+
+            }catch(e){
+                console.log(e);
+            }
+        }
+    });
+
 
     return {
         // used when we know what pks we want

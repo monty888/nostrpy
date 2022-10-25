@@ -37,7 +37,7 @@
         _tool_html = [
             '<div class="input-group mb-2" >',
                 '<input style="max-width:10em" placeholder="search" type="text" class="form-control" id="search-in">',
-                '<button style="padding-top:0px" id="filter_but" type="button" class="btn btn-primary" >' +
+                '<button disabled style="padding-top:0px" id="filter_but" type="button" class="btn btn-primary" >' +
                 '<svg class="nbi-btn" >',
                     '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#filter-square"/>',
                 '</svg>',
@@ -108,6 +108,26 @@
             });
         }
 
+        // checks if a channel is in view given the current filter
+        // used when we see a channel post event but its not in a channel that we're displaying
+        // possible because its outside view because of the limit but not the filter
+        function test_channel(channel_id, callback){
+            alert(channel_id);
+            APP.remote.load_channel({
+                'pub_k': _pub_k,
+                'include': _user.get(_pub_k+'.channel-search-include', 'anyone'),
+                'post_from': _user.get(_pub_k+'.channel-search-from', 'anyone'),
+                'match': _search_val,
+                'id': channel_id,
+                success(data){
+                    if(data.error!==undefined){
+                    }else{
+                        callback(data);
+                    }
+                }
+            });
+        }
+
         function load_channels(){
             // our state is held here
             let my_obj = _tab_objs[1];
@@ -136,7 +156,8 @@
                         try{
                         my_obj.channels_list = APP.nostr.gui.channel_list.create({
                             'con': my_obj.con,
-                            'data' : my_obj.data
+                            'data' : my_obj.data,
+                            'test_channel': test_channel
                         });
                         }catch(e){
                             console.log(e);
@@ -179,19 +200,15 @@
                 'on_tab_change': function(i, con){
                     reset_tab(_tab_objs[i]);
                     _tab_objs[i].load_func(i,con);
+
+                    _search_in && _search_in.focus();
                 },
                 'scroll_bottom': function(i, con){
                     let tab_obj = _tab_objs[i];
                     if(!tab_obj.maybe_more || tab_obj.loading){
                         return;
                     }
-                    try{
-                        tab_obj.load_func(i,con);
-                    }catch(e){
-                        console.log(e);
-                    }
-
-
+                    tab_obj.load_func(i,con);
                 },
                 'tabs' : _tab_objs
             });
@@ -199,21 +216,24 @@
             _my_tabs.draw();
             _my_tabs.get_tool_con().html(_tool_html);
             _filter_but = _('#filter_but');
-            _filter_but.on('click', (e) => {
-                let args = {
-                        on_change(){
-                            reset_selected_tab();
-                        }
-                    },
-                    c_tab = _my_tabs.get_selected_index();
+            if(_pub_k){
+                _filter_but[0].disabled = false;
+                _filter_but.on('click', (e) => {
+                    let args = {
+                            on_change(){
+                                reset_selected_tab();
+                            }
+                        },
+                        c_tab = _my_tabs.get_selected_index();
 
-                if(c_tab===0){
-                    APP.nostr.gui.profile_search_filter_modal.show(args);
-                }else{
-                    APP.nostr.gui.channel_search_filter_modal.show(args);
-                }
+                    if(c_tab===0){
+                        APP.nostr.gui.profile_search_filter_modal.show(args);
+                    }else{
+                        APP.nostr.gui.channel_search_filter_modal.show(args);
+                    }
 
-            });
+                });
+            }
         }
 
         function init_search(){

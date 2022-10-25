@@ -78,7 +78,7 @@ class ProfileEventHandler:
         p = []
         for c_evt in evts:
             c_p = self._profiles.lookup_pub_key(c_evt.pub_key)
-            if c_p is None or c_p.update_at < c_evt.created_at:
+            if c_p is None or c_p.update_at < c_evt.created_at_ticks:
                 try:
                     p_e.append(c_p)
                     p.append(Profile.from_event(c_evt))

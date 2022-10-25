@@ -1121,8 +1121,6 @@ APP.nostr.gui.event_view = function(){
             // like nostr filter but minimal impl just for what we need
             // TODO: Fix this make filter obj?
             _sub_filter = args.filter!==undefined ? args.filter : APP.nostr.data.filter.create([]),
-            // track which event details are expanded
-            _expand_state = {},
             // underlying APP.nostr.gui.list
             _my_list,
             // interval timer for updating times
@@ -1210,30 +1208,6 @@ APP.nostr.gui.event_view = function(){
             }
 
             return to_add;
-        }
-
-        function _expand_event(e_data){
-            let evt_id = e_data.id,
-            con;
-            if(_expand_state[evt_id]===undefined){
-                con = _('#'+uevent_id(evt_id)+'-expandcon');
-                _expand_state[evt_id] = {
-                    'is_expanded' : false,
-                    'con' : con,
-                    'event_info' : APP.nostr.gui.event_detail.create({
-                        'con' : con,
-                        'event': e_data
-                    })
-                };
-                _expand_state[evt_id].event_info.draw();
-            }
-
-            _expand_state[evt_id].is_expanded ?
-                _expand_state[evt_id].con.css('display','none') : _expand_state[evt_id].con.css('display','block');
-
-            _expand_state[evt_id].is_expanded = !_expand_state[evt_id].is_expanded;
-
-
         }
 
         function to_add_preview(url){
@@ -1387,7 +1361,7 @@ APP.nostr.gui.event_view = function(){
                             type = parts[1],
                             evt = _event_map[event_id] !==undefined ? _event_map[event_id].event : null;
                         if(type==='expand'){
-                            _expand_event(evt);
+                            APP.nostr.gui.event_info_modal.show(evt);
                         }else if(type==='pt' || type==='pp'){
                             if(evt.react_event){
                                 evt = evt.react_event;
@@ -2043,6 +2017,8 @@ APP.nostr.gui.event_detail = function(){
                     }
                 ]
             });
+
+
         // methods
         function create_render_obj(){
             let block_split = function(oval){
@@ -2067,7 +2043,9 @@ APP.nostr.gui.event_detail = function(){
                 },
                 {
                     'title' : 'content',
-                    'func': APP.nostr.util.html_escape
+                    func(str){
+                        return DOMPurify.sanitize(str, {ALLOWED_TAGS: []});
+                    }
                 },
                 {
                     'title' : 'pubkey',
@@ -2104,11 +2082,13 @@ APP.nostr.gui.event_detail = function(){
         }
 
         function render_raw(){
-            _my_tabs.get_tab(1)['content-con'].html('<div style="white-space:pre-wrap;max-width:100%" class="event-detail" >' + APP.nostr.util.html_escape(JSON.stringify(_event, null, 2))+ '</div>');
-        }
+            let r_arr = [
+                '<div style="white-space:pre-wrap;max-width:100%" class="event-detail" >',
+                    DOMPurify.sanitize(JSON.stringify(_event, null, 2), {ALLOWED_TAGS: []}),
+                '</div>'
+            ];
 
-        function render_relays(){
-
+             _my_tabs.get_tab(1)['content-con'].html(r_arr.join(''));
         }
 
         function draw(){
@@ -2289,7 +2269,7 @@ APP.nostr.gui.profile_edit = function(){
             render_head();
 
             // add events
-            _("input, textarea").on('keyup', function(e){
+            _("input, textarea").on('input', function(e){
                 let id = e.target.id,
                     val = e.target.value;
 
@@ -2523,6 +2503,21 @@ APP.nostr.gui.mapped_list = function (){
             });
         }
 
+        function remove(id){
+            let r_obj = _render_lookup[id],
+                c_obj;
+            if(r_obj!==undefined){
+                delete _render_lookup[id];
+                for(let i=0;i<_render_arr.length;i++){
+                    c_obj = _render_arr[i];
+                    if(c_obj[_key]===id){
+                        _render_arr.splice(i,1);
+                        break;
+                    }
+                }
+            }
+        }
+
         /*
             TODO - if we make a version of list that accepts the create_render_obj as a function
                 we can probably reduce down a lot of the list code
@@ -2545,28 +2540,33 @@ APP.nostr.gui.mapped_list = function (){
         init();
 
         return {
-            'data': function(){
+            data(){
                 return _my_list.data();
             },
-            'src_data': function(){
+            remove(id){
+                remove(id);
+            },
+            src_data(){
                 return _src_data;
             },
-            'draw': draw,
-            'lookup': function(id){
+            draw(){
+                draw();
+            },
+            lookup(id){
                 return _render_lookup[id];
             },
-            'set_data': function(data){
+            set_data(data){
                 _src_data = data;
                 create_render_data();
                 _my_list.set_data(_render_arr);
                 _my_list.draw();
             },
-            'add_data': function(data){
+            add_data(data){
                 _src_data = _src_data.concat(data);
                 append_render_data(data);
                 _my_list.append_draw(_src_data.length - data.length);
             },
-            'prepend_data': function(data){
+            prepend_data(data){
                 _src_data = data.concat(_src_data);
                 prepend_render_data(data);
                 _my_list.prepend_draw(data.length);
@@ -2592,7 +2592,49 @@ APP.nostr.gui.channel_list = function(){
             draw_required,
             enable_media = APP.nostr.data.user.enable_media(),
             row_tmpl = _gui.templates.get('channel-list'),
-            owner_tmpl = _gui.templates.get('channel-owner-info');
+            owner_tmpl = _gui.templates.get('channel-owner-info'),
+            test_channel = args.test_channel;
+
+        // so we get a lookup
+        args.key = 'id';
+
+        // if any messages in channels then update
+        APP.nostr.data.event.add_listener('event', function(type, evt){
+            is_in_view_channel_event(evt, (channel)=>{
+                my_list.remove(channel.id);
+                channel.last_post = evt;
+                my_list.prepend_data([channel]);
+                my_list.draw();
+            });
+        });
+
+        function is_in_view_channel_event(evt, action){
+            let ret = false,
+                channel,
+                channel_id;
+            // is post in group
+            if(evt.kind===42){
+                channel_id = evt.get_first_e_tag_value();
+                channel = my_list.lookup(channel_id);
+                // easiest being displayed
+                if(channel){
+                    action(channel.src_obj);
+                // we have to do a server call that'll return the channel if it passes our current filter
+                }else{
+                    if(test_channel===undefined){
+                        alert('post message for a channel that is not in view but no test function supplied!!');
+                    }else{
+                        test_channel(channel_id, (data) => {
+                            if(data.id!==undefined){
+                                action(data);
+                            }
+                        });
+                    }
+                }
+
+            }
+            return ret;
+        }
 
         function load_profiles(channels){
             profiles_loading = true;
@@ -2828,10 +2870,13 @@ APP.nostr.gui.channel_view_list = function(){
 
         function add_reply(evt){
             let e_tags = evt.get_tag_values('e'),
-                replied_evt;
-            // we'll take e 1 as who we're replying too.. we should probably look to see if one is taged as reply
-            if(e_tags.length>1){
-                replied_evt = my_list.lookup(e_tags[1]);
+                replied_evt,
+                // if dm reply event at 0 if group at 1
+                reply_id = evt.kind===4 ? e_tags[0] : e_tags[1];
+
+            // is it replying?
+            if(reply_id!==undefined){
+                replied_evt = my_list.lookup(reply_id);
                 if(replied_evt){
                     evt.reply_events = [replied_evt.src_obj];
                 // TODO: try and fetch the event... as is this only works if reply event is in those we have pulled already
@@ -2941,7 +2986,8 @@ APP.nostr.gui.channel_view_list = function(){
                 'pp': 'view_profile',
                 'pt': 'view_profile',
                 'reply': 'goto_reply',
-                'doreply': 'reply_to'
+                'doreply': 'reply_to',
+                'info': 'info'
             };
 
             let splits = id.split('-'),
@@ -2949,14 +2995,16 @@ APP.nostr.gui.channel_view_list = function(){
                 e_id, action;
             if(splits.length==2){
                 e_id = splits[0];
-                action = action_lookup[splits[1]],
+                action = action_lookup[splits[1]];
                 click_objs = my_list.lookup(e_id);
                 if(action==='view_profile'){
                     _goto.view_profile(click_objs.src_obj.pubkey);
                 }else if(action==='goto_reply'){
                     goto_reply(click_objs.src_obj);
                 }else if(action==='reply_to'){
-                    on_reply && on_reply(my_list.lookup(e_id).src_obj);
+                    on_reply && on_reply(click_objs.src_obj);
+                }else if(action==='info'){
+                    _gui.event_info_modal.show(click_objs.src_obj);
                 }
             }
         },
@@ -3214,7 +3262,7 @@ APP.nostr.gui.dm_list = function (){
 
             // listen to new events, maybe add them/update display
             APP.nostr.data.event.add_listener('event', function(type, event){
-                event = _nostr_event(event);
+//                event = _nostr_event(event);
                 if(is_our_dm(event)){
                     update(event);
                 }
@@ -4534,6 +4582,32 @@ APP.nostr.gui.profile_search_filter_modal = function(){
 
             }
         });
+        _gui.modal.show();
+    }
+
+    return {
+        'show' : show
+    }
+}();
+
+APP.nostr.gui.event_info_modal = function(){
+    /*
+        modal to show detailed information about an event
+    */
+    const _gui = APP.nostr.gui,
+        _user = APP.nostr.data.user,
+        _util = APP.nostr.util;
+
+    function show(evt){
+        _gui.modal.create({
+            'title' : 'event detail <span class="pubkey-text">'+_util.short_key(evt.id)+'</span>'
+        });
+
+        APP.nostr.gui.event_detail.create({
+            'con' : _gui.modal.get_container(),
+            'event': evt
+        }).draw();
+
         _gui.modal.show();
     }
 

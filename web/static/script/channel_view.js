@@ -233,6 +233,11 @@
         load_messages();
         // focus into the msg txt which exists if we have a profile selected
         _post_txt[0] && _post_txt[0].focus();
+        _(document).on('keydown', function(e){
+            if(e.key==='Escape'){
+                cancel_reply();
+            }
+        });
 
         APP.nostr_client.create();
 
