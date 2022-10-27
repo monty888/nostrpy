@@ -76,8 +76,7 @@ class EventStoreInterface(ABC):
                self.is_NIP16() and (10000 <= evt.kind < 20000)
 
     def is_ephemeral(self, evt:Event) ->bool:
-        return ((20000 <= evt.kind < 30000) and self.is_NIP16())\
-               or evt.kind == evt.KIND_DELETE
+        return ((20000 <= evt.kind < 30000) and self.is_NIP16())
 
 
 class RelayEventStoreInterface(EventStoreInterface):
@@ -148,6 +147,17 @@ class ClientEventStoreInterface(EventStoreInterface):
     def get_newest(self, for_relay, filter):
         """
         return ticks of the newest event we have for given relay for use in since filter
+        filter is just a single nostr filter {}
+        currently we're only the kind filter is used
+
+        :param for_relay:
+        :return:
+        """
+
+    @abstractmethod
+    def get_oldest(self, for_relay, filter):
+        """
+        return ticks of the oldest event we have for given relay for use in since filter
         filter is just a single nostr filter {}
         currently we're only the kind filter is used
 
@@ -308,9 +318,9 @@ class RelayMemoryEventStore(MemoryEventStore, RelayEventStoreInterface):
 
 class ClientMemoryEventStore(MemoryEventStore, ClientEventStoreInterface):
     """
-        Will eventually fully implement but most likely better to use SQL in memory mode
+        May eventually fully implement this but likely better to use sqllite memeory db
+        and that might even be quicker in some cases...
     """
-
     def __init__(self):
         super().__init__(delete_mode=DeleteMode.delete,
                          sort_direction=SortDirection.newest_first)
@@ -994,46 +1004,64 @@ class RelayPostgresEventStore(PostgresEventStore, RelayEventStoreInterface):
 
 class ClientSQLEventStore(SQLEventStore, ClientEventStoreInterface):
 
-    def get_newest(self, for_relay, filter=None):
+    def _get_date_of(self, filter, for_relay=None, date_type='newest'):
         """
-        returns the newest event we've seen so we can use that as a since in any queries we created and not ask for everthing
-        as event creators set the create_at time will probably need to re-visit this.
-        have added created_at as a filter now so just one event miles in the future won't stop of fetching gaps
-        probably the relay should have a max time in the future that'll it allow events to be set before rejecting,
-        also our EventPersister sshould probably reject events too far in the future...
-
-        :param for_relay:
-        :param filter:
+        :param for_relay: relay_url if not supplied you'll get the newest/oldest of any relay (event we have)
+        :param filter: standard filter of events to match, note only kind is currently used
+        :param date_type: newest or oldest
         :return:
         """
-
         if filter is None:
             filter = {}
 
+        date_order = 'desc'
+        if date_type == 'oldest':
+            date_order = ''
+
         sql_arr = [
-            'select created_at from events e'
+            'select created_at from events e',
             ' inner join event_relay er on e.id = er.id'
-            ' where er.relay_url = %s and e.created_at<=%s' % (self._db.placeholder,
-                                                               self._db.placeholder)
         ]
-        args = [for_relay, util_funcs.date_as_ticks(datetime.now())]
+        join = ' where '
+        args = []
+        if for_relay:
+            sql_arr.append(' where er.relay_url = %s' % self._db.placeholder)
+            join = ' and '
+            args.append(for_relay)
+
+        sql_arr.append('%s e.created_at <= %s' % (
+            join,
+            self._db.placeholder
+        ))
+        args.append(datetime.now())
+        join = ' and '
 
         if 'kinds' in filter:
             kinds = filter['kinds']
             if not hasattr(kinds, '__iter__') or isinstance(kinds, str):
                 kinds = [kinds]
-            sql_arr.append(' and e.kind in (%s)' % ','.join([self._db.placeholder]*len(kinds)))
+            sql_arr.append(join + ' e.kind in (%s)' % ','.join([self._db.placeholder]*len(kinds)))
             args = args + kinds
 
-        sql_arr.append(' order by created_at desc limit 1')
+        sql_arr.append(' order by created_at %s limit 1' % date_order)
         my_sql = ''.join(sql_arr)
         ret = 0
         my_recent_evt = self._db.select_sql(my_sql, args)
         if my_recent_evt:
             ret = my_recent_evt[0]['created_at']
         else:
-            logging.debug('Store::get_newest - no created_at found, db empty?')
+            logging.debug('Store::_get_date_of(%s) - no created_at found, db empty?' % date_type)
         return ret
+
+    def get_newest(self, for_relay=None, filter=None):
+        return self._get_date_of(filter=filter,
+                                 for_relay=for_relay,
+                                 date_type='newest')
+
+    def get_oldest(self, for_relay=None, filter=None):
+        return self._get_date_of(filter=filter,
+                                 for_relay=for_relay,
+                                 date_type='oldest')
 
     def _add_reaction_batch(self, evt: Event, batch):
         if evt.kind == Event.KIND_REACTION:

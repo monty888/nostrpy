@@ -186,8 +186,11 @@ def run_web(clients,
             channel_store: ChannelStoreInterface,
             web_dir: str,
             host: str = 'localhost',
-            port: int = 8080):
+            port: int = 8080,
+            until: int = 365,
+            fill_size: int =10):
 
+    print('events until: %s' % (datetime.now()-timedelta(days=until)).date())
     # we'll persist events, not done automatically by nostrweb
     my_spam = ContentBasedDespam()
 
@@ -197,45 +200,194 @@ def run_web(clients,
 
     # called on connect and any reconnect
     def my_connect(the_client: Client):
-        # all meta updates
-        # the_client.subscribe(handlers=my_server, filters=get_profile_filter(the_client, event_store))
 
-        # the max look back should be an option, maybe the default should just be everything
-        # this will do for now
-        since = event_store.get_newest(the_client.url)
-        # less_30days = util_funcs.date_as_ticks(datetime.now()-timedelta(days=30))
-        # if since < less_30days:
-        #     since = less_30days
 
         the_client.subscribe(handlers=[evt_persist, my_peh, my_ceh, my_server], filters=[
-            get_latest_event_filter(the_client, event_store, Event.KIND_REACTION),
-            get_latest_event_filter(the_client, event_store, Event.KIND_DELETE),
-            get_latest_event_filter(the_client, event_store, Event.KIND_TEXT_NOTE),
-            get_latest_event_filter(the_client, event_store, Event.KIND_ENCRYPT),
-            get_latest_event_filter(the_client, event_store, Event.KIND_RELAY_REC)
-        ])
-
-        the_client.subscribe(handlers=[evt_persist, my_peh, my_server], filters=[
+            # things we're greedy for we'll get all we can of these as far back as they go
+            # we start queries from the newest event we see per client/kind
             get_latest_event_filter(the_client, event_store, Event.KIND_META),
-            get_latest_event_filter(the_client, event_store, Event.KIND_CONTACT_LIST)
-        ])
-
-        the_client.subscribe(handlers=[evt_persist, my_ceh, my_server], filters=[
+            get_latest_event_filter(the_client, event_store, Event.KIND_CONTACT_LIST),
             get_latest_event_filter(the_client, event_store, Event.KIND_CHANNEL_CREATE),
-            get_latest_event_filter(the_client, event_store, Event.KIND_CHANNEL_MESSAGE)
+            # non greedy though we start a backfill process for these kinds starting from
+            # the oldest(or resync_from) we have to until
+            {
+                'kinds': [Event.KIND_TEXT_NOTE,
+                          Event.KIND_CHANNEL_MESSAGE,
+                          Event.KIND_RELAY_REC,
+                          Event.KIND_ENCRYPT,
+                          Event.KIND_REACTION,
+                          Event.KIND_DELETE],
+                'since': util_funcs.date_as_ticks(datetime.now())
+            }
         ])
 
+        # the rest we'll only get from server startime and then onwards as server runs
+        # for historic we'll rely on server backfill process that will start on the recieving EOSE event
+        # we probbaly should do something on the case that client drops out whilst backfill is running
+        # it's posably we mulitple threads dooing backfill... It shouldn't cause any problems though...
 
+        # the_client.subscribe(handlers=[evt_persist, my_peh, my_ceh, my_server], filters=[
+        #     get_latest_event_filter(the_client, event_store, Event.KIND_REACTION),
+        #     get_latest_event_filter(the_client, event_store, Event.KIND_DELETE),
+        #     get_latest_event_filter(the_client, event_store, Event.KIND_TEXT_NOTE),
+        #     get_latest_event_filter(the_client, event_store, Event.KIND_ENCRYPT),
+        #     get_latest_event_filter(the_client, event_store, Event.KIND_RELAY_REC)
+        # ])
+        #
+        # the_client.subscribe(handlers=[evt_persist, my_peh, my_server], filters=[
+        #     get_latest_event_filter(the_client, event_store, Event.KIND_META),
+        #     get_latest_event_filter(the_client, event_store, Event.KIND_CONTACT_LIST)
+        # ])
+        #
+        # the_client.subscribe(handlers=[evt_persist, my_ceh, my_server], filters=[
+        #     get_latest_event_filter(the_client, event_store, Event.KIND_CHANNEL_CREATE),
+        #     get_latest_event_filter(the_client, event_store, Event.KIND_CHANNEL_MESSAGE)
+        # ])
 
-    def my_eose(the_client: Client, sub_id: str, events):
-        print('eose', the_client.url)
-        my_peh.do_event(sub_id, events, the_client.url)
-        print('peh complete', the_client.url)
-        my_ceh.do_event(sub_id, events, the_client.url)
-        print('ceh complete', the_client.url)
-        evt_persist.do_event(sub_id, events, the_client.url)
-        print('evt complete', the_client.url)
+    def split_events(evts:[ Event]):
+        """
+        :param evts: [Events] to be split
+        :return: {
+                    'kind': [Events]
+                }
+        """
+        c_evt: Event
+        ret = {}
+        for c_evt in evts:
+            if c_evt.kind not in ret:
+                ret[c_evt.kind] = []
+            ret[c_evt.kind].append(c_evt)
+        return ret
 
+    def latest_events_only(evts: [Event], kind):
+        """
+        use with events where only the latest event matters for example contact, profile updates
+        the relay may do this (probably should have) but just incase
+        events should be sorted newest first before calling
+
+        :param evts:
+        :param kind: the kind we're interested in
+        :return:
+        """
+
+        ret = []
+        since_lookup = set()
+
+        c_evt: Event
+        for c_evt in evts:
+            if c_evt.kind == kind and c_evt.pub_key not in since_lookup:
+                since_lookup.add(c_evt.pub_key)
+                ret.append(c_evt)
+            elif c_evt.kind == kind:
+                logging.debug('latest_events_only: ignore superceeded event %s' % c_evt)
+
+        return ret
+
+    def my_eose(the_client: Client, sub_id: str, events: [Event]):
+        c_evt: Event
+        print('eose relay %s %s events' % (the_client.url, len(events)))
+        # sort events newest to oldest
+        def sort_func(evt:Event):
+            return evt.created_at
+        events.sort(key=sort_func)
+
+        events_by_kind = split_events(events)
+
+        # profiles
+        if Event.KIND_META in events_by_kind:
+            p_events = latest_events_only(evts=events_by_kind[Event.KIND_META],
+                                          kind=Event.KIND_META)
+            my_peh.do_event(sub_id, p_events, the_client.url)
+            evt_persist.do_event(sub_id, p_events, the_client.url)
+            print('imported %s profile events from %s' % (len(p_events), the_client.url))
+
+        # contacts
+        if Event.KIND_CONTACT_LIST in events_by_kind:
+            con_events = latest_events_only(evts=events_by_kind[Event.KIND_CONTACT_LIST],
+                                          kind=Event.KIND_CONTACT_LIST)
+            my_peh.do_event(sub_id, con_events, the_client.url)
+            evt_persist.do_event(sub_id, con_events, the_client.url)
+            print('imported %s contact events from %s' % (len(con_events), the_client.url))
+
+        # channel creates
+        if Event.KIND_CHANNEL_CREATE in events_by_kind:
+            chn_events = latest_events_only(evts=events_by_kind[Event.KIND_CHANNEL_CREATE],
+                                            kind=Event.KIND_CHANNEL_CREATE)
+            my_ceh.do_event(sub_id, chn_events, the_client.url)
+            evt_persist.do_event(sub_id, chn_events, the_client.url)
+            print('imported %s channel create events from %s' % (len(chn_events), the_client.url))
+
+        # and the rest - you shouldn't get many here and they'll mainly be delt with either
+        # as they come in or by the back fill next
+        for c_kind in [Event.KIND_TEXT_NOTE]:
+            if c_kind in events_by_kind:
+                evt_persist.do_event(sub_id, events_by_kind[c_kind], the_client.url)
+
+        # now we're upto date we can start the backfill/resync process
+        do_backfill(the_client)
+
+    def do_backfill(the_client: Client):
+        until_dt = datetime.now() - timedelta(days=until)
+        for c_kind in [Event.KIND_TEXT_NOTE,
+                       Event.KIND_CHANNEL_MESSAGE,
+                       Event.KIND_RELAY_REC,
+                       Event.KIND_ENCRYPT,
+                       Event.KIND_REACTION,
+                       Event.KIND_DELETE]:
+            c_oldest = event_store.get_oldest(the_client.url, {
+                'kinds': [c_kind]
+            })
+            if c_oldest == 0:
+                c_oldest = util_funcs.date_as_ticks(datetime.now())
+            c_oldest = util_funcs.ticks_as_date(c_oldest)
+
+            if c_oldest <= until_dt:
+                print('%s no backfill required for kind: %s' % (the_client.url,
+                                                                c_kind))
+                continue
+            else:
+                print('%s backfill for kind %s starting at: %s until: %s with %s days chunks' % (the_client.url,
+                                                                                                 c_kind,
+                                                                                                 c_oldest,
+                                                                                                 until_dt.date(),
+                                                                                                 fill_size))
+
+            for c in range(0, until, fill_size):
+                c_until = c_oldest - timedelta(days=c)
+                c_since = c_oldest - timedelta(days=c+fill_size)
+                print('%s backfilling kind %s %s - %s' % (the_client.url,
+                                                          c_kind,
+                                                          c_until,
+                                                          c_since))
+                got_chunk = False
+                while not got_chunk:
+                    try:
+                        evts = the_client.query(filters=[
+                            {
+                                'kinds': [c_kind],
+                                'since': util_funcs.date_as_ticks(c_since),
+                                'until': util_funcs.date_as_ticks(c_until)
+                            }
+                        ])
+                        evt_persist.do_event(None, evts, the_client.url)
+                        my_ceh.do_event(None, evts, the_client.url)
+                        my_peh.do_event(None, evts, the_client.url)
+                        got_chunk = True
+                    except Exception as e:
+                        logging.debug('do_backfill: %s error fetching range %s - %s, %s' %(the_client.url,
+                                                                                           c_until,
+                                                                                           c_since,
+                                                                                           e))
+                        time.sleep(1)
+                # no events assume we reached end of stored events
+                # if not evts:
+                #     break
+
+                print('%s recieved %s kind %s events ' % (the_client.url,
+                                                          len(evts),
+                                                          c_kind))
+
+        print('%s backfill is complete' % the_client.url)
 
 
     # so server can send out client status messages
@@ -258,7 +410,6 @@ def run_web(clients,
                          client=my_client)
 
     my_client.start()
-
     hook_signals()
 
     try:
@@ -273,13 +424,22 @@ def run_web(clients,
 
 
 def run():
-    db_file = WORK_DIR + 'nostrpy-client.db'
+    db_file = WORK_DIR + 'nostrpy-client-backfilltest.db'
     db_type = 'sqlite'
     full_text = True
     is_tor = False
     web_dir = os.getcwd()
     host = 'localhost'
     port = 8080
+    # default fetch bac events to this data, excludes profiles, contacts, channel creates
+    max_until = 365
+    # backfill chunk sizes, events wll be fetched in fill_size days back until max_until
+    fill_size = 10
+    # backfill rescan starts from here if not supplied it starts from the oldest event/kind for each relay
+    rescan_from = None
+    # if given then when we reach we'll skip, we'll skip up until oldest event/kind for realy or just
+    # continue on if we already passed
+    rescan_to = None
 
     # who to attach to
     clients = [
@@ -288,16 +448,21 @@ def run():
             'write': True
         },
         'ws://localhost:8081',
-        # # # # 'ws://localhost:8083',
+        # # # 'ws://localhost:8083',
         {
-            'client': 'wss://relay.damus.io',
-            'write': True
+            'client': 'wss://relay.damus.io'
         }
     ]
 
 
     try:
-        opts, args = getopt.getopt(sys.argv[1:], 'ht', ['help', 'db-file=', 'tor','host=','port='])
+        opts, args = getopt.getopt(sys.argv[1:], 'ht', ['help',
+                                                        'db-file=',
+                                                        'tor',
+                                                        'host=',
+                                                        'port=',
+                                                        'until=',
+                                                        'fillsize='])
 
 
         # first pass
@@ -308,18 +473,30 @@ def run():
         for o, a in opts:
             if o in ('-t', '--tor'):
                 is_tor = True
-            if o == '--host':
+            elif o == '--host':
                 host = a
-            if o == '--port':
+            elif o == '--port':
                 try:
                     port = int(a)
                 except ValueError as ve:
                     print('port %s not a valid value' % a)
                     sys.exit(2)
-            if o == '--db-file':
+            elif o == '--db-file':
                 db_file = a
                 if os.path.pathsep not in db_file:
                     db_file = WORK_DIR+db_file
+            elif o == '--until':
+                try:
+                    max_until = int(a)
+                except ValueError as ve:
+                    print('until %s not a valid value' % a)
+                    sys.exit(2)
+            elif o == '--fillsize':
+                try:
+                    fill_size = int(a)
+                except ValueError as ve:
+                    print('fillsize %s not a valid value' % a)
+                    sys.exit(2)
 
     except getopt.GetoptError as e:
         print(e)
@@ -353,11 +530,27 @@ def run():
                 channel_store=channel_store,
                 web_dir=web_dir,
                 host=host,
-                port=port)
+                port=port,
+                until=max_until,
+                fill_size=fill_size)
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.ERROR)
     run()
+
+    # c = Client('wss://relay.damus.io').start()
+    #
+    # evts = c.query(filters=[
+    #     {
+    #         'kinds': [Event.KIND_TEXT_NOTE],
+    #         'since': util_funcs.date_as_ticks(datetime.now()-timedelta(days=1)),
+    #         'until': util_funcs.date_as_ticks(datetime.now())
+    #     }
+    # ])
+    # print(evts)
+
+    # my_store = ClientSQLiteEventStore(WORK_DIR + 'nostrpy-client-backfilltest.db')
+    # print(my_store.get_oldest())
 
     # from nostr.channels.persist import SQLiteSQLChannelStore
     #

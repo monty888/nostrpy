@@ -441,6 +441,7 @@ APP.remote = function(){
             _add_field('match', args);
             _add_field('limit', args);
             _add_field('offset', args);
+            args.cache = false;
             do_query(args);
         },
         // get a single channels info

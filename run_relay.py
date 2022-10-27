@@ -33,8 +33,6 @@ PG_PASSWORD = 'password'
 PG_DATBASE = 'nostr-relay'
 MAX_SUB = 3
 MAX_CONTENT_LENGTH = None
-NIP15 = False
-NIP16 = False
 
 def usage():
     print("""
@@ -53,8 +51,8 @@ usage: python run_relay.py --host=localhost --port=8081
                 should be created manually. The dbfile will be created if it doesn't already exist.
 --maxsub    -   maximum open subs allowed per client websocket, default %s
 --maxlength -   maximum length for event content if any
---nip15     -   enables End Of Stored Events(EOSE) as NIP15
---nip16     -   enable event reatment as, ephemeral and replacable event ranges as NIP16
+--nip15     -   disable NIP15 - End Of Stored Events(EOSE) 
+--nip16     -   disable NIP16 - Event treatment, ephemeral and replaceable event ranges as 
   
     """ % (HOST, PORT, END_POINT, DB_TYPE, SQL_LITE_FILE, MAX_SUB))
 
@@ -159,8 +157,8 @@ def main():
         'pg_database': PG_DATBASE,
         'pg_user': PG_USER,
         'pg_password': PG_PASSWORD,
-        'nip15': NIP15,
-        'nip16': NIP16
+        'nip15': True,
+        'nip16': True
     }
     config.update(load_toml(config_file))
 
@@ -188,9 +186,9 @@ def main():
         elif o == '--maxlength':
             config['maxlength'] = a
         elif o in ('--nip15'):
-            config['nip15'] = True
+            config['nip15'] = False
         elif o in ('--nip16'):
-            config['nip16'] = True
+            config['nip16'] = False
 
     # make sure items that need to be ints are
     for num_field in ('port', 'maxsub', 'maxlength'):

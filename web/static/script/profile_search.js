@@ -111,8 +111,8 @@
         // checks if a channel is in view given the current filter
         // used when we see a channel post event but its not in a channel that we're displaying
         // possible because its outside view because of the limit but not the filter
+        // TODO: fix this so it can be done in the client
         function test_channel(channel_id, callback){
-            alert(channel_id);
             APP.remote.load_channel({
                 'pub_k': _pub_k,
                 'include': _user.get(_pub_k+'.channel-search-include', 'anyone'),

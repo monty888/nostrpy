@@ -4,7 +4,10 @@
 from __future__ import annotations
 import logging
 import sys
+import threading
 import time
+
+import gevent
 import websocket
 import requests
 from gevent import Greenlet
@@ -125,7 +128,6 @@ class Client:
         self._emulate_eose = emulate_eose
         # NIP11 info for the relay we're connected to
         self._relay_info = None
-
         self._state = RunState.init
 
     @property
@@ -271,10 +273,11 @@ class Client:
             is_done = True
 
         sub_id = self.subscribe(filters=filters, wait_connect=True, eose_func=my_done)
+
         while is_done is False:
             time.sleep(0.1)
             if self.connected is False:
-                print('raise an error here?!?!?!?')
+                raise Exception('Client::query - lost connection during query')
 
         self.unsubscribe(sub_id)
 
@@ -283,9 +286,8 @@ class Client:
     def set_end_stored_events(self, eose_func=None):
         self._eose_func = eose_func
 
-    def _on_message(self, ws, message):
+    def _on_message(self, ws: websocket.WebSocketApp, message):
         self._reset_status()
-
         message = json.loads(message)
 
         type = message[0]
@@ -302,12 +304,17 @@ class Client:
             if not self._have_sub(sub_id):
                 logging.debug('Client::_on_message EOSE event for unknown sub_id?!??!! - %s' % sub_id)
 
+            # done in thread because greenlets don't work here for some reason...
             # eose defined for this sub
             if self._subs[sub_id]['eose_func'] is not None:
-                self._subs[sub_id]['eose_func'](self, sub_id, self._subs[sub_id]['events'])
+                def f_run_eose():
+                    self._subs[sub_id]['eose_func'](self, sub_id, self._subs[sub_id]['events'])
+                threading.Thread(target=f_run_eose).start()
             #client level eose
             elif self._eose_func:
-                self._eose_func(self, sub_id, self._subs[sub_id]['events'])
+                def run_eose():
+                    self._eose_func(self, sub_id, self._subs[sub_id]['events'])
+                threading.Thread(target=run_eose).start()
 
             # no longer needed
             logging.debug('end of stored events for %s - %s events received' % (sub_id,
