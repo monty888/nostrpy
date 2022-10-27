@@ -32,6 +32,35 @@ live nostr events view from the command line
 web interface to nostr
 ![alt feed page](feed_page.png "feed")
 
-> python3 cmd_web.py 
+> python3 cmd_web.py
+
+### todo
+#### general
+[ ] implement postgres as data store for client
+#### cmd_web.py
+[ ] settings ...    
+[ ] websocket for client probably shouldn't be getting opened each page but be in sharedwebworker  
+[ ] enable media available from front end
+[ ] url for robos from front end
+[ ] connected relays should be being saved and on restart the same relays should be connected to  
+[ ] light init mode where we only use a default relay to get relay list and then its all user choice
+[ ] boosts  
+[ ] make sure the caching of profiles is working correctly and firing/listening for profile changes updates
+as expected  
+[ ] it should be possible to new/link to a profile that we don't yet have the profile for
+, the profile may come in later e.g. when backfill is in progress
+
+#### backfill
+[ ] should keep a last backfilled to per relay so we can start from that point rather than the oldest event 
+so that we don't needlessly look back through dates for which no events exist
+#### clean out
+[ ] a job that runs in the background and will clean out old events based on defined rules
+
+### bugs
+[ ] profiles only sorted as they come from db and not as new events come in
+
+
+
+
 
 

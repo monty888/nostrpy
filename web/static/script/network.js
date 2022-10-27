@@ -54,130 +54,6 @@ APP.remote = function(){
         return ret;
     }
 
-//    function do_query(args){
-//        let url = args['url'],
-//            params = make_params(args['params']),
-//            method = args['method'] || 'GET',
-//            data = args['data'],
-//            success = args['success'] || function(data){
-//                console.log('load notes success');
-//                console.log(data)
-//            },
-//            error = args['error'] || function(ajax, textstatus, errorThrown){
-//                console.log('error loading remote' + url);
-//                console.log(ajax.responseText);
-//                console.log(errorThrown);
-//            },
-//            prepare = args.prepare,
-//            call_args = {
-//                method : method,
-//                url: url+params,
-//                error: error,
-//                success: success
-//            },
-//            key = args.key!==undefined ? args.key : call_args.method.toLowerCase()==='get' ? call_args.url : data,
-//            // by default gets are cached, not posts unless cache is set true
-//            cache = args.cache===undefined ? call_args.method.toLowerCase()==='get' : args.cache,
-//            the_cache,
-//            //TODO: remove this - why not just set cache false?
-//            force_new = args.force_new===undefined ? false : args.force_new;
-//
-//        if(data!==undefined){
-//            call_args['data'] = data;
-//        }
-//        if(args['contentType']!==undefined){
-//            call_args['contentType'] = args['contentType'];
-//        }
-//
-//        if(cache){
-//            if(force_new!==true){
-//                the_cache = _loading_cache[key];
-//            }
-//
-//            // just add to the queue and return
-//            if(the_cache!==undefined){
-//                // load started but not returned, queue
-//                if(the_cache.is_loaded===false){
-//                    the_cache.success.push(success);
-//                    the_cache.error.push(error);
-//                // load has already been done, call either error or success method straight away
-//                }else{
-//                    try{
-//                        if(the_cache.data!==undefined){
-//                            success(the_cache.data);
-//                        }else{
-//                            error(the_cache.ajax, the_cache.textstatus, the_cache.errorThrown);
-//                        }
-//                    }catch(e){
-//                        console.log(e);
-//                    }
-//
-//                }
-//                return;
-//            }
-//
-//            // init a cache and put our success and error in place
-//            the_cache = _loading_cache[key] = {
-//                'success' : [],
-//                'error' : [],
-//                'is_loaded' : false
-//            };
-//            the_cache.success.push(success);
-//            the_cache.error.push(error);
-//
-//            // intercept success/error with are own methods so that multiple calls can be reduced to single ajax req
-//            // out success and error that call back everyone in the queue
-//            call_args.success = function(my_cache){
-//                return function(data){
-//                    if(typeof(prepare)==='function'){
-//                        data = prepare(data);
-//                    }
-//
-//                    my_cache.success.forEach(function(cSuccess){
-//                        try{
-//                            cSuccess(data);
-//                        }catch(e){};
-//                    });
-//                    // so late calls will just get run straight away rather than called
-//                    my_cache.is_loaded = true;
-//                    my_cache.data = data;
-//                };
-//            }(the_cache);
-//            call_args.error = function(my_cache){
-//                return function(ajax, textstatus, errorThrown){
-//                    my_cache.error.forEach(function(cError){
-//                        try{
-//                            cError(ajax, textstatus, errorThrown);
-//                        }catch(e){};
-//                    });
-//                    // as success but for immidiate error
-//                    my_cache.is_loaded = true;
-//                    my_cache.ajax = ajax;
-//                    my_cache.textstatus = textstatus;
-//                    my_cache.errorThrown = errorThrown;
-//                }
-//            }(the_cache);
-//
-//        };
-//
-//        // make the call
-//        $.ajax(call_args)
-//
-////        fetch(call_args.url, {
-////            'filter': [{"kinds":[1]}]
-////        }, {
-////            'method': call_args.method
-////        })
-////        .then((response) => response.json())
-////        .then((data) => {
-////            if(call_args.success!==undefined){
-////                call_args.success(data);
-////            };
-////        });
-//
-//
-//    }
-
     function do_query(args){
         let url = args['url'],
             params = make_params(args['params']),
@@ -638,7 +514,7 @@ APP.remote = function(){
 }();
 
 APP.nostr_client = function(){
-
+    // TODO cleanup and move into shared webworker
     function _create_ws(args){
         let _url,
             _socket,
@@ -658,31 +534,34 @@ APP.nostr_client = function(){
             }
         }
         // now we can open
-        _socket = new WebSocket(_url);
+        function connect(){
+            _socket = new WebSocket(_url);
+            _socket.onclose = function(e){
+                console.log('socket onclose - ');
+                console.log(e);
+                // attempt reconnect
+                setTimeout(connect, 1000);
+            };
 
-        _socket.onclose = function(e){
-            console.log('socket onclose - ');
-            console.log(e);
-        };
+            _socket.onmessage = function(e) {
+                console.log('socket onmessage - ');
+                _on_data(JSON.parse(e['data']));
+            };
 
-        _socket.onmessage = function(e) {
-            console.log('socket onmessage - ');
-            _on_data(JSON.parse(e['data']));
-        };
+            _socket.onerror = function(e) {
+                console.log('socket onerror - '+e);
+            };
 
-        _socket.onerror = function(e) {
-            console.log('socket onerror - '+e);
-        };
-
-        _socket.onopen = function(e){
-            console.log('socket onopen - ');
-            console.log(e);
-            _on_open({
-                'post' : function(){
-                    _socket.send('wtf');
-                }
-            });
+            _socket.onopen = function(e){
+                console.log('socket onopen - ');
+                console.log(e);
+            }
         }
+
+        // start the socket
+        connect();
+
+
     };
 
     function start_client(){

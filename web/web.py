@@ -470,7 +470,9 @@ class NostrWeb(StaticServer):
         self._check_key(pub_k)
         the_profile = self._profile_handler.profiles.get_profile(pub_k)
         if the_profile is None:
-            raise NostrWebException('no profile found for pub_k - %s' % pub_k)
+            # raise NostrWebException('no profile found for pub_k - %s' % pub_k)
+            # create an adhoc profile
+            the_profile = Profile(pub_k=pub_k)
 
         ret = the_profile.as_dict()
 
