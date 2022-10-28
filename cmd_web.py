@@ -193,6 +193,7 @@ def run_web(clients,
     print('events until: %s' % (datetime.now()-timedelta(days=until)).date())
     # we'll persist events, not done automatically by nostrweb
     my_spam = ContentBasedDespam()
+    start_time = datetime.now()
 
     evt_persist = PersistEventHandler(event_store, spam_handler=my_spam)
     my_peh = ProfileEventHandler(profile_store)
@@ -217,7 +218,8 @@ def run_web(clients,
                           Event.KIND_ENCRYPT,
                           Event.KIND_REACTION,
                           Event.KIND_DELETE],
-                'since': util_funcs.date_as_ticks(datetime.now())
+                # this should be start_time or latest if that is newer
+                'since': util_funcs.date_as_ticks(start_time)
             }
         ])
 
@@ -327,7 +329,7 @@ def run_web(clients,
         do_backfill(the_client)
 
     def do_backfill(the_client: Client):
-        until_dt = datetime.now() - timedelta(days=until)
+        until_dt = start_time - timedelta(days=until)
         for c_kind in [Event.KIND_TEXT_NOTE,
                        Event.KIND_CHANNEL_MESSAGE,
                        Event.KIND_RELAY_REC,
@@ -338,7 +340,7 @@ def run_web(clients,
                 'kinds': [c_kind]
             })
             if c_oldest == 0:
-                c_oldest = util_funcs.date_as_ticks(datetime.now())
+                c_oldest = util_funcs.date_as_ticks(start_time)
             c_oldest = util_funcs.ticks_as_date(c_oldest)
 
             if c_oldest <= until_dt:
@@ -355,6 +357,9 @@ def run_web(clients,
             for c in range(0, until, fill_size):
                 c_until = c_oldest - timedelta(days=c)
                 c_since = c_oldest - timedelta(days=c+fill_size)
+                if c_since < until_dt:
+                    c_since = until_dt
+
                 print('%s backfilling kind %s %s - %s' % (the_client.url,
                                                           c_kind,
                                                           c_until,
@@ -424,6 +429,7 @@ def run_web(clients,
 
 
 def run():
+    util_funcs.create_work_dir(WORK_DIR)
     db_file = WORK_DIR + 'nostrpy-client-backfilltest.db'
     db_type = 'sqlite'
     full_text = True

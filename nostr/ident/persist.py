@@ -158,7 +158,7 @@ class ProfileStoreInterface(ABC):
                         c_p.public_key,
                         c_p.profile_name,
                         json.dumps(c_p.attrs),
-                        util_funcs.date_as_ticks(c_p.update_at)
+                        c_p.update_at
                     ])
 
         DataSet([

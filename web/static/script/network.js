@@ -417,8 +417,8 @@ APP.remote = function(){
             let evt = _.extend({}, args.event);
             let content = encodeURIComponent(evt.content);
 //            evt.content = '';
-            args['data'] = 'event=' + JSON.stringify(evt);
-            args['data'] += '&content='+content;
+            args['data'] = 'event=' + encodeURIComponent(JSON.stringify(evt));
+//            args['data'] += '&content='+encodeURIComponent(content);
 
             args['params'] = {
                 'pub_k' : args['pub_k']

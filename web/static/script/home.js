@@ -111,7 +111,7 @@
     // when using lurker
     function global_only_view(){
         _views = {};
-        _main_con.css('overflowY', 'scroll');
+        _main_con.css('overflowY', 'auto');
         _views['global'] = init_view(_main_con, _global_filter, function(){
             do_load(_views['global']);
         });

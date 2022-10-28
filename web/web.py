@@ -664,7 +664,8 @@ class NostrWeb(StaticServer):
     def _do_post(self):
         pub_k = request.query.pub_k
         event = json.loads(request.forms['event'])
-        content = request.forms.getunicode('content')
+        content = event['content']
+        # content = request.forms.getunicode('content')
 
         tags = event['tags']
         kind = event['kind']
