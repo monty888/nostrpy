@@ -38,8 +38,11 @@ web interface to nostr
 #### general
 - [ ] implement postgres as data store for client
 #### cmd_web.py
-- [ ] settings ...    
-- [ ] websocket for client probably shouldn't be getting opened each page but be in sharedwebworker  
+- [ ] settings 
+  - [ ] get
+  - [ ] put
+  - [ ] get with recurse up tree to defaults
+- [x] websocket for client probably shouldn't be getting opened each page but be in sharedwebworker  
 - [ ] enable media available from front end
 - [ ] url for robos from front end  
 - [ ] connected relays should be being saved and on restart the same relays should be connected to  
@@ -50,9 +53,14 @@ as expected
 - [ ] it should be possible to new/link to a profile that we don't yet have the profile for
 , the profile may come in later e.g. when backfill is in progress
 
+#### profiles
+- [ ] go properly through adding/editing profiles make sure works as expected
+- [ ] add delete profile method
+- [ ] add link icon to others profile page that opens up dialog to link privk
+
 #### backfill
-- [ ] should keep a last backfilled to per relay so we can start from that point rather than the oldest event 
-so that we don't needlessly look back through dates for which no events exist
+- [ ] put relay_url.lastfill_date setting in on complete backfill and
+where we have this it'll be used in place of starting at oldest db event
 #### clean out
 - [ ] a job that runs in the background and will clean out old events based on defined rules
 

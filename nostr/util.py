@@ -83,7 +83,7 @@ class util_funcs:
         from nostr.event.persist import ClientSQLiteEventStore
         from nostr.ident.persist import SQLiteProfileStore
         from nostr.channels.persist import SQLiteSQLChannelStore
-
+        from nostr.settings.persist import SQLiteSettingsStore
         my_events = ClientSQLiteEventStore(db_file)
         if not my_events.exists():
             my_events.create()
@@ -92,6 +92,8 @@ class util_funcs:
             my_channels = SQLiteSQLChannelStore(db_file)
             my_channels.create()
             db = SQLiteDatabase(db_file)
+            my_settings = SQLiteSettingsStore(db_file)
+            my_settings.create()
             # should perform better for us i think, esp on backfill
             db.execute_sql('PRAGMA journal_mode = WAL;')
 

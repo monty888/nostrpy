@@ -20,6 +20,8 @@ from nostr.ident.persist import SQLiteProfileStore, ProfileStoreInterface, Memor
 from nostr.ident.event_handlers import ProfileEventHandler
 from nostr.channels.persist import SQLiteSQLChannelStore, ChannelStoreInterface
 from nostr.channels.event_handlers import ChannelEventHandler
+from nostr.settings.persist import SQLiteSettingsStore, SettingStoreInterface
+from nostr.settings.handler import Settings
 from nostr.util import util_funcs
 from web.web import NostrWeb
 from nostr.spam_handlers.spam_handlers import ContentBasedDespam
@@ -184,6 +186,7 @@ def run_web(clients,
             event_store: ClientEventStoreInterface,
             profile_store: ProfileStoreInterface,
             channel_store: ChannelStoreInterface,
+            settings_store: SettingStoreInterface,
             web_dir: str,
             host: str = 'localhost',
             port: int = 8080,
@@ -198,6 +201,7 @@ def run_web(clients,
     evt_persist = PersistEventHandler(event_store, spam_handler=my_spam)
     my_peh = ProfileEventHandler(profile_store)
     my_ceh = ChannelEventHandler(channel_store)
+    my_settings = Settings(settings_store)
 
     # called on connect and any reconnect
     def my_connect(the_client: Client):
@@ -321,7 +325,12 @@ def run_web(clients,
 
         # and the rest - you shouldn't get many here and they'll mainly be delt with either
         # as they come in or by the back fill next
-        for c_kind in [Event.KIND_TEXT_NOTE]:
+        for c_kind in [Event.KIND_TEXT_NOTE,
+                       Event.KIND_CHANNEL_MESSAGE,
+                       Event.KIND_RELAY_REC,
+                       Event.KIND_ENCRYPT,
+                       Event.KIND_REACTION,
+                       Event.KIND_DELETE]:
             if c_kind in events_by_kind:
                 evt_persist.do_event(sub_id, events_by_kind[c_kind], the_client.url)
 
@@ -330,19 +339,32 @@ def run_web(clients,
 
     def do_backfill(the_client: Client):
         until_dt = start_time - timedelta(days=until)
+
+        # if we already did a backfill for this relay we should have saved the backfilled to date
+        backfill_date = my_settings.get(the_client.url + '.backfilltime')
+        if backfill_date:
+            backfill_date = util_funcs.ticks_as_date(int(backfill_date))
+
         for c_kind in [Event.KIND_TEXT_NOTE,
                        Event.KIND_CHANNEL_MESSAGE,
                        Event.KIND_RELAY_REC,
                        Event.KIND_ENCRYPT,
                        Event.KIND_REACTION,
                        Event.KIND_DELETE]:
-            c_oldest = event_store.get_oldest(the_client.url, {
-                'kinds': [c_kind]
-            })
-            if c_oldest == 0:
-                c_oldest = util_funcs.date_as_ticks(start_time)
-            c_oldest = util_funcs.ticks_as_date(c_oldest)
 
+            if backfill_date:
+                c_oldest = backfill_date
+            else:
+                # fallback look for oldest event of this kind we have, most likely this is first time though so
+                # we'll get 0 in which case we start from time the server was started
+                c_oldest = event_store.get_oldest(the_client.url, {
+                    'kinds': [c_kind]
+                })
+                if c_oldest == 0:
+                    c_oldest = util_funcs.date_as_ticks(start_time)
+                c_oldest = util_funcs.ticks_as_date(c_oldest)
+
+            # if we already have events <= util_date then no more import is required
             if c_oldest <= until_dt:
                 print('%s no backfill required for kind: %s' % (the_client.url,
                                                                 c_kind))
@@ -392,6 +414,8 @@ def run_web(clients,
                                                           len(evts),
                                                           c_kind))
 
+        # store that we're backfilled to this date
+        my_settings.put(the_client.url+'.backfilltime', util_funcs.date_as_ticks(until_dt))
         print('%s backfill is complete' % the_client.url)
 
 
@@ -513,15 +537,9 @@ def run():
         event_store = ClientSQLiteEventStore(db_file,
                                              full_text=full_text)
 
-        # event_store = ClientMemoryEventStore()
         profile_store = SQLiteProfileStore(db_file)
         channel_store = SQLiteSQLChannelStore(db_file)
-        # profile_store = MemoryProfileStore()
-        # profile_store.import_profiles_from_events(event_store)
-        # profile_store.import_contacts_from_events(event_store)
-
-        # from nostr.event.persist import ClientMemoryEventStore
-        # event_store = ClientMemoryEventStore()
+        settings_store = SQLiteSettingsStore(db_file)
 
 
     if is_tor:
@@ -534,6 +552,7 @@ def run():
                 event_store=event_store,
                 profile_store=profile_store,
                 channel_store=channel_store,
+                settings_store=settings_store,
                 web_dir=web_dir,
                 host=host,
                 port=port,
@@ -541,8 +560,9 @@ def run():
                 fill_size=fill_size)
 
 if __name__ == "__main__":
-    logging.getLogger().setLevel(logging.ERROR)
+    logging.getLogger().setLevel(logging.DEBUG)
     run()
+
 
     # c = Client('wss://relay.damus.io').start()
     #
