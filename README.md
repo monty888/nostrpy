@@ -1,17 +1,26 @@
 # nostrpy
-some stuff written in python for the nostr protocol  
+some stuff written in python for the nostr protocol developed against python v3.8.10  
 
+- cmd_web, python client with web front end
 - relay, relay implementation - basically working not really tested
 - client, client pool - classes that implement the client side part of the nostr protocol for apps to be built on - very rough but working
 - cmd_chat, example currently 1-1 cli chat app, partially implemented
 - mirror_relay, mirror nostr events from one set of nostr relays to another
 
-
-# relay
+# install
 > cd nostrpy  
 > python3 -m venv venv  
-> source venv/bin/activate  
+> source venv/bin/activate
 > pip install -r requirements.txt
+
+## web interface ##
+web interface to nostr
+![alt feed page](feed_page.png "feed")
+by default the interface is available at localhost:8080 
+> -- host run at a different host !important no authentication yet!! so only run at localhost or in trusted network
+> as anyone who can get to the serevr can post as users!
+
+> python3 cmd_web.py
 
 ## run relay ##
 > python3 run_relay.py 
@@ -26,13 +35,6 @@ live nostr events view from the command line
 > python3 cmd_event_view.py 
 
 > python cmd_event_view.py -h for other options
-
-
-## web ##
-web interface to nostr
-![alt feed page](feed_page.png "feed")
-
-> python3 cmd_web.py
 
 ### todo
 #### general

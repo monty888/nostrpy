@@ -629,7 +629,7 @@ class ClientPool:
             raise Exception('ClientPool::add - can\'t add new client to pool that is stopped or stoping url - %s' % ret.url)
 
         # TODO: here we should go through handlers and add any subscriptions if they have be added via subscribe
-        #  method. Need to cahnge the subscrbe to keep a copy of the filter.. NOTE that normally it's better
+        #  method. Need to change the subscrbe to keep a copy of the filter.. NOTE that normally it's better
         #  to do subscriptions in the on connect method anyhow when using a pool
 
         # we're started so start the new client
@@ -828,6 +828,18 @@ class ClientPool:
                 logging.debug(
                     'ClientPool::do_event event for subscription with no handler registered subscription : %s\n event: %s' % (
                         sub_id, evt))
+
+    @property
+    def clients(self):
+        ret = []
+        for c_client in self._clients_copy():
+            the_client: Client = self._clients[c_client]
+            ret.append({
+                'client': c_client,
+                'read': the_client.read,
+                'write': the_client.write
+            })
+        return ret
 
     def __repr__(self):
         return self._clients

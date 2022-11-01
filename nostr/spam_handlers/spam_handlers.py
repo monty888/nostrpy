@@ -38,6 +38,6 @@ class ContentBasedDespam(SpamHandlerInterface):
             else:
                 parts = content.split(' ')
                 if len(parts) <= 1:
-                    if len(parts[0]) > 10 and not parts[0].startswith('http:'):
+                    if len(parts[0]) > 20 and not parts[0].startswith('http'):
                         ret = True
         return ret

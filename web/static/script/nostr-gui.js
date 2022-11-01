@@ -1228,7 +1228,7 @@ APP.nostr.gui.event_view = function(){
 
             if(APP.nostr.data.user.enable_web_preview()){
 
-                // .onions come through are url regex - perhaps we could not match?
+                // .onions come through our url regex - perhaps we could not match?
                 // anyway we can't preview these so remove...
                 // possubly we're want to not preview others too anyway
                 if((url_split[url_split.length-1].indexOf('onion')!=0) && (!is_ignore())){
@@ -1516,12 +1516,6 @@ APP.nostr.gui.event_view = function(){
         }
 
         function _time_update(){
-            // think we've been killed ..?
-            if(_render_arr===undefined){
-                clearInterval(_time_interval);
-                return;
-            }
-
             _render_arr.forEach(function(c){
                 let id = uevent_id(c.event_id),
                     ntime = dayjs.unix(c['evt'].created_at).fromNow();
@@ -1641,22 +1635,24 @@ APP.nostr.gui.event_view = function(){
         // update the since every 30s
         _time_update = setInterval(_time_update, 1000*30);
 
-        // new event, assumes client has been started
-        APP.nostr.data.event.add_listener('event', function(type, event){
+        let _update_handler = function(type, event){
             on_event(event);
-//            for(let i in _views){
-//                _views[i].add(event)
-//            }
-        });
+        };
+        // new event, assumes client has been started
+        APP.nostr.data.event.add_listener('event', _update_handler);
 
         // methods for event_view obj
         return {
             'set_notes' : set_notes,
             'filter': filter,
-//            'on_event' : on_event,
             'append_notes': append_notes,
             'draw' : function(){
                 _my_list.draw();
+            },
+            'destroy': function(){
+                // hopefully cleanly exit...
+                APP.nostr.data.event.remove_listener('event',_update_handler);
+                clearInterval(_time_interval);
             }
         };
     };

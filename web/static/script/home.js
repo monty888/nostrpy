@@ -15,10 +15,16 @@
         _my_tabs,
         _chunk_size = 100;
 
-    function home_view(){
-        // kill old views if any
+    function kill_views(){
+        let c_view;
+        for(var k in _views){
+            c_view = _views[k];
+            c_view.destroy();
+        }
         _views = {};
+    }
 
+    function home_view(){
         let post_filter = APP.nostr.data.filter.create([{
                 'kinds': [1],
                 'authors': [_current_profile.pub_k]
@@ -110,7 +116,6 @@
 
     // when using lurker
     function global_only_view(){
-        _views = {};
         _main_con.css('overflowY', 'auto');
         _views['global'] = init_view(_main_con, _global_filter, function(){
             do_load(_views['global']);
@@ -217,6 +222,7 @@
         // profile has changed
         APP.nostr.data.event.add_listener('profile_set',function(of_type, data){
             if(data.pub_k !== _current_profile.pub_k){
+                kill_views();
                 _current_profile = data;
                 render_screen();
             }

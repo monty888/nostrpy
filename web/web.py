@@ -37,6 +37,7 @@ from nostr.client.event_handlers import DeduplicateAcceptor
 from nostr.channels.channel import Channel, ChannelList
 from nostr.util import util_funcs
 from nostr.spam_handlers.spam_handlers import SpamHandlerInterface
+from nostr.settings.handler import Settings
 import beaker.middleware
 
 class DateTimeEncoder(JSONEncoder):
@@ -185,12 +186,14 @@ class NostrWeb(StaticServer):
                  profile_handler: ProfileEventHandler,
                  channel_handler: ChannelEventHandler,
                  client: ClientPool,
+                 settings: Settings,
                  spam_handler: SpamHandlerInterface=None):
 
         self._event_store = event_store
         self._profile_handler = profile_handler
         self._profile_store = profile_handler.store
         self._channel_handler = channel_handler
+        self._settings = settings
         self._spam_handler = spam_handler
 
         self._web_sockets = {}
@@ -208,6 +211,10 @@ class NostrWeb(StaticServer):
         self._dedup = DeduplicateAcceptor()
 
         self._started_at = util_funcs.date_as_ticks(datetime.now())
+
+        # save the relays we attached to so will be the same on next start, this might change as
+        # we may allow a forced relay that doesn't allow later changes relays
+        self._save_relay_state()
 
         # session tracking
         session_opts = {
@@ -1502,6 +1509,19 @@ class NostrWeb(StaticServer):
         # response.set_header('Content-type', 'application/json')
         return json.loads(DateTimeEncoder().encode(self._client.status))
 
+    def _save_relay_state(self):
+        # state = []
+        # cr_state = self._relay_status()['relays']
+        # for c_relay in cr_state:
+        #     the_relay = cr_state[c_relay]
+        #     state.append({
+        #         'client': c_relay,
+        #         'read': the_relay['read'],
+        #         'write': the_relay['write']
+        #     })
+
+        self._settings.put('relays', json.dumps(self._client.clients))
+
     def _relay_list(self):
         pub_k = request.query.pub_k
         if pub_k:
@@ -1550,6 +1570,7 @@ class NostrWeb(StaticServer):
                 'read': read,
                 'write': write
             })
+            self._save_relay_state()
         except Exception as e:
             raise NostrWebException(str(e))
 
@@ -1563,6 +1584,7 @@ class NostrWeb(StaticServer):
 
         try:
             self._client.remove(url)
+            self._save_relay_state()
         except Exception as e:
             raise NostrWebException(str(e))
 
@@ -1576,6 +1598,7 @@ class NostrWeb(StaticServer):
         self._check_relay_url(url)
         try:
             self._client.set_read_write(url, read, write)
+            self._save_relay_state()
         except Exception as e:
             raise NostrWebException(str(e))
 
@@ -1640,8 +1663,11 @@ class NostrWeb(StaticServer):
 
         if self._dedup.accept_event(evt):
 
-            # will update our profiles if meta/contact type data
-            self._profile_handler.do_event(sub_id, evt, relay)
+            # # will update our profiles if meta/contact type data
+            # self._profile_handler.do_event(sub_id, evt, relay)
+            #
+            # # and channels
+            # self._channel_handler.do_event(sub_id, evt, relay)
 
             # push the event to our web sockets, only those events that have a time
             # otherwise client will get flooded with events if server is being started and there

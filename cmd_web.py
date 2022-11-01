@@ -6,6 +6,7 @@ import signal
 import sys
 import os
 import time
+import json
 
 from stem.control import Controller
 import shutil
@@ -227,29 +228,6 @@ def run_web(clients,
             }
         ])
 
-        # the rest we'll only get from server startime and then onwards as server runs
-        # for historic we'll rely on server backfill process that will start on the recieving EOSE event
-        # we probbaly should do something on the case that client drops out whilst backfill is running
-        # it's posably we mulitple threads dooing backfill... It shouldn't cause any problems though...
-
-        # the_client.subscribe(handlers=[evt_persist, my_peh, my_ceh, my_server], filters=[
-        #     get_latest_event_filter(the_client, event_store, Event.KIND_REACTION),
-        #     get_latest_event_filter(the_client, event_store, Event.KIND_DELETE),
-        #     get_latest_event_filter(the_client, event_store, Event.KIND_TEXT_NOTE),
-        #     get_latest_event_filter(the_client, event_store, Event.KIND_ENCRYPT),
-        #     get_latest_event_filter(the_client, event_store, Event.KIND_RELAY_REC)
-        # ])
-        #
-        # the_client.subscribe(handlers=[evt_persist, my_peh, my_server], filters=[
-        #     get_latest_event_filter(the_client, event_store, Event.KIND_META),
-        #     get_latest_event_filter(the_client, event_store, Event.KIND_CONTACT_LIST)
-        # ])
-        #
-        # the_client.subscribe(handlers=[evt_persist, my_ceh, my_server], filters=[
-        #     get_latest_event_filter(the_client, event_store, Event.KIND_CHANNEL_CREATE),
-        #     get_latest_event_filter(the_client, event_store, Event.KIND_CHANNEL_MESSAGE)
-        # ])
-
     def split_events(evts:[ Event]):
         """
         :param evts: [Events] to be split
@@ -333,6 +311,8 @@ def run_web(clients,
                        Event.KIND_DELETE]:
             if c_kind in events_by_kind:
                 evt_persist.do_event(sub_id, events_by_kind[c_kind], the_client.url)
+                if c_kind == Event.KIND_CHANNEL_MESSAGE:
+                    my_ceh.do_event(sub_id, events_by_kind[c_kind], the_client.url)
 
         # now we're upto date we can start the backfill/resync process
         do_backfill(the_client)
@@ -426,7 +406,25 @@ def run_web(clients,
         ])
 
     # connection to the various relays
-    my_client = ClientPool(clients,
+    def get_clients():
+        # defined from cmd line... If so maybe we should lock the ability to change relays?, as is
+        # this will override the saved settings
+        ret = clients
+
+        # get saved insettings, this should exist after we run at least once
+        if ret is None:
+            ret = json.loads(my_settings.get('relays'))
+
+            if ret is None:
+                # fallback first run an no relay defined... hardcoded relays
+                # change this so that just relay list is pulled from hardcoded and then user has to select
+                # probably this should just be flag for those that know what they're doing
+                ret = 'wss://relay.damus.io,wss://nostr-pub.wellorder.net/'
+
+        return ret
+
+
+    my_client = ClientPool(clients=get_clients(),
                            on_connect=my_connect,
                            on_status=my_status,
                            on_eose=my_eose)
@@ -435,6 +433,7 @@ def run_web(clients,
                          event_store=event_store,
                          profile_handler=my_peh,
                          channel_handler=my_ceh,
+                         settings=my_settings,
                          spam_handler=my_spam,
                          client=my_client)
 
@@ -470,20 +469,8 @@ def run():
     # if given then when we reach we'll skip, we'll skip up until oldest event/kind for realy or just
     # continue on if we already passed
     rescan_to = None
-
-    # who to attach to
-    clients = [
-        {
-            'client': 'wss://nostr-pub.wellorder.net',
-            'write': True
-        },
-        'ws://localhost:8081',
-        # # # 'ws://localhost:8083',
-        {
-            'client': 'wss://relay.damus.io'
-        }
-    ]
-
+    # comma seperated relays to attach to, done like this will always be read/write
+    relays = None
 
     try:
         opts, args = getopt.getopt(sys.argv[1:], 'ht', ['help',
@@ -492,7 +479,8 @@ def run():
                                                         'host=',
                                                         'port=',
                                                         'until=',
-                                                        'fillsize='])
+                                                        'fillsize=',
+                                                        'relay='])
 
 
         # first pass
@@ -527,6 +515,9 @@ def run():
                 except ValueError as ve:
                     print('fillsize %s not a valid value' % a)
                     sys.exit(2)
+            if o == '--relay':
+                relays = a.split(',')
+
 
     except getopt.GetoptError as e:
         print(e)
@@ -543,12 +534,12 @@ def run():
 
 
     if is_tor:
-        run_tor(clients=clients,
+        run_tor(clients=relays,
                 event_store=event_store,
                 profile_store=profile_store,
                 web_dir=web_dir)
     else:
-        run_web(clients=clients,
+        run_web(clients=relays,
                 event_store=event_store,
                 profile_store=profile_store,
                 channel_store=channel_store,
