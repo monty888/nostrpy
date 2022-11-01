@@ -159,7 +159,6 @@ APP.nostr.data.event = function(){
                 let lists = _listener[for_type];
                 for(let i=0;i<lists.length;i++){
                     if(lists[i]===listener){
-                        alert('listener removed!!!');
                         lists.splice(i,1);
                         break;
                     }
