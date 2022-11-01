@@ -7,29 +7,30 @@ some stuff written in python for the nostr protocol developed against python v3.
 - cmd_chat, example currently 1-1 cli chat app, partially implemented
 - mirror_relay, mirror nostr events from one set of nostr relays to another
 
-# install
+# Install
 > cd nostrpy  
 > python3 -m venv venv  
 > source venv/bin/activate
 > pip install -r requirements.txt
 
-## web interface ##
-web interface to nostr
+## Web interface ##
 ![alt feed page](feed_page.png "feed")
-by default the interface is available at localhost:8080 
+### to run ### 
+> python3 cmd_web.py  
+> options    
 > -- host run at a different host !important no authentication yet!! so only run at localhost or in trusted network
 > as anyone who can get to the serevr can post as users!
 
-> python3 cmd_web.py
 
-## run relay ##
+
+## Relay ##
 > python3 run_relay.py 
 
 The default is to run the relay at ws://localhost:8081 with an sqlite db at /home/.nostrpy/nostr-client.db, the directry and db will be created if it doesn't exist.
 
 > python run_relay -h for other options
 
-## events view ##
+## Command line events view ##
 live nostr events view from the command line
 
 > python3 cmd_event_view.py 
@@ -41,8 +42,8 @@ live nostr events view from the command line
 - [ ] implement postgres as data store for client
 #### cmd_web.py
 - [ ] settings 
-  - [ ] get
-  - [ ] put
+  - [X] get
+  - [X] put
   - [ ] get with recurse up tree to defaults
 - [x] websocket for client probably shouldn't be getting opened each page but be in sharedwebworker  
 - [ ] enable media available from front end
