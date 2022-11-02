@@ -413,13 +413,16 @@ def run_web(clients,
 
         # get saved insettings, this should exist after we run at least once
         if ret is None:
-            ret = json.loads(my_settings.get('relays'))
+            ret = my_settings.get('relays')
+            if ret:
+                ret = json.loads(ret)
 
             if ret is None:
                 # fallback first run an no relay defined... hardcoded relays
                 # change this so that just relay list is pulled from hardcoded and then user has to select
                 # probably this should just be flag for those that know what they're doing
-                ret = 'wss://relay.damus.io,wss://nostr-pub.wellorder.net/'
+                ret = ['wss://relay.damus.io',
+                       'wss://nostr-pub.wellorder.net/']
 
         return ret
 
