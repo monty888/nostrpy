@@ -7,12 +7,14 @@ import bottle
 if TYPE_CHECKING:
     from nostr.ident.event_handlers import ProfileEventHandler
     from nostr.channels.event_handlers import ChannelEventHandler
+    from nostr.event.event_handlers import EventHandler
 
 import json
 import time
 from io import BytesIO
 from json import JSONEncoder
 from datetime import datetime
+from copy import copy
 import re
 from json import JSONDecodeError
 from bottle import request, Bottle, static_file, abort
@@ -29,7 +31,7 @@ from geventwebsocket.websocket import WebSocket
 from geventwebsocket.handler import WebSocketHandler
 from nostr.event.event import Event, EventTags
 from nostr.ident.profile import ProfileList, Profile, Contact, ContactList, ValidatedProfile
-from nostr.ident.persist import SQLiteProfileStore, ProfileType
+from nostr.ident.persist import SQLiteProfileStore
 from nostr.event.persist import ClientEventStoreInterface, SQLiteEventStore
 from nostr.encrypt import Keys
 from nostr.client.client import ClientPool, Client
@@ -182,16 +184,22 @@ class NostrWeb(StaticServer):
 
     def __init__(self,
                  file_root,
-                 event_store: ClientEventStoreInterface,
                  profile_handler: ProfileEventHandler,
+                 event_handler: EventHandler,
                  channel_handler: ChannelEventHandler,
                  client: ClientPool,
                  settings: Settings,
                  spam_handler: SpamHandlerInterface=None):
 
-        self._event_store = event_store
-        self._profile_handler = profile_handler
+        # FIXME always use event handler rather than store
+        #  look at standardising the interface for both, at the moment its event handler is actuall the persist handler
+        #  ???
+        self._event_store = event_handler.store
+        self._event_handler = event_handler
+        # FIXME - always use profile handler rather than store
         self._profile_store = profile_handler.store
+        self._profile_handler = profile_handler
+
         self._channel_handler = channel_handler
         self._settings = settings
         self._spam_handler = spam_handler
@@ -246,7 +254,7 @@ class NostrWeb(StaticServer):
         }
 
         self._app.route('/', callback=_get_err_wrapped(self._home_route))
-        self._app.route('/profile', callback=_get_err_wrapped(self._profile))
+        self._app.route('/profile', callback=_get_err_wrapped(self._profile_route))
         self._app.route('/profiles', method=['POST', 'GET'], callback=_get_err_wrapped(self._profiles_list))
 
         self._app.route('/local_profiles', callback=_get_err_wrapped(self._local_profiles))
@@ -318,9 +326,11 @@ class NostrWeb(StaticServer):
 
     def _get_profile(self, key_field='pub_k', for_sign=False, create_empty=False) -> Profile:
         ret: Profile
-
-        p_k = request.query[key_field]
-        if not p_k:
+        if key_field in request.query:
+            p_k = request.query[key_field]
+            if not p_k:
+                return None
+        else:
             return None
 
         self._check_key(p_k,
@@ -348,7 +358,7 @@ class NostrWeb(StaticServer):
         self._check_key(pub_k)
         p = self._profile_handler.profiles.get_profile(pub_k)
         if p is None:
-            raise Exception('no profile found for pub_k - %s' % pub_k)
+            raise NostrWebException('no profile found for pub_k - %s' % pub_k)
 
         # make contacts
         cons = [c.contact_public_key for c in p.load_contacts(self._profile_store)]
@@ -371,9 +381,9 @@ class NostrWeb(StaticServer):
 
     @lru_cache(maxsize=10)
     def _get_profile_matches(self, match_str, ttl_hash=None):
-        return self._profile_handler.profiles.matches(match_str,
-                                                      max_match=None,
-                                                      search_about=True)
+        return self._profile_handler.matches(match_str,
+                                             max_match=None,
+                                             search_about=True)
 
     def _profiles_list(self):
         c_p: Profile
@@ -413,7 +423,7 @@ class NostrWeb(StaticServer):
         # e.g. profile search page
         if use_pub_k:
             self._check_key(use_pub_k)
-            use_profile = self._profile_handler.profiles.lookup_pub_key(use_pub_k)
+            use_profile = self._profile_handler.get_pub_k(use_pub_k)
             for_keys = self._get_for_pub_keys(for_str=request.params.include,
                                               use_profile=use_profile)
             if for_keys is not None:
@@ -421,7 +431,6 @@ class NostrWeb(StaticServer):
                     all_keys = all_keys.intersection(set(for_keys))
                 else:
                     all_keys = set(for_keys)
-
         the_profile: Profile
         ret = {
             'profiles': []
@@ -430,41 +439,47 @@ class NostrWeb(StaticServer):
         # possibly this will /profile and /profiles methods merged
         # note we don't check the pub_ks, if they're incorrect then nothing will be returned for that pk anyhow
         if pub_k != '' or match != '' or all_keys:
-            for c_pub_k in list(all_keys)[offset:offset+limit]:
-                the_profile = self._profile_handler.profiles.get_profile(c_pub_k)
-                # we could easily add in here contact and profile which would replace the
-                # profiles method, though obviously loading per profile wouldn't be great with a very long list of
-                # pks
-                if the_profile:
-                    ret['profiles'].append(ValidatedProfile.from_profile(the_profile).as_dict())
-                else:
-                    ret['profiles'].append({
-                        'pub_k': c_pub_k
-                    })
+            ret['profiles'] = [ValidatedProfile.from_profile(the_profile)
+                               for the_profile in self._profile_handler.get_profiles(list(all_keys)[offset:offset+limit])]
+
+            ProfileList.sort_profiles(ret['profiles'],
+                                      inplace=True)
 
         # eventually this full list will probably have to go
         else:
-            ret['profiles'] = [ValidatedProfile.from_profile(c_p).as_dict() for c_p in self._profile_handler.profiles[offset:offset+limit]]
+            all_profiles = ProfileList.sort_profiles(self._profile_handler.profiles,
+                                                     inplace=False)
+            ret['profiles'] = [ValidatedProfile.from_profile(c_p) for c_p in all_profiles[offset:offset+limit]]
+
+        # dict to send
+        ret['profiles'] = [c_p.as_dict() for c_p in ret['profiles']]
 
         return ret
 
-    def _profile(self):
+    def _profile_route(self):
+
+        def get_others(key: str):
+            key = 'include_%s' % key
+            limit = None
+            get_type = None
+            types = ('full', 'keys', 'count')
+            if key in request.query:
+                v = request.query[key]
+                if v in types:
+                    get_type = v
+                if key+'_limit' in request.query:
+                    try:
+                        limit = int(request.query[key+'_limit'])
+                    except ValueError:
+                        pass
+            return get_type, limit
+
         the_profile: Profile
+        p: Profile
         pub_k = request.query.pub_k
         priv_k = request.query.priv_k
-        include_contacts = request.query.include_contacts.lower() == 'true'
-        include_followers = request.query.include_followers.lower() == 'true'
-        full_profiles = request.query.full_profiles.lower() == 'true'
-
-        def get_profile(key):
-            f_profile = self._profile_handler.profiles.lookup_pub_key(key)
-            if f_profile is not None:
-                f_profile = f_profile.as_dict()
-            else:
-                f_profile= {
-                    'pub_k': key
-                }
-            return f_profile
+        get_contact, contact_limit = get_others('contacts')
+        get_follow, follow_limit = get_others('follows')
 
         # only used when checking priv_k, we just create a profile with the priv_k and
         # then turn that into pub_k. any supplied pub_k is ignored
@@ -475,7 +490,9 @@ class NostrWeb(StaticServer):
 
         # will throw if we don't think valid pub_k
         self._check_key(pub_k)
-        the_profile = self._profile_handler.profiles.get_profile(pub_k)
+        # the_profile = self._profile_handler.profiles.get_profile(pub_k)
+        the_profile = self._profile_handler.get_pub_k(pub_k)
+
         if the_profile is None:
             # raise NostrWebException('no profile found for pub_k - %s' % pub_k)
             # create an adhoc profile
@@ -485,21 +502,35 @@ class NostrWeb(StaticServer):
 
         c: Contact
         # add in contacts if asked for
-        if include_contacts is True:
-            the_profile.load_contacts(self._profile_store)
-            if full_profiles:
-                ret['contacts'] = [get_profile(c.contact_public_key) for c in the_profile.contacts]
-            # just keys
-            else:
-                ret['contacts'] = [c.contact_public_key for c in the_profile.contacts]
+        if get_contact is not None:
+            self._profile_handler.load_contacts(the_profile)
+            contact_keys = [c.contact_public_key for c in the_profile.contacts]
+            ret['contact_count'] = len(contact_keys)
 
-        # add in follows if asked for
-        if include_followers is True:
-            the_profile.load_followers(self._profile_store)
-            if full_profiles:
-                ret['followed_by'] = [get_profile(c.owner_public_key) for c in the_profile.followed_by]
-            else:
-                ret['followed_by'] = [c.owner_public_key for c in the_profile.followed_by]
+            # return either keys or profile info up to limit
+            if get_contact != 'count':
+                if contact_limit:
+                    contact_keys = contact_keys[:contact_limit]
+                # embed profile info
+                if get_contact == 'full':
+                    ret['contacts'] = [p.as_dict() for p in self._profile_handler.get_profiles(contact_keys)]
+                # just the keys
+                else:
+                    ret['contacts'] = contact_keys
+
+        # the same but for follows, we may need to think about this with our changed db structure
+        # load contacts/follows should be changed to take profile helper
+        if get_follow is not None:
+            follow_keys = self._profile_handler.load_followers(the_profile)
+            ret['follow_count'] = len(follow_keys)
+            # return either keys or profile info up to limit
+            if get_follow != 'count':
+                if follow_limit:
+                    follow_keys = follow_keys[:follow_limit]
+                if get_follow == 'full':
+                    ret['followed_by'] = [p.as_dict() for p in self._profile_handler.get_profiles(follow_keys)]
+                else:
+                    ret['followed_by'] = follow_keys
 
         return ret
 
@@ -515,14 +546,12 @@ class NostrWeb(StaticServer):
         if the_profile.public_key != pub_k:
             raise NostrWebException('priv_k: %s doesn\'t match supplied pub_k: %s' % (priv_k, pub_k))
 
-        the_profile = self._profile_handler.profiles.get_profile(pub_k)
+        the_profile = self._profile_handler.get_pub_k(pub_k)
         the_profile.update_at = datetime.now()
-
 
         if the_profile is None:
             raise NostrWebException('no profile found for pub_k - %s' % pub_k)
 
-        from copy import copy
         the_profile = copy(the_profile)
         the_profile.private_key = priv_k
         self._profile_handler.do_update_local(the_profile)
@@ -548,7 +577,7 @@ class NostrWeb(StaticServer):
         if the_profile is None:
             raise NostrWebException('unable to find profile: %s' % for_name)
 
-        self._profile_store.export_file(out_file, [for_name])
+        self._profile_handler.store.export_file(out_file, [for_name])
 
         return {
             'success': True,
@@ -560,13 +589,9 @@ class NostrWeb(StaticServer):
         """
         :return: profiles that we have priv_k for
         """
-        profiles = self._profile_store.select_profiles(profile_type=ProfileType.LOCAL)
-        c_p: Profile
-
-        ret = {
-            'profiles': [c_p.as_dict() for c_p in profiles]
+        return {
+            'profiles': [c_p.as_dict() for c_p in self._profile_handler.local_profiles()]
         }
-        return ret
 
     def _get_channel_matches(self, match_str, ttl_hash=None):
         return self._channel_handler.channels.matches(match_str,
@@ -670,12 +695,13 @@ class NostrWeb(StaticServer):
 
     def _do_post(self):
         pub_k = request.query.pub_k
-        event = json.loads(request.forms['event'])
-        content = event['content']
+        event = json.loads(request.forms.getunicode('event'))
+        # content = event['content']
         # content = request.forms.getunicode('content')
 
         tags = event['tags']
         kind = event['kind']
+        content = event['content']
         if not pub_k:
             raise NostrWebException('pub_k is required')
 
@@ -734,6 +760,7 @@ class NostrWeb(StaticServer):
         picture = profile['picture']
         name = profile['name']
         about = profile['about']
+
         save = request.forms['save'] == 'true'
         publish = request.forms['publish'] == 'true'
         private_k = profile['private_key']
@@ -750,7 +777,7 @@ class NostrWeb(StaticServer):
         # edit a profile we already have or just created linked above
 
         self._check_key(pub_k)
-        the_profile = self._profile_handler.profiles.get_profile(pub_k)
+        the_profile = self._profile_handler.get_pub_k(pub_k)
         if the_profile is None:
             raise Exception('no profile found for pub_k - %s' % pub_k)
 
@@ -799,12 +826,12 @@ class NostrWeb(StaticServer):
 
         self._check_key(pub_k)
 
-        profile: Profile = self._profile_handler.profiles.get_profile(pub_k)
+        profile: Profile = self._profile_handler.get_pub_k(pub_k)
 
         if profile is None:
             raise NostrWebException('Profile not found for pub_k: %s' % pub_k)
         if not profile.private_key:
-            raise NostrWebException('don\'t have the private key to sign for given pub_k: ' % pub_k)
+            raise NostrWebException('don\'t have the private key to sign for given pub_k: %s' % pub_k)
 
         if follow != '':
             follow_list = follow.split(',')
@@ -818,8 +845,7 @@ class NostrWeb(StaticServer):
         check_keys(follow_list)
         check_keys(unfollow_list)
 
-        my_contacts = ContactList(contacts=profile.load_contacts(self._profile_store).contacts,
-                                  owner_pub_k=profile.public_key)
+        my_contacts = self._profile_handler.load_contacts(profile)
 
         con: Contact
         actually_followed = []
@@ -839,13 +865,6 @@ class NostrWeb(StaticServer):
 
         # if actually_followed or actually_unfollowed:
         my_contacts.updated_at = util_funcs.date_as_ticks(datetime.now())
-
-        # just local, as we always publish may go and rely on the save that gets done when we see the publish
-        # self._profile_store.set_contacts(my_contacts)
-        # current_profile.load_contacts(profile_store=self._profile_store,
-        #                               reload=True)
-
-        # self._update_session_profile(current_profile)
 
         # publish
         c_evt = my_contacts.get_contact_event()
@@ -911,15 +930,15 @@ class NostrWeb(StaticServer):
         :return:
         """
 
+        state = {
+            'relay_status': DateTimeEncoder().encode(self._client.status),
+            'profiles_url': self._settings.get('profiles_url', 'https://robohash.org/'),
+            'enable_media': self._settings.get('enable_media', True) != '0',
+        }
 
-        ret = """
-            APP.nostr.data.server_state = {
-                'relay_status' : %s
-            };
-        """ % (json.dumps(DateTimeEncoder().encode(self._client.status)))
-
-        return ret
-
+        return """
+            APP.nostr.data.server_state = %s
+        """ % (json.dumps(state))
 
     # def _contact_list(self):
     #     pub_k = request.query.pub_k
@@ -975,153 +994,19 @@ class NostrWeb(StaticServer):
 
         return ret
 
-    def _get_events(self, filter, use_profile: Profile = None,
+    def _get_events(self,
+                    filter,
+                    use_profile: Profile=None,
                     embed_reactions=True,
                     add_reactions_flag=True,
-                    embed_replies=False):
-        c_evt: Event
-        events = self._event_store.get_filter(filter)
+                    embed_replies=False) -> []:
 
-        if add_reactions_flag and use_profile:
-            events = self._add_reacted_to(use_profile, events)
-
-        # for reaction events to be useful you'll probbaly want to embed the event that is being reacted to
-        if embed_reactions:
-            self._add_reaction_events(events)
-        if embed_replies:
-            # channels
-            use_offset = 1
-            if Event.KIND_ENCRYPT in filter[0]['kinds']:
-                use_offset = 0
-
-            self._add_reply_events(events, offset=use_offset)
-
-        return [self._serialise_event(c_evt, use_profile) for c_evt in events]
-
-    def _add_reacted_to(self, p: Profile, evts: []):
-        """
-            for given events returns a lookup of [event_id] {
-                'type' : true     p reacted to e this type - undefined if not true
-            }
-        """
-
-        # should return all reactions for given events by p
-        reactions = self._event_store.reactions(pub_k=p.public_key,
-                                                react_event_id=[c_evt['id'] for c_evt in evts])
-        r_lookup = {}
-        for c_evt in reactions:
-            r_type = c_evt['interpretation']
-            if c_evt['id'] not in r_lookup:
-                r_lookup[c_evt['id']] = {}
-
-            # we only care if we have the type or not e.g. for like on/off
-            # for other expect the caller should no what its looking for
-            r_lookup[c_evt['id']]['react_'+r_type] = True
-            r_lookup[c_evt['id']]['react_' + r_type+'_id'] = c_evt['r_event_id']
-
-        # add flags to events
-        ret = []
-        for c_evt in evts:
-            if c_evt['id'] in r_lookup:
-                c_evt = {**c_evt, **r_lookup[c_evt['id']]}
-            ret.append(c_evt)
-
-        return ret
-
-    def _add_reaction_events(self, evts: []):
-        """
-            adds react_event to any kind7 reaction events
-        """
-        # reaction_evts only
-        r_evts = [c_evt for c_evt in evts if c_evt['kind'] == Event.KIND_REACTION]
-        # no reaction events
-        if not r_evts:
-            return evts
-
-        # events that r_evts refer to, those we can find anyhow
-        r_to_events = self._event_store.reactions(for_event_id=[c_evt['id'] for c_evt in r_evts])
-
-        # turn to lookup
-        r_evt_lookup = {}
-        for c_evt in r_to_events:
-            if c_evt['r_event_id'] not in r_evt_lookup:
-                r_evt_lookup[c_evt['r_event_id']] = c_evt
-
-            c_evt['react_'+c_evt['interpretation']] = True
-
-
-        # add r_event_data as r_event, we do over r_evts but this is the same data as
-        # evts so we're actually changing there
-        for c_evt in r_evts:
-            if c_evt['id'] in r_evt_lookup:
-                c_evt['react_event'] = r_evt_lookup[c_evt['id']]
-            else:
-                pass
-                # c_evt['react_event'] = {
-                #     'id': c_evt['id'],
-                #     'sig': None,
-                #     'content': 'reacted event not found %s'  % c_evt['id']
-                # }
-
-        return evts
-
-    def _add_reply_events(self, evts:[], offset=1, max_reply=1):
-        """
-        add reply_events [] change to single
-        :param evts:
-        :return:
-        """
-        # evts that have been replied too
-        reply_events = [evt for evt in evts if len(EventTags(evt['tags']).e_tags) > offset]
-
-        # create lookup of events we have
-        evts_lookup = {evt['id']: evt for evt in evts}
-
-        # embed reply events if we already have them and not missing ids for store q
-        missing_ids = []
-        missing_map = {}
-        for c_evt in reply_events:
-            c_evt['reply_events'] = []
-
-            # TODO: remove max_reply, would it ever make sense to reply ti more than one event?!
-            for r_evt_id in EventTags(c_evt['tags']).e_tags[offset:offset+max_reply]:
-                if r_evt_id in evts_lookup:
-                    c_evt['reply_events'].append(evts_lookup[r_evt_id])
-                else:
-                    if r_evt_id not in missing_map:
-                        # do we really want to support multi to 1 ?
-                        missing_map[r_evt_id] = []
-                        missing_ids.append(r_evt_id)
-                    missing_map[r_evt_id].append(c_evt)
-                    c_evt['reply_events'] = []
-
-        # ok see if we can find any of those missing events.. thats is replies to events that
-        # are not in evts (not unexpected)
-        if missing_ids:
-            m_evts = self._event_store.get_filter({
-                'ids': missing_ids
-            })
-            # lookup by id of events we found
-            m_evts_lookup = {evt['id']: evt for evt in m_evts}
-            for m_id in missing_ids:
-                # found
-                if m_id in m_evts_lookup:
-                    for c_evt in missing_map[m_id]:
-                        c_evt['reply_events'].append(m_evts_lookup[m_id])
-                # not in our store
-                else:
-                    for c_evt in missing_map[m_id]:
-                        c_evt['reply_events'].append({
-                            'id': m_id,
-                            'sig': None,
-                            'pubkey': '?',
-                            'kind': Event.KIND_TEXT_NOTE,
-                            'content': 'unable to find reply to event id: %s' % m_id,
-                            'tags': [],
-                            'created_at': 0
-                        })
-
-        return evts
+        return [self._serialise_event(c_evt, use_profile) for
+                c_evt in self._event_handler.get_events(filter=filter,
+                                                        use_profile=use_profile,
+                                                        embed_reactions=embed_reactions,
+                                                        add_reactions_flag=add_reactions_flag,
+                                                        embed_replies=embed_replies)]
 
     def _get_for_pub_keys(self, for_str, use_profile: Profile):
         """
@@ -1152,6 +1037,14 @@ class NostrWeb(StaticServer):
 
         return ret
 
+    # @lru_cache(maxsize=100)
+    # def _query_realy_fallback(self, filter):
+    #     evt: Event
+    #     filter = json.loads(filter)
+    #     ret = [evt.event_data() for evt in self._client.query(filter)]
+    #     return ret[:filter[0]['limit']]
+
+
     def _events_route(self):
         """
         returns events that match given nostr filter [{},...]
@@ -1181,8 +1074,19 @@ class NostrWeb(StaticServer):
 
         limit = self._get_query_limit()
         if limit is not None:
-            if 'limit' not in filter[0] or filter[0]['limit']>limit:
+            if 'limit' not in filter[0] or filter[0]['limit'] > limit:
                 filter[0]['limit'] = limit
+
+        # r_evts = self._get_events(filter,
+        #                           use_profile=use_profile,
+        #                           embed_replies=embed_replies)
+        #
+        # if len(r_evts) < limit:
+        #     if r_evts:
+        #         filter[0]['until'] = r_evts[-1]['created_at']
+        #         filter[0]['limit'] = limit-len(r_evts)
+        #
+        #     r_evts = r_evts + self._query_realy_fallback(json.dumps(filter))
 
         return {
             'events': self._get_events(filter,
@@ -1386,9 +1290,10 @@ class NostrWeb(StaticServer):
 
         limit = self._get_query_limit()
 
-        for_profile = self._profile_handler.profiles.get_profile(pub_k,
-                                                                 create_type=ProfileList.CREATE_PUBLIC)
-        for_profile.load_contacts(self._profile_store)
+        for_profile = self._profile_handler.get_profiles(pub_k,
+                                                         create_missing=True)[0]
+        self._profile_handler.load_contacts(for_profile)
+
         c: Contact
 
         filter = [
@@ -1416,20 +1321,24 @@ class NostrWeb(StaticServer):
     def _reactions_route(self):
         v_profile = self._get_profile(key_field='view_pub_k',
                                       create_empty=True)
-
+        r_filter = {
+            'kinds': [Event.KIND_REACTION],
+            'authors': [v_profile.public_key],
+            'limit': self._get_query_limit()
+        }
 
         until = self._get_query_int('until', default_value='')
-        if until == '':
-            until = None
+        if until != '':
+            r_filter['until'] = until
 
-        ret = self._event_store.reactions(v_profile.public_key,
-                                          limit=self._get_query_limit(),
-                                          until=until)
+        # ret = self._get_events(filter=r_filter)
+        ret = self._get_events(filter=r_filter,
+                               use_profile=self._get_profile())
 
-        if request.query.pub_k:
-            use_profile = self._get_profile()
-            ret = self._add_reacted_to(p=use_profile,
-                                       evts=ret)
+        # if request.query.pub_k:
+        #     use_profile = self._get_profile()
+        #     ret = self._add_reacted_to(p=use_profile,
+        #                                evts=ret)
 
         ret = [self._serialise_event(c_evt) for c_evt in ret]
 
@@ -1447,27 +1356,18 @@ class NostrWeb(StaticServer):
 
         event_id = request.query.event_id
         self._check_event_id(event_id)
-        reactions = {
-            '+': '+',
-            '': '+'
-        }
-        reaction = request.query.reaction
-        if reaction not in reactions:
-            raise NostrWebException('%s is not a valid reaction' % reaction)
 
-        reaction = reactions[reaction]
+        reaction = self._event_handler.reaction_lookup(request.query.reaction)
 
         active = request.query.active.lower() == 'true'
 
         # get event we're reacting to
-        r_evt:Event = self._event_store.get_filter({
-            'ids': event_id
-        })
+        r_evt = self._event_handler.get_events_by_ids([event_id])
 
         if not r_evt:
             raise NostrWebException('couldn\'t find event reacting to, event_id: %s' % event_id)
-        r_evt = Event.from_JSON(r_evt[0])
 
+        r_evt = Event.from_JSON(r_evt[0])
         my_react_event = Event(kind=Event.KIND_REACTION,
                                content=reaction,
                                tags=[
@@ -1477,15 +1377,23 @@ class NostrWeb(StaticServer):
                                pub_key=p.public_key)
 
         c_evt: Event
-        to_del = [['e', c_evt['r_event_id']]
-                  for c_evt in self._event_store.reactions(p.public_key, react_event_id=event_id)
-                  if c_evt['reaction'] == reaction]
+
+        react_events = self._event_handler.get_events({
+            'kinds': [Event.KIND_REACTION],
+            '#e': [event_id],
+            'authors': p.public_key
+        })
+
+        to_del = []
+        for c_evt in react_events:
+            e_tags = EventTags(c_evt['tags']).e_tags
+            if e_tags and e_tags[len(e_tags)-1] == event_id and reaction == self._event_handler.reaction_lookup(c_evt['content']):
+                to_del.append(['e', c_evt['id']])
 
         del_evt: Event = Event(kind=Event.KIND_DELETE,
                                content='user undid reaction',
                                pub_key=p.public_key,
                                tags=to_del)
-
 
         # insert new like
         if active is True:
@@ -1675,9 +1583,6 @@ class NostrWeb(StaticServer):
             # are being imported
             if evt.created_at_ticks > self._started_at:
                 evt_data = evt.event_data()
-                if evt.kind == Event.KIND_REACTION:
-                    evt_data = self._add_reaction_events([evt_data])[0]
-
                 self.send_data(['event', evt_data])
 
     def send_data(self, the_data):
@@ -1688,6 +1593,9 @@ class NostrWeb(StaticServer):
                 send_data = the_data
                 if the_data[0] == 'event':
                     use_profile = self._profile_handler.profiles.lookup_pub_key(pub_k)
+                    evt_data = the_data[1]
+                    if evt_data['kind'] == Event.KIND_REACTION and use_profile:
+                        the_data[1] = self._event_handler.add_reaction_events(use_profile, [evt_data])[0]
                     send_data = ['event', self._serialise_event(the_data[1], use_profile)]
 
                 ws.send(DateTimeEncoder().encode(send_data))

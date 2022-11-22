@@ -19,7 +19,7 @@ class Settings(SettingStoreInterface, ABC):
             for r in self._store.list():
                 self._lookup[r['name']] = r['value']
 
-    def get(self, key, recurse=False, default=None):
+    def get(self, key, default=None, recurse=False):
         ret = default
         if key in self._lookup:
             ret = self._lookup[key]

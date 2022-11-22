@@ -748,7 +748,7 @@ class SQLiteProfileStore(SQLProfileStore):
                         pub_k text primary key,  
                         profile_name text,
                         attrs text,
-                        name text,
+                        name text collate nocase,
                         picture text,
                         updated_at int
                     )

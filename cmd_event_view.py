@@ -1,41 +1,44 @@
 """
     outputs evetns as they're seen from connected relays
 """
-
+from gevent import monkey
+monkey.patch_all()
 import logging
 import sys
+import time
 from pathlib import Path
 from datetime import datetime, timedelta
 import getopt
+import signal
 from db.db import SQLiteDatabase
 from nostr.ident.profile import Profile, ProfileList, Contact
-from nostr.ident.event_handlers import ProfileEventHandler
-from nostr.ident.persist import SQLProfileStore, MemoryProfileStore, ProfileStoreInterface
+from nostr.ident.event_handlers import ProfileEventHandler, NetworkedProfileEventHandler
+from nostr.ident.persist import SQLiteProfileStore, ProfileStoreInterface, MemoryProfileStore
 from nostr.client.client import ClientPool, Client
 from nostr.event.persist import ClientSQLEventStore, ClientSQLiteEventStore, ClientMemoryEventStore, ClientEventStoreInterface
 from nostr.client.event_handlers import PrintEventHandler, EventAccepter, DeduplicateAcceptor, LengthAcceptor
-from nostr.event.event_handlers import PersistEventHandler
+from nostr.event.event_handlers import EventHandler
 from nostr.util import util_funcs
 from nostr.event.event import Event
 from nostr.encrypt import Keys
 from app.post import PostApp
-from cmd_line.util import EventPrinter, FormattedEventPrinter
+from cmd_line.util import FormattedEventPrinter
 
 # TODO: also postgres
 WORK_DIR = '/home/%s/.nostrpy/' % Path.home().name
-DB_FILE = '%s/nostr-client-test.db' % WORK_DIR
+DB_FILE = '%s/tmp.db' % WORK_DIR
 
 # RELAYS = ['wss://rsslay.fiatjaf.com','wss://nostr-pub.wellorder.net']
 # RELAYS = ['wss://rsslay.fiatjaf.com']
 # RELAYS = ['wss://relay.damus.io']
-RELAYS = ['ws://localhost:8081','wss://nostr-pub.wellorder.net','wss://rsslay.fiatjaf.com','wss://relay.damus.io']
+RELAYS = ['wss://relay.damus.io','ws://localhost:8081']
 # RELAYS = ['wss://nostr-pub.wellorder.net']
 # RELAYS = ['ws://localhost:8081']
-AS_PROFILE = None
-VIEW_PROFILE = None
-INBOX = None
-# default -24 hours from runtime
-SINCE = 24
+# AS_PROFILE = None
+# VIEW_PROFILE = None
+# INBOX = None
+# # default -24 hours from runtime
+# SINCE = 24
 
 def usage():
     print("""
@@ -51,8 +54,12 @@ usage:
     """)
     sys.exit(2)
 
+
+class ConfigException(Exception):
+    pass
+
 def get_from_config(config,
-                    profiles: ProfileEventHandler):
+                    profile_handler: ProfileEventHandler):
     as_user = None
     all_view = []
     view_extra = []
@@ -60,56 +67,47 @@ def get_from_config(config,
     inbox_keys = []
     shared_keys = []
 
-    # the profile we'll be viewing as, if any... If it's not set then you'll see everything unless
-    # you specify view_profiles.
-    # in either case without as_user it's not possible to decrypt any evts
+    # user we're viewing as
     if config['as_user'] is not None:
         as_key = config['as_user']
-        as_user = profiles.profiles.get_profile(as_key)
+        as_user = profile_handler.get_pub_k(as_key)
 
         if not as_user:
-            if Keys.is_key(as_key):
-                # just create a tmp profile using key as pub_key maybe no meta or we just didn't fetch it yet
-                # (which would be case on first run because profile store would be empty)
-                as_user = Profile(pub_k=as_key, attrs={
-                    'name': 'adhoc from pub_k'
-                })
+            raise ConfigException('unable to find/create as_user profile - %s' % as_key)
 
-            else:
-                print('unable to find/create as_user profile - %s' % as_key)
-                sys.exit(2)
         c_c: Contact
-        for c_c in as_user.load_contacts(profiles.store):
-            all_view.append(profiles.profiles.get_profile(c_c.contact_public_key,
-                                                          create_type=ProfileList.CREATE_PUBLIC))
+        contacts = profile_handler.load_contacts(as_user)
+        if contacts:
+            contact_ps = profile_handler.get_profiles(pub_ks=[c_c.contact_public_key for c_c in contacts],
+                                                      create_missing=True)
 
-    # view events from this profiles as many as you like
+            all_view = all_view + contact_ps.profiles
+
+    # addtional profiles to view other than current profile
     if config['view_profiles']:
         vps = config['view_profiles'].split(',')
-        for vp in vps:
-            p = profiles.profiles.get_profile(vp, create_type='public')
-            if not p:
-                print('unable to find/create view_profile - %s' % vp)
-                sys.exit(2)
-            else:
-                all_view.append(p)
-                view_extra.append(p)
+
+        view_ps = profile_handler.get_profiles(pub_ks=vps,
+                                               create_missing=False)
+        all_view = all_view + view_ps.profiles
+        view_extra = view_ps.profiles
 
     # public inboxes for encrypted messages
     if config['inbox']:
         if as_user is None:
-            print('inbox can only be used with as_user set')
-            sys.exit(2)
+            raise ConfigException('inbox can only be used with as_user set')
+        raise ConfigException('add this back in!!!')
+        # for c_box in config['inbox'].split(','):
+        #     p = profiles.profiles.get_profile(c_box,
+        #                                       create_type=ProfileList.CREATE_PRIVATE)
+        #     if not p:
+        #         print('unable to find/create inbox_profile - %s' % c_box)
+        #         sys.exit(2)
+        #     else:
+        #         inboxes.append(p)
+        #         inbox_keys.append(p.public_key)
 
-        for c_box in config['inbox'].split(','):
-            p = profiles.profiles.get_profile(c_box,
-                                              create_type=ProfileList.CREATE_PRIVATE)
-            if not p:
-                print('unable to find/create inbox_profile - %s' % c_box)
-                sys.exit(2)
-            else:
-                inboxes.append(p)
-                inbox_keys.append(p.public_key)
+
 
     if as_user is not None and as_user.private_key:
         shared_keys = PostApp.get_clust_shared_keymap_for_profile(as_user, all_view)
@@ -188,16 +186,37 @@ class MyAccept(EventAccepter):
 
 
 def run_watch(config):
-    my_db = SQLiteDatabase(DB_FILE)
-    event_store:ClientEventStoreInterface = None
-    # event_store = ClientSQLiteEventStore(DB_FILE, full_text=True)
-    # event_store = ClientMemoryEventStore()
-    # my_persist = PersistEventHandler(event_store)
-    profile_store = SQLProfileStore(my_db)
-    # profile_store = MemoryProfileStore()
-    profile_handler = ProfileEventHandler(profile_store)
+    my_client: Client
 
-    config = get_from_config(config, profile_handler)
+    # hack so that there is always a connection to the in mem db else it'll get closed
+    # import sqlite3
+    # db_keep_ref = sqlite3.connect('file:profile?mode=memory&cache=shared&uri=true')
+    #
+    # profile_store = SQLiteProfileStore('file:profile?mode=memory&cache=shared&uri=true')
+    # profile_store.create()
+
+    # couldn't get in memory sqllite to work... because I think you get a different db across threads
+    # profile_store = SQLiteProfileStore(DB_FILE)
+    profile_store = MemoryProfileStore()
+
+    # connection thats just used to query profiles as needed
+    profile_client = ClientPool(RELAYS)
+    profile_handler = NetworkedProfileEventHandler(profile_store,
+                                                   profile_client)
+    profile_client.start()
+
+    # pop the config
+    try:
+        config = get_from_config(config, profile_handler)
+    except ConfigException as ce:
+        print(ce)
+        profile_client.end()
+        sys.exit(2)
+    except Exception as e:
+        print(e)
+        profile_client.end()
+        sys.exit(2)
+
     as_user = config['as_user']
     view_profiles = config['all_view']
     inboxes = config['inboxes']
@@ -247,6 +266,58 @@ def run_watch(config):
     if until:
         until = util_funcs.date_as_ticks(since + timedelta(hours=until))
 
+    def my_eose(the_client: Client, sub_id: str, events):
+        # seems mutiple filters mean we get unpredictable order from the relay
+        # we probably shouldn't rely on order from relay anyhow
+        def my_sort(evt:Event):
+            return evt.created_at_ticks
+        events.sort(key=my_sort)
+
+        profile_handler.do_event(sub_id, events, the_client.url)
+
+        # prfetch the profiles that we'll need
+        c_evt: Event
+        ukeys = set()
+        for c_evt in events:
+            ukeys.add(c_evt.pub_key)
+            for c_tag in c_evt.p_tags:
+                ukeys.add(c_tag)
+
+        profiles = profile_handler.get_profiles(list(ukeys),
+                                                create_missing=True)
+
+        # this makes sure that we don't fire another profile fetch for those profiles that were not found
+        # because the get_profiles method only auto adds profiles that had meta events
+        #
+        for c_p in profiles:
+            profile_handler.profiles.put(c_p)
+
+        for c_evt in events:
+            my_printer.do_event(sub_id, c_evt, the_client)
+
+    def my_connect(the_client: Client):
+        # metas from now on
+        p_filter = {
+            'kinds': [Event.KIND_META],
+            'since': util_funcs.date_as_ticks(datetime.now())
+        }
+        # events back to since
+        e_filter = {
+            # 'since': event_store.get_newest(the_client.url)+1
+            'since': util_funcs.date_as_ticks(since),
+            'kinds': [Event.KIND_TEXT_NOTE, Event.KIND_ENCRYPT]
+        }
+        if until:
+            e_filter['until'] = until
+        # note in the case of wss://rsslay.fiatjaf.com it looks like author is required to receive anything
+        if the_client.url == 'wss://rsslay.fiatjaf.com':
+            e_filter['authors'] = [p.public_key for p in view_profiles]
+
+        the_client.subscribe(handlers=[profile_handler, my_printer], filters=[
+            p_filter,
+            e_filter
+        ])
+
     # prints out the events
     my_printer = PrintEventHandler(profile_handler=profile_handler,
                                    event_acceptors=[DeduplicateAcceptor(),
@@ -266,60 +337,16 @@ def run_watch(config):
 
     my_printer.display_func = my_display
 
-    def my_eose(the_client: Client, sub_id: str, events):
-        # seems mutiple filters mean we get unpredictable order from the relay
-        # we probably shouldn't rely on order from relay anyhow
-        def my_sort(evt:Event):
-            return evt.created_at_ticks
-        events.sort(key=my_sort)
+    ClientPool(RELAYS, on_connect=my_connect, on_eose=my_eose).start()
 
-        profile_handler.do_event(sub_id, events, the_client.url)
-        for c_evt in events:
-            my_printer.do_event(sub_id, c_evt, the_client)
-
-    def my_connect(the_client: Client):
-        # all metas and contacts ever
-        p_filter = {
-            'kinds': [Event.KIND_META, Event.KIND_CONTACT_LIST],
-            'since': profile_store.newest
-        }
-        # events back to since
-        e_filter = {
-            # 'since': event_store.get_newest(the_client.url)+1
-            'since': util_funcs.date_as_ticks(since),
-            'kinds': [Event.KIND_TEXT_NOTE, Event.KIND_ENCRYPT]
-        }
-        if until:
-            e_filter['until'] = until
-        # note in the case of wss://rsslay.fiatjaf.com it looks like author is required to receive anything
-        if the_client.url == 'wss://rsslay.fiatjaf.com':
-            e_filter['authors'] = [p.public_key for p in view_profiles]
-
-        the_client.subscribe(handlers=[profile_handler, my_printer], filters=[
-            p_filter,
-            e_filter
-        ])
-
-    # local_filter = {
-    #     'kinds': [Event.KIND_TEXT_NOTE, Event.KIND_ENCRYPT, Event.KIND_META, Event.KIND_CONTACT_LIST],
-    #     'since': util_funcs.date_as_ticks(since)
-    # }
-
-    # print events as we have them locally if using persistent event store
-    # existing_evts = event_store.get_filter(local_filter)
-    # existing_evts.reverse()
-    # for c_evt in existing_evts:
-    #     my_printer.do_event(None, c_evt, None)
-    #     since = c_evt.created_at - timedelta(hours=1)
-    my_client = ClientPool(RELAYS, on_connect=my_connect, on_eose=my_eose).start()
 
 
 def run_event_view():
     config = {
-        'as_user': AS_PROFILE,
-        'view_profiles': VIEW_PROFILE,
-        'inbox': INBOX,
-        'since': SINCE,
+        'as_user': None,
+        'view_profiles': None,
+        'inbox': None,
+        'since': 24,
         'until': None
     }
 
@@ -358,4 +385,6 @@ if __name__ == "__main__":
     util_funcs.create_work_dir(WORK_DIR)
     util_funcs.create_sqlite_store(DB_FILE)
     run_event_view()
-
+    # client = Client('ws://localhost:8081').start()
+    # client.query([{'kinds': [0], 'authors': []}])
+    # client.end()

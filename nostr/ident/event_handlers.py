@@ -1,13 +1,16 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    pass
+    from nostr.client.client import Client
 
 import time
 from json import JSONDecodeError
+from gevent import Greenlet
+from functools import lru_cache
 import logging
 from nostr.ident.persist import ProfileStoreInterface
 from nostr.ident.profile import Profile, ProfileList, Contact, ContactList
+from .persist import ProfileType
 from nostr.util import util_funcs
 from nostr.event.event import Event
 
@@ -40,8 +43,21 @@ class ProfileEventHandler:
     # update locally rather than via meta 0 event
     # only used to link prov_k or add/change profile name
     def do_update_local(self, p: Profile):
+        o_p: Profile = self._profiles.lookup_pub_key(p.public_key)
         self._store.put_profile(p, True)
         self._profiles.put(p)
+
+        if self._on_profile_update:
+            try:
+                self._on_profile_update(p, o_p)
+            except Exception as e:
+                logging.debug('ProfileEventHandler::do_update_local(_on_profile_update) - %s' % e)
+
+    def local_profiles(self) -> [Profile]:
+        """
+        :return: profiles that we have priv_k for
+        """
+        return self._store.select_profiles(profile_type=ProfileType.LOCAL)
 
     def do_event(self, sub_id, evt: Event, relay):
         if not hasattr(evt, '__iter__'):
@@ -108,9 +124,6 @@ class ProfileEventHandler:
                     logging.debug('ProfileEventHandler:_do_profiles_update>_on_profile_update error: %s, profile: %s ' % (e,
                                                                                                                           c_p.public_key))
 
-    def _clear_followers(self):
-        print('to be implemente, clear follows')
-
     def _get_to_update_contacts(self, evts: [Event]) -> ([ContactList], [ContactList]):
         c = []
         c_e = []
@@ -141,31 +154,71 @@ class ProfileEventHandler:
             # FIXME: only null those that don't appear in both current contacts and before update
             p = self._profiles.lookup_pub_key(c_c.owner_public_key)
             if p:
-                p.contacts = None
+                # p.contacts = None don't see why we'd do this?
                 p.followed_by = None
 
         # fire update if any, as profile probably change to send as batch
         if self._on_contact_update:
-            for i, c_p in enumerate(p):
-                self._on_profile_update(c_p, c_c[i])
+            for i, c_c in enumerate(c):
+                self._on_contact_update(p, c_c, c_e[i])
 
     @property
     def profiles(self) -> ProfileList:
+        # where possible don't access the underlying list directly use our methods which give us a chance to
+        # intercept calls
         return self._profiles
+
+    def get_pub_k(self, pub_k: str):
+        return self._profiles.lookup_pub_key(pub_k)
+
+    def get_profiles(self, pub_ks: [str], create_missing=True) -> ProfileList:
+        if isinstance(pub_ks, str):
+            pub_ks = [pub_ks]
+
+        profiles = []
+        for k in pub_ks:
+            p = self._profiles.lookup_pub_key(k)
+            if p:
+                profiles.append(p)
+            elif create_missing:
+                profiles.append(Profile(pub_k=k))
+
+        return ProfileList(profiles)
+
+    def matches(self, m_str, max_match=None, search_about=False):
+        # sort the profiles first
+        sorted_ps = self._profiles.sort_profiles(self._profiles,
+                                                 inplace=False)
+        return sorted_ps.matches(m_str=m_str,
+                                 max_match=max_match,
+                                 search_about=search_about)
+
+    def load_contacts(self, p: Profile, reload=False):
+        if not p.contacts_is_set() or reload:
+            p.contacts = ContactList(self._store.select_contacts({
+                'owner': self.public_key
+            }), owner_pub_k=self.public_key)
+
+    def load_followers(self, p: Profile, reload=False):
+        p.load_followers(profile_store=self._store,
+                         reload=reload)
 
     @property
     def store(self) -> ProfileStoreInterface:
         return self._store
 
-    def set_on_update(self, on_update):
-        self._on_update = on_update
+    def set_on_profile_update(self, on_update):
+        self._on_profile_update = on_update
+
+    def set_on_contact_update(self, on_update):
+        self._on_contact_update = on_update
 
     def profile(self, pub_k):
         ret = self._profiles.lookup_pub_key(pub_k)
         return ret
 
     def is_newer_profile(self, p: Profile):
-        # return True if given profile is newer than what we have
+        # return True if given profile is newer than we have
         ret = False
         c_p = self.profile(p.public_key)
         if c_p is None or c_p.update_at < p.update_at:
@@ -194,3 +247,129 @@ class ProfileEventHandler:
                 ret = True
 
         return ret
+
+
+class NetworkedProfileEventHandler(ProfileEventHandler):
+
+    def __init__(self,
+                 profile_store: ProfileStoreInterface,
+                 client: Client,
+                 on_profile_update=None,
+                 on_contact_update=None,
+                 max_insert_batch=500):
+
+        self._client = client
+        super().__init__(profile_store=profile_store,
+                         on_profile_update=on_profile_update,
+                         on_contact_update=on_contact_update,
+                         max_insert_batch=max_insert_batch)
+
+    @lru_cache(maxsize=100)
+    def fetch_profile_events(self, keys):
+        keys = keys.split(',')
+
+        evts = self._client.query({
+            'kinds': [Event.KIND_META],
+            'authors': keys
+        })
+        ret = []
+        if evts:
+            ret = [Profile.from_event(c_evt) for c_evt in evts]
+            # start update, this will update local cache and the profile store
+            # the meta events are not currently persisted when we fetch this way
+            # Greenlet(self._get_profiles_update(evts)).start()
+            self._do_profiles_update(evts)
+
+        return ret
+
+    def fetch_contact_events(self, keys):
+        keys = keys.split(',')
+
+        evts = self._client.query({
+            'kinds': [Event.KIND_CONTACT_LIST],
+            'authors': keys
+        })
+        ret = []
+        if evts:
+            ret = [ContactList.from_event(c_evt) for c_evt in evts]
+            # start update, this will update local cache and the profile store
+            # the meta events are not currently persisted when we fetch this way
+            # Greenlet(self._get_profiles_update(evts)).start()
+            self._do_contacts_update(evts)
+
+        return ret
+
+    def fetch_follows(self, key):
+        evts = self._client.query({
+            'kinds': [Event.KIND_CONTACT_LIST],
+            '#p': [key]
+        })
+        ret = []
+        if evts:
+            evts = Event.latest_events_only(evts)
+            # we'll be returning a list of pub_ks
+            ret = [c_evt.pub_key for c_evt in evts]
+            # think it's better not to update contacts list here
+            # Greenlet(util_funcs.get_background_task(self._do_contacts_update, evts)).start_later(0)
+
+        return ret
+
+    def get_pub_k(self, pub_k: str):
+        ret = super().get_pub_k(pub_k)
+        if ret is None:
+            fetched_ps = self.fetch_profile_events(pub_k)
+            if fetched_ps:
+                ret = fetched_ps[0]
+
+        return ret
+
+    def get_profiles(self, pub_ks: [str], create_missing=True) -> ProfileList:
+        if isinstance(pub_ks, str):
+            pub_ks = [pub_ks]
+        ret = super().get_profiles(pub_ks, create_missing=False)
+        to_fetch = [k for k in pub_ks if ret.lookup_pub_key(k) is None]
+
+        ret = ret.profiles
+
+        if to_fetch:
+            to_fetch.sort()
+            ret = ret + self.fetch_profile_events(','.join(to_fetch))
+
+        p: Profile
+        if len(ret) != len(pub_ks) and create_missing:
+            got = set([p.public_key for p in ret])
+            for k in pub_ks:
+                if k not in got:
+                    ret.append(Profile(pub_k=k))
+
+        return ProfileList(ret)
+
+    def load_contacts(self, p: Profile, reload=False):
+        if not p.contacts_is_set() or reload:
+            p.contacts = ContactList(self._store.select_contacts({
+                'owner': p.public_key
+            }), owner_pub_k=p.public_key)
+            if len(p.contacts) == 0:
+                contacts = self.fetch_contact_events(p.public_key)
+                if contacts:
+                    p.contacts = contacts[0]
+                else:
+                    p.contacts = ContactList(contacts=[],
+                                             owner_pub_k=p.public_key)
+        return p.contacts
+
+    def load_followers(self, p: Profile, reload=False):
+        """ because follows is made up by looking at all contact events where p is mentioned
+        we have no choice but to go to the network if we want a relativly complete count
+        we only unset if we see a meta where p is metioned... in future we could keep track
+        from that point on without requesting from the net
+        :param p:
+        :param reload:
+        :return:
+        """
+        if not p.follows_by_is_set() or reload:
+            p.followed_by = self.fetch_follows(p.public_key)
+        return p.followed_by
+
+
+

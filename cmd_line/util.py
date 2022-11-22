@@ -109,8 +109,8 @@ class FormattedEventPrinter:
         self.print_event_content(evt)
 
     def _get_profile(self, key):
-        return self._profile_handler.profiles.get_profile(key,
-                                                          create_type=ProfileList.CREATE_PUBLIC)
+        return self._profile_handler.get_profiles(pub_ks=key,
+                                                  create_missing=True)[0]
 
     def _is_user(self, key):
         return self._as_user is not None and self._as_user.public_key == key

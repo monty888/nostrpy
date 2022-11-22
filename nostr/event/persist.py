@@ -38,6 +38,7 @@ class SortDirection(Enum):
     newest_first = 2
     oldest_first = 3
 
+
 class EventStoreInterface(ABC):
 
     @abstractmethod
@@ -213,15 +214,15 @@ class ClientEventStoreInterface(EventStoreInterface):
         :return: [relay_urls]
         """
 
-    @abstractmethod
-    def reactions(self, pub_k: str=None, for_event_id: str=None, react_event_id: str=None, limit=None, until=None) -> [{}]:
-        """
-        :param pub_k:
-        :param event_id:
-        :param limit:
-        :param offset:
-        :return:
-        """
+    # @abstractmethod
+    # def reactions(self, pub_k: str=None, for_event_id: str=None, react_event_id: str=None, limit=None, until=None) -> [{}]:
+    #     """
+    #     :param pub_k:
+    #     :param event_id:
+    #     :param limit:
+    #     :param offset:
+    #     :return:
+    #     """
 
 
 class MemoryEventStore(EventStoreInterface):
@@ -1063,28 +1064,28 @@ class ClientSQLEventStore(SQLEventStore, ClientEventStoreInterface):
                                  for_relay=for_relay,
                                  date_type='oldest')
 
-    def _add_reaction_batch(self, evt: Event, batch):
-        if evt.kind == Event.KIND_REACTION:
-            p_tags = evt.p_tags
-            e_tags = evt.e_tags
-            if p_tags and e_tags:
-                last_p = p_tags[len(p_tags) - 1]
-                last_e = e_tags[len(e_tags) - 1]
-
-                batch.append({
-                    'sql': """
-                        insert into reactions values ((select id from events where event_id=?), ?,?,?,?,?) 
-                    """,
-                    'args': [
-                        evt.id,
-                        evt.pub_key,
-                        last_e,
-                        last_p,
-                        evt.content,
-                        self.reaction_lookup(evt.content)
-                    ]
-
-                })
+    # def _add_reaction_batch(self, evt: Event, batch):
+    #     if evt.kind == Event.KIND_REACTION:
+    #         p_tags = evt.p_tags
+    #         e_tags = evt.e_tags
+    #         if p_tags and e_tags:
+    #             last_p = p_tags[len(p_tags) - 1]
+    #             last_e = e_tags[len(e_tags) - 1]
+    #
+    #             batch.append({
+    #                 'sql': """
+    #                     insert into reactions values ((select id from events where event_id=?), ?,?,?,?,?)
+    #                 """,
+    #                 'args': [
+    #                     evt.id,
+    #                     evt.pub_key,
+    #                     last_e,
+    #                     last_p,
+    #                     evt.content,
+    #                     self.reaction_lookup(evt.content)
+    #                 ]
+    #
+    #             })
 
     def add_event_relay(self, evt: Event, relay_url: str):
         ret = False
@@ -1094,7 +1095,7 @@ class ClientSQLEventStore(SQLEventStore, ClientEventStoreInterface):
                 if self._do_update(c_evt):
                     # print(c_evt)
                     self._prepare_add_event_batch(c_evt, batch)
-                    self._add_reaction_batch(c_evt, batch)
+                    # self._add_reaction_batch(c_evt, batch)
                     batch.append({
                         'sql': 'insert into event_relay values ((select id from events where event_id=?), ?)',
                         'args': [c_evt.id, relay_url]
@@ -1104,7 +1105,7 @@ class ClientSQLEventStore(SQLEventStore, ClientEventStoreInterface):
         else:
             if self._do_update(evt):
                 batch = self._prepare_add_event_batch(evt)
-                self._add_reaction_batch(evt, batch)
+                # self._add_reaction_batch(evt, batch)
                 batch.append({
                     'sql': 'insert into event_relay values ((select id from events where event_id=?), ?)',
                     'args': [evt.id, relay_url]
@@ -1194,59 +1195,59 @@ order by created_at desc
 
         return self.clean_relay_names(relays)
 
-    def reactions(self, pub_k: str=None, for_event_id: str=None, react_event_id: str=None, limit=None, until=None) -> DataSet:
-        sql = """
-            select et.event_id as id,
-                    et.pubkey,
-                    et.kind,
-                    et.content,
-                    et.tags,
-                    et.created_at,
-                    et.sig,
-                    r.content as reaction, 
-                    r.interpretation,
-                    e.event_id as r_event_id
-                from reactions r
-                inner join events e on r.id =e.id
-                inner join events et on et.event_id = r.for_event_id
-                where e.deleted isnull
-                -- we could show events event if they have been deleted? 
-                and et.deleted isnull 
-                
-            """
-        join = 'and'
-        args = []
-
-        if pub_k:
-            sql += '%s r.owner_pub_k = %s' % (join, self._db.placeholder)
-            args = [pub_k]
-        if until:
-            sql += '%s et.created_at < %s' % (join, self._db.placeholder)
-            join = 'and'
-            args.append(until)
-        # query using the event_ids being reacted to
-        if for_event_id:
-            # event_id can be , str or [] of ids
-            if isinstance(for_event_id, str):
-                for_event_id = for_event_id.split(',')
-
-            sql += '%s e.event_id in (%s)' % (join, ','.join([self._db.placeholder]*len(for_event_id)))
-            join = 'and'
-            args = args + for_event_id
-        # using the event_ids of the reaction (kind 7) events
-        if react_event_id:
-            # event_id can be , str or [] of ids
-            if isinstance(react_event_id, str):
-                react_event_id = react_event_id.split(',')
-
-            sql += '%s et.event_id in (%s)' % (join, ','.join([self._db.placeholder]*len(react_event_id)))
-            join = 'and'
-            args = args + react_event_id
-
-        sql = self._add_sort(sql, self._sort_direction, 'et.created_at')
-        sql = self._add_range(sql, limit)
-
-        return self._db.select_sql(sql, args=args).as_arr(True)
+    # def reactions(self, pub_k: str=None, for_event_id: str=None, react_event_id: str=None, limit=None, until=None) -> DataSet:
+    #     sql = """
+    #         select et.event_id as id,
+    #                 et.pubkey,
+    #                 et.kind,
+    #                 et.content,
+    #                 et.tags,
+    #                 et.created_at,
+    #                 et.sig,
+    #                 r.content as reaction,
+    #                 r.interpretation,
+    #                 e.event_id as r_event_id
+    #             from reactions r
+    #             inner join events e on r.id =e.id
+    #             inner join events et on et.event_id = r.for_event_id
+    #             where e.deleted isnull
+    #             -- we could show events event if they have been deleted?
+    #             and et.deleted isnull
+    #
+    #         """
+    #     join = 'and'
+    #     args = []
+    #
+    #     if pub_k:
+    #         sql += '%s r.owner_pub_k = %s' % (join, self._db.placeholder)
+    #         args = [pub_k]
+    #     if until:
+    #         sql += '%s et.created_at < %s' % (join, self._db.placeholder)
+    #         join = 'and'
+    #         args.append(until)
+    #     # query using the event_ids being reacted to
+    #     if for_event_id:
+    #         # event_id can be , str or [] of ids
+    #         if isinstance(for_event_id, str):
+    #             for_event_id = for_event_id.split(',')
+    #
+    #         sql += '%s e.event_id in (%s)' % (join, ','.join([self._db.placeholder]*len(for_event_id)))
+    #         join = 'and'
+    #         args = args + for_event_id
+    #     # using the event_ids of the reaction (kind 7) events
+    #     if react_event_id:
+    #         # event_id can be , str or [] of ids
+    #         if isinstance(react_event_id, str):
+    #             react_event_id = react_event_id.split(',')
+    #
+    #         sql += '%s et.event_id in (%s)' % (join, ','.join([self._db.placeholder]*len(react_event_id)))
+    #         join = 'and'
+    #         args = args + react_event_id
+    #
+    #     sql = self._add_sort(sql, self._sort_direction, 'et.created_at')
+    #     sql = self._add_range(sql, limit)
+    #
+    #     return self._db.select_sql(sql, args=args).as_arr(True)
 
 
 class ClientSQLiteEventStore(SQLiteEventStore, ClientSQLEventStore,  ClientEventStoreInterface):
@@ -1298,27 +1299,27 @@ class ClientSQLiteEventStore(SQLiteEventStore, ClientSQLEventStore,  ClientEvent
           DELETE from event_relay where id=old.id;
         END;
     """
-        },
-        {
-            'sql': """
-            create table reactions(
-                id int NOT NULL,  
-                owner_pub_k text,
-                for_event_id text,
-                for_pub_k text,
-                content text,
-                interpretation text,
-                UNIQUE(id) ON CONFLICT IGNORE
-                )
-            """
-        },
-        {
-            'sql': """
-            CREATE TRIGGER reaction_ad AFTER DELETE ON events BEGIN
-                DELETE from reactions where id=old.id;
-            END;
-        """
         }
+        # {
+        #     'sql': """
+        #     create table reactions(
+        #         id int NOT NULL,
+        #         owner_pub_k text,
+        #         for_event_id text,
+        #         for_pub_k text,
+        #         content text,
+        #         interpretation text,
+        #         UNIQUE(id) ON CONFLICT IGNORE
+        #         )
+        #     """
+        # },
+        # {
+        #     'sql': """
+        #     CREATE TRIGGER reaction_ad AFTER DELETE ON events BEGIN
+        #         DELETE from reactions where id=old.id;
+        #     END;
+        # """
+        # }
 
 
     ]

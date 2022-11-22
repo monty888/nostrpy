@@ -91,24 +91,28 @@ class Profile:
     def profile_name(self, name):
         self._profile_name = name
 
-    def load_contacts(self, profile_store: ProfileStoreInterface, reload=False) -> ContactList:
-        if self._contacts is None or reload is True:
-            self._contacts = ContactList(profile_store.select_contacts({
-                'owner': self.public_key
-            }), owner_pub_k=self.public_key)
+    # # get dif of this loaders, the caller can deal with by using contacts setter and is_set methods
+    # def load_contacts(self, profile_store: ProfileStoreInterface, reload=False) -> ContactList:
+    #     if self._contacts is None or reload is True:
+    #         self._contacts = ContactList(profile_store.select_contacts({
+    #             'owner': self.public_key
+    #         }), owner_pub_k=self.public_key)
+    #
+    #     return self._contacts
+    #
+    # def load_followers(self, profile_store: ProfileStoreInterface, reload=False) -> ContactList:
+    #     # TODO: actually load_contacts and load_followers could be done in a single call
+    #     #  and then just split the contact list ourself?
+    #     #  also add method to set_profile_store then contacts/followed_by could just attempt the loads adhoc?
+    #     if self._followed_by is None or reload is True:
+    #         self._followed_by = profile_store.select_contacts({
+    #             'contact': self.public_key
+    #         })
+    #
+    #     return self._followed_by
 
-        return self._contacts
-
-    def load_followers(self, profile_store: ProfileStoreInterface, reload=False) -> ContactList:
-        # TODO: actually load_contacts and load_followers could be done in a single call
-        #  and then just split the contact list ourself?
-        #  also add method to set_profile_store then contacts/followed_by could just attempt the loads adhoc?
-        if self._followed_by is None or reload is True:
-            self._followed_by = profile_store.select_contacts({
-                'contact': self.public_key
-            })
-
-        return self._followed_by
+    def contacts_is_set(self):
+        return self._contacts is not None
 
     @property
     def contacts(self) -> ContactList:
@@ -119,6 +123,9 @@ class Profile:
     @contacts.setter
     def contacts(self, contacts: ContactList):
         self._contacts = contacts
+
+    def follows_by_is_set(self):
+        return self._followed_by is not None
 
     @property
     def followed_by(self) -> []:
@@ -315,17 +322,50 @@ class ValidatedProfile(Profile):
 
 class ProfileList:
     """
-        collection of profiles, for now were using this for profiles other than us,
-        but the user could also have multiple profiles -  that is those profiles for which
-        they have the private keep i.e. they can create events
-
-        TODO: change this to be subclass of basic list see https://docs.python.org/3/reference/datamodel.html#emulating-container-types
-        actually probbly just implemnt the special methods we need rather than subclass...
+        TODO: this class probably should have proper locking added to it as its likely to get hti from mutiple places
+        also the get_profile method is a bit wierd, probably get rid ot this or write in a better way
 
     """
 
-    CREATE_PRIVATE = 'private'
-    CREATE_PUBLIC = 'public'
+    # CREATE_PRIVATE = 'private'
+    # CREATE_PUBLIC = 'public'
+
+    @staticmethod
+    def sort_profiles(profiles: [], reverse=False, inplace=False):
+        """
+        :param profiles: [Profile] or ProfileList
+        :param reverse: first a-z, with profile, with name, the rest if reverse the other way
+        :param inplace: act on the obj or new sorted obj
+        :return: [Profile] or ProfileList dependent on what went in
+        """
+
+        # sort events newest to oldest
+        def sort_func(p: Profile):
+            p_name = 'zzzzz'
+            name = 'zzzzz'
+            key = p.public_key
+
+            if p.profile_name:
+                p_name = p.profile_name.lower()
+            if p.name:
+                name = p.name.lower()
+
+            return '%s:%s:%s' % (p_name, name, key)
+
+        # default same arr
+        if inplace:
+            if isinstance(profiles, ProfileList):
+                profiles.profiles.sort(key=sort_func, reverse=reverse)
+            else:
+                profiles.sort(key=sort_func, reverse=reverse)
+        else:
+            if isinstance(profiles, ProfileList):
+                profiles = ProfileList(sorted(profiles, key=sort_func, reverse=reverse))
+            else:
+                profiles = sorted(profiles, key=sort_func, reverse=reverse)
+
+
+        return profiles
 
     def __init__(self, profiles):
         self._profiles = profiles
@@ -342,32 +382,6 @@ class ProfileList:
                 self._priv_key_lookup[c_p.private_key] = c_p
             if c_p.profile_name:
                 self._pname_lookup[c_p.profile_name] = c_p
-
-    # def add(self, profile: Profile):
-    #     self._profiles.append(profile)
-    #     self._pub_key_lookup[profile.public_key] = profile
-    #     self._priv_key_lookup[profile.private_key] = profile
-    #     if profile.profile_name is not None:
-    #         self._pname_lookup[profile.profile_name] = profile
-    #
-    # def update(self, profile: Profile):
-    #     our_p = self.lookup_pub_key(profile.public_key)
-    #     if our_p:
-    #         our_p.attrs = profile.attrs
-    #         our_p.update_at = profile.update_at
-    #
-    #         # this only happens for our local updates, not those that happen because of type 0 meta events
-    #         if profile.profile_name:
-    #             # profile name changed, delete old lookup
-    #             if our_p.profile_name and our_p.profile_name in self._pname_lookup:
-    #                 del self._pname_lookup[our_p.profile_name]
-    #             our_p.profile_name = profile.profile_name
-    #             self._pname_lookup[our_p.profile_name] = our_p
-    #
-    #         # priv key added, its not possible to change a priv k
-    #         # at least it shouldn't be
-    #         if profile.private_key:
-    #             our_p.private_key = profile.private_key
 
     def put(self, profile: Profile):
         # replaces both the above
@@ -454,51 +468,56 @@ class ProfileList:
                 break
         return ret
 
-    def get_profile(self, profile_key,
-                    create_type=None,
-                    create_profile_name='adhoc_profile') -> Profile:
-        """
-        :param profile_key: either priv_key, profile_name or pub_key
-        :param create_type: None, 'private' or 'public' if we don't find then an empty profile will be created
-                            with profile_key as either public/private ot not if None. This is enough for use in many
-                            cases.
-        :return: Hopefully found Profile, or if create_type then stub Profile assuming key looked correct else None
-
-        FIXME... as we don't specify key type if there ever ended up bing profile with pub key same as priv key
-        it'd never get found using this code....
-
-        """
-
-        ret = None
-
-        # we were handed a profile obj so everything is probably cool...
-        if isinstance(profile_key, Profile):
-            ret = profile_key
-        # ok assuming we have a db lets see if we can find this profile
-        elif isinstance(profile_key, str) and self._profiles:
-            ret = self.lookup_priv_key(profile_key)
-            if not ret:
-                ret = self.lookup_profilename(profile_key)
-            if not ret and create_type != ProfileList.CREATE_PRIVATE:
-                ret = self.lookup_pub_key(profile_key)
-
-        # we didn't find a profile but we'll see if we can just use as priv key...
-        # also fallback we don't have db
-        if not ret and create_type is not None and Keys.is_key(profile_key):
-            if len(profile_key) == 64:
-                if create_type == ProfileList.CREATE_PRIVATE:
-                    ret = Profile(priv_k=profile_key,
-                                  profile_name=create_profile_name)
-                elif create_type == ProfileList.CREATE_PUBLIC:
-                    ret = Profile(pub_k=profile_key)
-
-        return ret
+    # def get_profile(self, profile_key,
+    #                 create_type=None,
+    #                 create_profile_name='adhoc_profile') -> Profile:
+    #     """
+    #     :param profile_key: either priv_key, profile_name or pub_key
+    #     :param create_type: None, 'private' or 'public' if we don't find then an empty profile will be created
+    #                         with profile_key as either public/private ot not if None. This is enough for use in many
+    #                         cases.
+    #     :return: Hopefully found Profile, or if create_type then stub Profile assuming key looked correct else None
+    #
+    #     FIXME... as we don't specify key type if there ever ended up bing profile with pub key same as priv key
+    #     it'd never get found using this code....
+    #
+    #     """
+    #
+    #     ret = None
+    #
+    #     # we were handed a profile obj so everything is probably cool...
+    #     if isinstance(profile_key, Profile):
+    #         ret = profile_key
+    #     # ok assuming we have a db lets see if we can find this profile
+    #     elif isinstance(profile_key, str) and self._profiles:
+    #         ret = self.lookup_priv_key(profile_key)
+    #         if not ret:
+    #             ret = self.lookup_profilename(profile_key)
+    #         if not ret and create_type != ProfileList.CREATE_PRIVATE:
+    #             ret = self.lookup_pub_key(profile_key)
+    #
+    #     # we didn't find a profile but we'll see if we can just use as priv key...
+    #     # also fallback we don't have db
+    #     if not ret and create_type is not None and Keys.is_key(profile_key):
+    #         if len(profile_key) == 64:
+    #             if create_type == ProfileList.CREATE_PRIVATE:
+    #                 ret = Profile(priv_k=profile_key,
+    #                               profile_name=create_profile_name)
+    #             elif create_type == ProfileList.CREATE_PUBLIC:
+    #                 ret = Profile(pub_k=profile_key)
+    #
+    #     return ret
 
     def __getitem__(self, item):
         return self._profiles[item]
 
     def __len__(self):
         return len(self._profiles)
+
+    def sort(self, reverse=False):
+        return ProfileList.sort_profiles(self,
+                                         reverse=reverse,
+                                         inplace=True)
 
 
 class Contact:
@@ -664,13 +683,13 @@ class ContactList:
                      pub_key=self.owner_public_key)
 
     @property
-    def contacts(self):
+    def contacts(self) -> [Contact]:
         return [copy(c_c) for c_c in self._contacts]
 
     def __len__(self):
         return len(self._contacts)
 
-    def __iter__(self):
+    def __iter__(self) -> Contact:
         for c in self._contacts:
             yield c
 

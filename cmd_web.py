@@ -1,6 +1,12 @@
 """
     starts a web server that gives access to data from a number of nostr servers
 """
+from abc import ABC
+
+from gevent import monkey
+from gevent import Greenlet
+
+monkey.patch_all()
 import logging
 import signal
 import sys
@@ -16,9 +22,10 @@ import getopt
 from nostr.client.client import ClientPool, Client
 from nostr.event.persist import ClientSQLiteEventStore, ClientEventStoreInterface
 from nostr.event.event import Event
-from nostr.event.event_handlers import PersistEventHandler
+from nostr.event.event_handlers import EventHandler, NetworkedEventHandler
+from nostr.ident.profile import Profile, ContactList
 from nostr.ident.persist import SQLiteProfileStore, ProfileStoreInterface, MemoryProfileStore
-from nostr.ident.event_handlers import ProfileEventHandler
+from nostr.ident.event_handlers import ProfileEventHandler, NetworkedProfileEventHandler
 from nostr.channels.persist import SQLiteSQLChannelStore, ChannelStoreInterface
 from nostr.channels.event_handlers import ChannelEventHandler
 from nostr.settings.persist import SQLiteSettingsStore, SettingStoreInterface
@@ -74,15 +81,22 @@ def get_profile_filter(for_client: Client,
 
 def get_latest_event_filter(for_client: Client,
                             event_store: ClientEventStoreInterface,
-                            event_kind):
+                            event_kind,
+                            on_empty: int):
+
+    since = event_store.get_newest(for_client.url, {
+        'kinds': [event_kind]
+    })
+    if since:
+        since += 1
+    else:
+        since = on_empty
+
     return {
         'kinds': [event_kind],
         # 'since': util_funcs.date_as_ticks(datetime.now()-timedelta(days=5))
-        'since': event_store.get_newest(for_client.url, {
-            'kinds': [event_kind]
-        })+1
+        'since': since
     }
-
 
 def hook_signals():
     def sigint_handler(signal, frame):
@@ -96,7 +110,7 @@ def run_tor(clients,
             profile_store: ProfileStoreInterface,
             web_dir: str):
     # we'll persist events, not done automatically by nostrweb
-    evt_persist = PersistEventHandler(event_store)
+    evt_persist = EventHandler(event_store)
 
     # called on connect and any reconnect
     def my_connect(the_client: Client):
@@ -183,6 +197,77 @@ def run_tor(clients,
             controller.remove_hidden_service(hidden_service_dir)
             shutil.rmtree(hidden_service_dir)
 
+
+class ProfileBackfiller:
+
+    def __init__(self, client: Client,
+                 profile_handler: ProfileEventHandler,
+                 settings: Settings,
+                 store_func
+                 ):
+
+        self._client = client
+        self._settings = settings
+        self._profile_handler = profile_handler
+        self._store_func = store_func
+
+    def _get_state_key(self, the_client: Client, pub_k: str):
+        return '%s.%s.profile-backfill' % (the_client.url,
+                                           pub_k)
+
+    def _get_authors(self, p: Profile,
+                     c: Client,
+                     until: int,
+                     include_followers,
+                     include_followers_of_followers):
+        ret = []
+
+        def add_key(k):
+            f_date = self._settings.get(self._get_state_key(c, k))
+
+            return f_date is None or int(f_date) > until
+
+        if add_key(p.public_key):
+            ret.append(p.public_key)
+        if include_followers:
+            self._profile_handler.load_contacts(p)
+            ret = ret + [k for k in p.contacts.follow_keys() if add_key(k)]
+
+        return ret
+
+    def do_backfill(self, p: Profile, until: int,
+                    include_followers=True,
+                    include_followers_of_followers=False):
+
+        c_client: Client
+
+        for c_client in self._client:
+            authors = self._get_authors(p=p,
+                                        c=c_client,
+                                        until=until,
+                                        include_followers=include_followers,
+                                        include_followers_of_followers=include_followers_of_followers)
+
+            if authors:
+                evts = c_client.query({
+                    'authors': authors,
+                    'kinds': [
+                        Event.KIND_META,
+                        Event.KIND_CONTACT_LIST,
+                        Event.KIND_TEXT_NOTE,
+                        Event.KIND_REACTION,
+                        Event.KIND_RELAY_REC,
+                        Event.KIND_CHANNEL_CREATE,
+                        Event.KIND_CHANNEL_MESSAGE,
+                        Event.KIND_ENCRYPT
+                    ],
+                    'since': until
+                })
+                self._store_func(c_client, evts)
+                for c_k in authors:
+                    self._settings.put(self._get_state_key(c_client, c_k), until)
+
+
 def run_web(clients,
             event_store: ClientEventStoreInterface,
             profile_store: ProfileStoreInterface,
@@ -192,40 +277,34 @@ def run_web(clients,
             host: str = 'localhost',
             port: int = 8080,
             until: int = 365,
-            fill_size: int =10):
+            until_me: int = 365,
+            fill_size: int = 10):
 
     print('events until: %s' % (datetime.now()-timedelta(days=until)).date())
     # we'll persist events, not done automatically by nostrweb
     my_spam = ContentBasedDespam()
     start_time = datetime.now()
+    until_me = 365
+    # until_follows = 365
 
-    evt_persist = PersistEventHandler(event_store, spam_handler=my_spam)
-    my_peh = ProfileEventHandler(profile_store)
     my_ceh = ChannelEventHandler(channel_store)
     my_settings = Settings(settings_store)
 
     # called on connect and any reconnect
     def my_connect(the_client: Client):
-
+        start_ticks = util_funcs.date_as_ticks(start_time)
 
         the_client.subscribe(handlers=[evt_persist, my_peh, my_ceh, my_server], filters=[
-            # things we're greedy for we'll get all we can of these as far back as they go
-            # we start queries from the newest event we see per client/kind
-            get_latest_event_filter(the_client, event_store, Event.KIND_META),
-            get_latest_event_filter(the_client, event_store, Event.KIND_CONTACT_LIST),
-            get_latest_event_filter(the_client, event_store, Event.KIND_CHANNEL_CREATE),
-            # non greedy though we start a backfill process for these kinds starting from
-            # the oldest(or resync_from) we have to until
-            {
-                'kinds': [Event.KIND_TEXT_NOTE,
-                          Event.KIND_CHANNEL_MESSAGE,
-                          Event.KIND_RELAY_REC,
-                          Event.KIND_ENCRYPT,
-                          Event.KIND_REACTION,
-                          Event.KIND_DELETE],
-                # this should be start_time or latest if that is newer
-                'since': util_funcs.date_as_ticks(start_time)
-            }
+            get_latest_event_filter(the_client, event_store, Event.KIND_RELAY_REC, start_ticks),
+            get_latest_event_filter(the_client, event_store, Event.KIND_META, start_ticks),
+            get_latest_event_filter(the_client, event_store, Event.KIND_CONTACT_LIST, start_ticks),
+            get_latest_event_filter(the_client, event_store, Event.KIND_CHANNEL_CREATE, start_ticks),
+            get_latest_event_filter(the_client, event_store, Event.KIND_CHANNEL_MESSAGE, start_ticks),
+            get_latest_event_filter(the_client, event_store, Event.KIND_TEXT_NOTE, start_ticks),
+            # FIXME: why get encrypts for those not to or from where we have priv_k?
+            get_latest_event_filter(the_client, event_store, Event.KIND_ENCRYPT, start_ticks),
+            get_latest_event_filter(the_client, event_store, Event.KIND_REACTION, start_ticks),
+            get_latest_event_filter(the_client, event_store, Event.KIND_DELETE, start_ticks)
         ])
 
     def split_events(evts:[ Event]):
@@ -243,106 +322,60 @@ def run_web(clients,
             ret[c_evt.kind].append(c_evt)
         return ret
 
-    def latest_events_only(evts: [Event], kind):
-        """
-        use with events where only the latest event matters for example contact, profile updates
-        the relay may do this (probably should have) but just incase
-        events should be sorted newest first before calling
+    def my_do_events(the_client: Client, sub_id:str, events: [Event]):
+        Event.sort(events, inplace=True)
+        events_by_kind = split_events(events)
+        Event.sort(events, inplace=True)
 
-        :param evts:
-        :param kind: the kind we're interested in
-        :return:
-        """
+        for c_kind in events_by_kind.keys():
+            kind_events = events_by_kind[c_kind]
 
-        ret = []
-        since_lookup = set()
+            # we only need the latest for these kind of events, relays sometimes give us older
+            if c_kind in (Event.KIND_META, Event.KIND_CONTACT_LIST):
+                kind_events = Event.latest_events_only(evts=kind_events,
+                                                       kind=c_kind)
 
-        c_evt: Event
-        for c_evt in evts:
-            if c_evt.kind == kind and c_evt.pub_key not in since_lookup:
-                since_lookup.add(c_evt.pub_key)
-                ret.append(c_evt)
-            elif c_evt.kind == kind:
-                logging.debug('latest_events_only: ignore superceeded event %s' % c_evt)
+            #
+            if c_kind in (Event.KIND_META, Event.KIND_CONTACT_LIST):
+                my_peh.do_event(sub_id, kind_events, the_client.url)
+            elif c_kind in (Event.KIND_CHANNEL_CREATE, Event.KIND_CHANNEL_MESSAGE):
+                my_ceh.do_event(sub_id, kind_events, the_client.url)
 
-        return ret
+            evt_persist.do_event(sub_id, kind_events, the_client.url)
 
     def my_eose(the_client: Client, sub_id: str, events: [Event]):
         c_evt: Event
         print('eose relay %s %s events' % (the_client.url, len(events)))
-        # sort events newest to oldest
-        def sort_func(evt:Event):
-            return evt.created_at
-        events.sort(key=sort_func)
-
-        events_by_kind = split_events(events)
-
-        # profiles
-        if Event.KIND_META in events_by_kind:
-            p_events = latest_events_only(evts=events_by_kind[Event.KIND_META],
-                                          kind=Event.KIND_META)
-            my_peh.do_event(sub_id, p_events, the_client.url)
-            evt_persist.do_event(sub_id, p_events, the_client.url)
-            print('imported %s profile events from %s' % (len(p_events), the_client.url))
-
-        # contacts
-        if Event.KIND_CONTACT_LIST in events_by_kind:
-            con_events = latest_events_only(evts=events_by_kind[Event.KIND_CONTACT_LIST],
-                                          kind=Event.KIND_CONTACT_LIST)
-            my_peh.do_event(sub_id, con_events, the_client.url)
-            evt_persist.do_event(sub_id, con_events, the_client.url)
-            print('imported %s contact events from %s' % (len(con_events), the_client.url))
-
-        # channel creates
-        if Event.KIND_CHANNEL_CREATE in events_by_kind:
-            chn_events = latest_events_only(evts=events_by_kind[Event.KIND_CHANNEL_CREATE],
-                                            kind=Event.KIND_CHANNEL_CREATE)
-            my_ceh.do_event(sub_id, chn_events, the_client.url)
-            evt_persist.do_event(sub_id, chn_events, the_client.url)
-            print('imported %s channel create events from %s' % (len(chn_events), the_client.url))
-
-        # and the rest - you shouldn't get many here and they'll mainly be delt with either
-        # as they come in or by the back fill next
-        for c_kind in [Event.KIND_TEXT_NOTE,
-                       Event.KIND_CHANNEL_MESSAGE,
-                       Event.KIND_RELAY_REC,
-                       Event.KIND_ENCRYPT,
-                       Event.KIND_REACTION,
-                       Event.KIND_DELETE]:
-            if c_kind in events_by_kind:
-                evt_persist.do_event(sub_id, events_by_kind[c_kind], the_client.url)
-                if c_kind == Event.KIND_CHANNEL_MESSAGE:
-                    my_ceh.do_event(sub_id, events_by_kind[c_kind], the_client.url)
+        my_do_events(the_client, sub_id, events)
 
         # now we're upto date we can start the backfill/resync process
         do_backfill(the_client)
 
+
     def do_backfill(the_client: Client):
         until_dt = start_time - timedelta(days=until)
+        ukeys = set()
 
         # if we already did a backfill for this relay we should have saved the backfilled to date
         backfill_date = my_settings.get(the_client.url + '.backfilltime')
         if backfill_date:
-            backfill_date = util_funcs.ticks_as_date(int(backfill_date))
+            backfill_date = int(backfill_date)
 
-        for c_kind in [Event.KIND_TEXT_NOTE,
+        for c_kind in [Event.KIND_META,
+                       Event.KIND_CONTACT_LIST,
+                       Event.KIND_CHANNEL_CREATE,
+                       Event.KIND_TEXT_NOTE,
                        Event.KIND_CHANNEL_MESSAGE,
                        Event.KIND_RELAY_REC,
                        Event.KIND_ENCRYPT,
                        Event.KIND_REACTION,
                        Event.KIND_DELETE]:
 
-            if backfill_date:
-                c_oldest = backfill_date
+            if backfill_date is not None:
+                c_oldest = util_funcs.ticks_as_date(backfill_date)
             else:
-                # fallback look for oldest event of this kind we have, most likely this is first time though so
-                # we'll get 0 in which case we start from time the server was started
-                c_oldest = event_store.get_oldest(the_client.url, {
-                    'kinds': [c_kind]
-                })
-                if c_oldest == 0:
-                    c_oldest = util_funcs.date_as_ticks(start_time)
-                c_oldest = util_funcs.ticks_as_date(c_oldest)
+                # no choice but to work back from now
+                c_oldest = datetime.now()
 
             # if we already have events <= util_date then no more import is required
             if c_oldest <= until_dt:
@@ -376,26 +409,31 @@ def run_web(clients,
                                 'until': util_funcs.date_as_ticks(c_until)
                             }
                         ])
-                        evt_persist.do_event(None, evts, the_client.url)
-                        my_ceh.do_event(None, evts, the_client.url)
-                        my_peh.do_event(None, evts, the_client.url)
+                        # evt_persist.do_event(None, evts, the_client.url)
+                        # my_ceh.do_event(None, evts, the_client.url)
+                        # my_peh.do_event(None, evts, the_client.url)
+                        my_do_events(the_client,None, evts)
+
                         got_chunk = True
+
+                        c_evt: Event
+                        {c_evt.pub_key for c_evt in evts}.union(ukeys)
+
                     except Exception as e:
-                        logging.debug('do_backfill: %s error fetching range %s - %s, %s' %(the_client.url,
-                                                                                           c_until,
-                                                                                           c_since,
-                                                                                           e))
+                        logging.debug('do_backfill: %s error fetching range %s - %s, %s' % (the_client.url,
+                                                                                            c_until,
+                                                                                            c_since,
+                                                                                            e))
                         time.sleep(1)
-                # no events assume we reached end of stored events
-                # if not evts:
-                #     break
 
                 print('%s recieved %s kind %s events ' % (the_client.url,
                                                           len(evts),
                                                           c_kind))
 
-        # store that we're backfilled to this date
-        my_settings.put(the_client.url+'.backfilltime', util_funcs.date_as_ticks(until_dt))
+            my_peh.get_profiles(list(ukeys))
+
+        # update back fill time
+        my_settings.put(the_client.url + '.backfilltime', util_funcs.date_as_ticks(until_dt))
         print('%s backfill is complete' % the_client.url)
 
 
@@ -432,8 +470,48 @@ def run_web(clients,
                            on_status=my_status,
                            on_eose=my_eose)
 
+    # evt_persist = EventHandler(event_store, spam_handler=my_spam)
+    evt_persist = NetworkedEventHandler(event_store, client=my_client, spam_handler=my_spam)
+    my_peh = NetworkedProfileEventHandler(profile_store, client=my_client)
+    # my_peh = ProfileEventHandler(profile_store)
+
+    def _do_profile_fill(the_client: Client, evts: [Event]):
+        evt_persist.do_event(None, evts, the_client.url)
+        my_peh.do_event(None, evts, the_client.url)
+        my_ceh.do_event(None, evts, the_client.url)
+
+    my_profile_backfill = ProfileBackfiller(client=my_client,
+                                            profile_handler=my_peh,
+                                            settings=my_settings,
+                                            store_func=_do_profile_fill)
+
+    def on_profile_update(n_profile: Profile,
+                          o_profile: Profile):
+
+        if n_profile.private_key and o_profile.private_key is None:
+            def start_p_back_fill():
+                until_dt = start_time - timedelta(days=until_me)
+                my_profile_backfill.do_backfill(n_profile, util_funcs.date_as_ticks(until_dt))
+
+            Greenlet(start_p_back_fill).start()
+
+    def on_contact_update(p: Profile,
+                          n_c: ContactList,
+                          o_c: ContactList):
+
+        def start_p_back_fill():
+            until_dt = start_time - timedelta(days=until_me)
+            my_profile_backfill.do_backfill(p, util_funcs.date_as_ticks(until_dt))
+
+        if p and p.private_key:
+            Greenlet(start_p_back_fill).start()
+
+    my_peh.set_on_profile_update(on_profile_update)
+    my_peh.set_on_contact_update(on_contact_update)
+
+
     my_server = NostrWeb(file_root='%s/web/static/' % web_dir,
-                         event_store=event_store,
+                         event_handler=evt_persist,
                          profile_handler=my_peh,
                          channel_handler=my_ceh,
                          settings=my_settings,
@@ -456,15 +534,15 @@ def run_web(clients,
 
 def run():
     util_funcs.create_work_dir(WORK_DIR)
-    db_file = WORK_DIR + 'nostrpy-client-backfilltest.db'
+    db_file = WORK_DIR + 'nostrpy-client.db'
     db_type = 'sqlite'
     full_text = True
     is_tor = False
     web_dir = os.getcwd()
     host = 'localhost'
     port = 8080
-    # default fetch bac events to this data, excludes profiles, contacts, channel creates
-    max_until = 365
+    # default we'll fetch any event back to this point
+    until = 365
     # backfill chunk sizes, events wll be fetched in fill_size days back until max_until
     fill_size = 10
     # backfill rescan starts from here if not supplied it starts from the oldest event/kind for each relay
@@ -508,7 +586,7 @@ def run():
                     db_file = WORK_DIR+db_file
             elif o == '--until':
                 try:
-                    max_until = int(a)
+                    until = int(a)
                 except ValueError as ve:
                     print('until %s not a valid value' % a)
                     sys.exit(2)
@@ -528,10 +606,9 @@ def run():
 
     if db_type == 'sqlite':
         util_funcs.create_sqlite_store(db_file)
-        event_store = ClientSQLiteEventStore(db_file,
-                                             full_text=full_text)
-
+        event_store = ClientSQLiteEventStore(db_file, full_text=full_text)
         profile_store = SQLiteProfileStore(db_file)
+        # profile_store = MemoryProfileStore()
         channel_store = SQLiteSQLChannelStore(db_file)
         settings_store = SQLiteSettingsStore(db_file)
 
@@ -550,48 +627,24 @@ def run():
                 web_dir=web_dir,
                 host=host,
                 port=port,
-                until=max_until,
+                until=until,
                 fill_size=fill_size)
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
     run()
+    # with Client('wss://relay.damus.io') as c:
+    #     evt = c.query({
+    #         'limit': 10,
+    #         'kinds': [Event.KIND_TEXT_NOTE]
+    #     })
+    #     print(len(evt))
+    #     print(len(evt[:10]))
 
 
-    # c = Client('wss://relay.damus.io').start()
-    #
-    # evts = c.query(filters=[
-    #     {
-    #         'kinds': [Event.KIND_TEXT_NOTE],
-    #         'since': util_funcs.date_as_ticks(datetime.now()-timedelta(days=1)),
-    #         'until': util_funcs.date_as_ticks(datetime.now())
-    #     }
-    # ])
-    # print(evts)
 
-    # my_store = ClientSQLiteEventStore(WORK_DIR + 'nostrpy-client-backfilltest.db')
-    # print(my_store.get_oldest())
 
-    # from nostr.channels.persist import SQLiteSQLChannelStore
-    #
-    # c_s = SQLiteSQLChannelStore(db_file=WORK_DIR + 'nostrpy-client.db')
-    # print(c_s.select(limit=10, until=1666147754))
-    # from nostr.spam_handlers.spam_handlers import ContentBasedDespam
-    # e_s = ClientSQLiteEventStore( WORK_DIR + 'nostrpy-client.db')
-    # e_data = e_s.get_filter({
-    #     'ids': '8de658c8d7c18a19fec24a07bafab7fe190a15349b73133d626809ff7f796daa'
-    # })[0]
-    #
-    # my_spam = ContentBasedDespam()
-    # test_e = Event.from_JSON(e_data)
-    # print(my_spam.is_spam(test_e))
 
-    #
-    # parts = ''.split(' ')
-    # if len(parts) <= 1:
-    #     if parts[0] == '' or len(parts[0]) > 10 and not parts[0].startswith('http:'):
-    #         print('potential spam')
-    #
-    # print('>',''.split(' '))
+
 
 

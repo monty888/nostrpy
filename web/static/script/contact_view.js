@@ -170,9 +170,8 @@
         create_tabs();
         APP.remote.load_profile({
             'pub_k': _pub_k,
-            'include_followers': true,
-            'include_contacts': true,
-            'full_profiles' : true,
+            'include_follows': 'full',
+            'include_contacts': 'full',
             'success' : function(data){
                 _profile = data;
                 _my_head = APP.nostr.gui.profile_about.create({

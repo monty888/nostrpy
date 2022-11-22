@@ -2,16 +2,23 @@ APP.nostr.data.state = function(){
     // todo
 
     return {
-        'put': function(name, value, args){
+        put(name, value, args){
             args = args || {};
             sessionStorage.setItem(name, value);
         },
-        'get': function(name, args){
+        get(name, args){
             args = args || {};
             let def = args.def===undefined ? null : args.def,
             ret = sessionStorage.getItem(name);
+            // not stored for session
             if(ret===null){
-                ret = def;
+                // did we get in the /state/js that the server sent us
+                if(APP.nostr.data.server_state[name]!==undefined){
+                    ret = APP.nostr.data.server_state[name];
+                // else default val or null
+                }else{
+                    ret = def;
+                }
             }
             return ret;
         }
@@ -30,7 +37,7 @@ APP.nostr.data.relay_status = function(){
     };
 
     return {
-        'get' : function(){
+        get(){
             // intial state from server, rendered into state/js file
             if(_state===undefined){
                 init();
@@ -114,7 +121,6 @@ APP.nostr.data.filter = function(){
                 if(c_filter.ids!==undefined){
                     is_match = is_match && c_filter.ids.has(evt.id);
                 }
-
                 if(c_filter['#p']!==undefined){
                     is_match = is_match && check_tags(c_filter['#p'], 'p');
                 }
@@ -127,7 +133,6 @@ APP.nostr.data.filter = function(){
                     break;
                 }
             }
-
             return is_match;
         }
 
@@ -237,7 +242,7 @@ APP.nostr.data.user = function(){
                 }else{
                     APP.remote.load_profile({
                         'pub_k' : pub_k,
-                        'include_contacts' : true,
+                        'include_contacts' : 'keys',
                         'success' : loaded
                     });
                 }
@@ -422,8 +427,8 @@ APP.nostr.data.profiles = function(){
             // load required
             APP.remote.load_profile({
                 'pub_k': p.pub_k,
-                'include_followers': true,
-                'include_contacts': true,
+                'include_followers': 'keys',
+                'include_contacts': 'keys',
                 'success' : function(data){
                     let load_required = [];
                     // update org profile with contacts and followers

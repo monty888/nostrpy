@@ -6,7 +6,6 @@ import logging
 import sys
 import threading
 import time
-
 import gevent
 import websocket
 import requests
@@ -31,6 +30,7 @@ class RunState(Enum):
     starting = 1
     stopping = 2
     stopped = 3
+
 
 class Client:
 
@@ -259,9 +259,14 @@ class Client:
 
         self._reset_status()
 
-    def query(self, filters=[]):
+    def query(self, filters: object = [], do_event: object = None, wait_connect: object = True) -> [Event]:
         """
-            do simple one of queries to a given relay
+        do simple one of queries to a given relay
+        :rtype: object
+        :param filters:
+        :param do_event: 
+        :param wait_connect: 
+        :return: 
         """
         is_done = False
         ret = None
@@ -270,9 +275,12 @@ class Client:
             nonlocal is_done
             nonlocal ret
             ret = events
+            if do_event is not None:
+                Greenlet(util_funcs.get_background_task(do_event, sub_id, events, the_client.url)).start()
+
             is_done = True
 
-        sub_id = self.subscribe(filters=filters, wait_connect=True, eose_func=my_done)
+        sub_id = self.subscribe(filters=filters, wait_connect=wait_connect, eose_func=my_done)
 
         while is_done is False:
             time.sleep(0.1)
@@ -685,9 +693,8 @@ class ClientPool:
         return the_client
 
     def set_on_connect(self, on_connect):
-        for c_client in self._clients_copy():
-            the_client = self._clients[c_client]['client']
-            the_client.set_on_connect(on_connect)
+        for c_client in self:
+            c_client.set_on_connect(on_connect)
 
     def _on_pool_status(self, relay_url, status):
         # the status we return gives each individual relay status at ['relays']
@@ -757,34 +764,20 @@ class ClientPool:
     def start(self):
         self._state = RunState.starting
 
-        for c_client in self._clients_copy():
-            the_client = self._clients[c_client]
-            the_client.start()
+        for c_client in self:
+            c_client.start()
 
         self._state = RunState.running
 
     def end(self):
         self._state = RunState.stopping
-        for c_client in self._clients_copy():
-            the_client = self._clients[c_client]
-            the_client.end()
-
+        for c_client in self:
+            c_client.end()
         self._state = RunState.stopping
 
-    def _clients_copy(self):
-        """
-        if looping through clients use this rather then self._clients directly to minimise
-        the time we lock
-        :return:
-        """
-        with self._clients_lock:
-            ret = [c_client for c_client in self._clients]
-        return ret
-
     def subscribe(self, sub_id=None, handlers=None, filters={}):
-        for c_client in self._clients_copy():
-            the_client = self._clients[c_client]
-            sub_id = the_client.subscribe(sub_id, self, filters)
+        for c_client in self:
+            sub_id = c_client.subscribe(sub_id, self, filters)
 
         # add handlers if any given - nothing happens on receiving events if not
         if handlers:
@@ -794,12 +787,53 @@ class ClientPool:
 
         return sub_id
 
+    def query(self, filters=[], do_event=None, wait_connect=False, emulate_single=True):
+        """
+        similar to the query func, if you don't supply a ret_func we try and act in the same way as a single
+        client would but wait for all clients to return and merge results into a single result with duplicate
+        events removed
+        probably better to supply a ret func though in which case it'll be called with the client and that clients
+        results as they come in
+
+        :param filters:
+        :param ret_func:
+        :return:
+        """
+        c_client: Client
+        client_wait = 0
+        ret = {}
+
+        def get_q(the_client: Client):
+            def my_func():
+                nonlocal client_wait
+                try:
+                    
+                    ret[the_client.url] = the_client.query(filters,
+                                                           do_event=do_event,
+                                                           wait_connect=wait_connect)
+                    # ret_func(the_client, the_client.query(filters, wait_connect=False))
+                except Exception as e:
+                    logging.debug('ClientPool::query - %s' % e)
+                client_wait -= 1
+            return my_func
+
+        for c_client in self:
+            if c_client.read:
+                client_wait += 1
+                Greenlet(get_q(c_client)).start()
+
+        if emulate_single:
+            while client_wait > 0:
+                time.sleep(0.1)
+
+        return Event.merge(*ret.values())
+
     def publish(self, evt: Event):
         logging.debug('ClientPool::publish - %s', evt.event_data())
         c_client: Client
 
-        for c_client in self._clients_copy():
-            c_client = self._clients[c_client]
+        for c_client in self:
+            # c_client = self._clients[c_client]
             if c_client.write:
                 try:
                     c_client.publish(evt)
@@ -832,12 +866,12 @@ class ClientPool:
     @property
     def clients(self):
         ret = []
-        for c_client in self._clients_copy():
-            the_client: Client = self._clients[c_client]
+        for c_client in self:
+            # the_client: Client = self._clients[c_client]
             ret.append({
-                'client': c_client,
-                'read': the_client.read,
-                'write': the_client.write
+                'client': c_client.url,
+                'read': c_client.read,
+                'write': c_client.write
             })
         return ret
 
@@ -854,9 +888,15 @@ class ClientPool:
     def __len__(self):
         return len(self._clients)
 
-    def __iter__(self):
-        for c_client in self._clients:
-            yield self._clients[c_client]
+    def __iter__(self) -> Client:
+
+        # copy so we don't hold the lock, though this means that we may return clients that get removed/added
+        # whilst we iterate over them
+        with self._clients_lock:
+            clients = [self._clients[c] for c in self._clients]
+
+        for c_client in clients:
+            yield c_client
 
     def __getitem__(self, i):
         # row at i

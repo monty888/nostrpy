@@ -243,20 +243,12 @@ APP.remote = function(){
         },
         'load_profile' : function(args){
             args['url'] = _profile_url;
-            args['params'] = {
-                'include_followers': args.include_followers!==undefined ? args.include_followers : false,
-                'include_contacts': args.include_contacts!==undefined ? args.include_contacts : false,
-                'full_profiles': args.full_profiles!==undefined ? args.full_profiles : false
-            };
-
-            if(args.pub_k!==undefined){
-                args.params['pub_k'] = args['pub_k'];
-            }
-
-            if(args.priv_k!==undefined){
-                args.params['priv_k'] = args['priv_k'];
-            }
-
+            _add_field('include_contacts', args);
+            _add_field('include_contacts_limit', args);
+            _add_field('include_follows', args);
+            _add_field('include_follows_limit', args);
+            _add_field('pub_k', args);
+            _add_field('priv_k', args);
             do_query(args);
         },
         'local_profiles' : function(args){
@@ -415,7 +407,7 @@ APP.remote = function(){
             args['url'] = _post_event_url;
             args['method'] = 'POST';
             let evt = _.extend({}, args.event);
-            let content = encodeURIComponent(evt.content);
+//            let content = encodeURIComponent(evt.content);
 //            evt.content = '';
             args['data'] = 'event=' + encodeURIComponent(JSON.stringify(evt));
 //            args['data'] += '&content='+encodeURIComponent(content);

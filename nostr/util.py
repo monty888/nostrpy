@@ -1,3 +1,7 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    pass
 import time
 import sys
 from datetime import datetime, timedelta, date
@@ -5,7 +9,6 @@ import logging
 import os
 from pathlib import Path
 from db.db import SQLiteDatabase
-
 
 """
     just a place to hand any util funcs that don't easily fit anywhere else
@@ -129,7 +132,16 @@ class util_funcs:
                     print(de)
                     sys.exit(0)
 
-
+    @staticmethod
+    def get_background_task(the_func, *args):
+        """ get a function to run in Greenlet/Thread
+        :param the_func:
+        :param args:
+        :return:
+        """
+        def task():
+            the_func(*args)
+        return task
 
 if __name__ == "__main__":
     print('monkies')

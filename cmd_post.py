@@ -14,7 +14,8 @@ from nostr.ident.persist import SQLProfileStore, MemoryProfileStore
 from nostr.client.client import ClientPool, Client
 # from nostr.client.persist import SQLEventStore, TransientEventStore
 from nostr.event.persist import ClientSQLEventStore, ClientMemoryEventStore
-from nostr.client.event_handlers import PersistEventHandler, ProfileEventHandler
+from nostr.ident.event_handlers import ProfileEventHandler
+from nostr.event.event_handlers import PersistEventHandler
 from nostr.event.event import Event
 from app.post import PostApp
 from cmd_line.post_loop_app import PostAppGui
@@ -22,7 +23,7 @@ from nostr.util import util_funcs
 
 # TODO: also postgres
 WORK_DIR = '%s/.nostrpy/' % Path.home()
-DB = SQLiteDatabase('%s/nostr-client-test.db' % WORK_DIR)
+DB = SQLiteDatabase('%s/nostrpy-client.db' % WORK_DIR)
 EVENT_STORE = ClientSQLEventStore(DB)
 # EVENT_STORE = ClientMemoryEventStore()
 # EVENT_STORE = TransientEventStore()
@@ -257,6 +258,6 @@ def run_post():
 
 
 if __name__ == "__main__":
-    # logging.getLogger().setLevel(logging.DEBUG)
+    logging.getLogger().setLevel(logging.DEBUG)
     run_post()
 

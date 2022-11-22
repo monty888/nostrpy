@@ -37,6 +37,10 @@
                 '#p' : [_pub_k]
             }
         ]),
+        _reaction_filter = APP.nostr.data.filter.create([{
+            'kinds': [7],
+            'authors': [_pub_k]
+        }]),
         // as the user we're looking at sees things
         _feed_view,
         _feed_filter,
@@ -56,6 +60,7 @@
 
         filter = APP.nostr.data.filter.create(filter);
         APP.remote.load_events({
+            'pub_k': _current_profile.pub_k,
             'filter' : filter,
             // maybe at somepoint see if we can reduce loads by tracking changes
             'cache' : false,
@@ -128,7 +133,7 @@
 
                     // atleast for now no filter.. we could see the likes but then we'd still have to go and
                     // grab the actual event
-                    _reaction_view = init_view(con, null, ()=>{
+                    _reaction_view = init_view(con, _reaction_filter, ()=>{
                         _reaction_view.loading = true;
                          let args = {
                             'view_pub_k': _pub_k,

@@ -26,7 +26,7 @@
             'con' : _main_con
         });
 
-        APP.nostr.gui.post_button.create();
+//        APP.nostr.gui.post_button.create();
         // our own listeners
         // profile has changed
         APP.nostr.data.event.add_listener('profile_set',function(of_type, data){
@@ -34,12 +34,12 @@
         });
 
         // any post
-        APP.nostr.data.event.add_listener('post-success', function(type, event){
-            // its just a post better go back to the reply screen
-            if(event.type!=='reply'){
-                window.location = '/';
-            }
-        });
+//        APP.nostr.data.event.add_listener('post-success', function(type, event){
+//            // its just a post better go back to the reply screen
+//            if(event.type!=='reply'){
+//                window.location = '/';
+//            }
+//        });
 
         // start client for future notes....
         APP.nostr_client.create();

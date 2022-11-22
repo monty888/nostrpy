@@ -1167,7 +1167,7 @@ APP.nostr.gui.event_view = function(){
             to_add = {
                 'is_parent' : the_note.is_parent,
                 'missing_parent' : the_note.missing_parent,
-                'reaction_txt': render_note.interpretation,
+                'reaction_txt': the_note.interpretation,
                 'is_liked' : render_note.react_like,
                 'is_child' : the_note.is_child,
                 'uid' : _uid,
@@ -1184,7 +1184,6 @@ APP.nostr.gui.event_view = function(){
                 'can_reply' : APP.nostr.data.user.profile().pub_k!==undefined,
                 'subject': the_note.get_first_tag_value('subject')
             };
-
             // should only happen if external media and web preview is allowed
             if(note_content.external.length>0){
                 preview_url = note_content.external[0];
@@ -1333,22 +1332,19 @@ APP.nostr.gui.event_view = function(){
                 _event_map[c_evt.id] = {
                     'event' : c_evt
                 }
-                if(c_evt.react_like_id!==undefined){
+                if(c_evt.react_like===true){
                     _like_map[c_evt.react_like_id] = c_evt;
+                }else if(c_evt.react_event!==undefined){
+                    _like_map[c_evt.react_event.id] = c_evt;
                 }
 
             });
 
-            try{
-                event_ordered(_notes_arr).forEach(function(c_evt){
-                    let add_content = _note_content(c_evt);
-                    _render_arr.push(add_content);
-                    _event_map[c_evt.id].render_event = add_content;
-                });
-            }catch(e){
-                console.log(e);
-                alert(e);
-            }
+            event_ordered(_notes_arr).forEach(function(c_evt){
+                let add_content = _note_content(c_evt);
+                _render_arr.push(add_content);
+                _event_map[c_evt.id].render_event = add_content;
+            });
 
             if(_my_list===undefined){
                 _my_list = APP.nostr.gui.list.create({
@@ -1543,26 +1539,31 @@ APP.nostr.gui.event_view = function(){
                     // painful... find the e and rem from render_arr else it might come back on add/rem...
                     let rem_pos;
                     for(rem_pos=0;rem_pos<_notes_arr.length;rem_pos++){
-                        console.log(_notes_arr[rem_pos]);
                         if(_notes_arr[rem_pos].id === id){
                             _notes_arr.splice(rem_pos,1);
                             break;
                         }
                     }
-                    console.log(_notes_arr);
                     delete _event_map[id]
                     el.remove();
-                    // it could be possible that we need to look in _like_map and rem but not as we currntly use
-                    // _like_map = {};
                 }
             }
         }
 
         function do_reaction(evt){
             let id = evt.get_first_e_tag_value(),
-                r_evt =_event_map[id];
-            if(r_evt!==undefined){
+                r_evt = _event_map[id];
+
+            if(r_evt){
                 r_evt = r_evt.event;
+            }else{
+                r_evt = _like_map[id];
+                if(r_evt){
+                    id = r_evt.id;
+                }
+            }
+
+            if(r_evt!==undefined){
                 _('#'+_uid+'-'+id+'-like').html('<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#heart-fill"/>');
                 _like_map[evt.id] = r_evt;
                 r_evt.react_like = true;
@@ -1590,9 +1591,9 @@ APP.nostr.gui.event_view = function(){
         }
 
         function on_event(evt){
+
             if(_sub_filter!==null && _sub_filter.test(evt)){
                 add_note(evt);
-
             // we only watch are one likes
             }else if(evt.kind==7 && _c_profile.pub_k===evt.pubkey){
                 do_reaction(evt);
@@ -1623,12 +1624,6 @@ APP.nostr.gui.event_view = function(){
                     _event_map[c_evt.id].render_event = add_content;
                 });
                 _my_list.append_draw(offset);
-//                for(let i=offset;i<_render_arr.length;i++){
-//                    n_html.push(_row_render(_render_arr[i], i));
-//                }
-//                // hacky should append should probably be a method of list
-//                // and it should check if drawing...
-//                _con.insertAdjacentHTML('beforeend', n_html.join(''));
             });
         }
 
@@ -1814,14 +1809,14 @@ APP.nostr.gui.profile_about = function(){
 
                 return ret;
             }
-            render_contact_section('follows', _contact_con, _profile.contacts);
-            render_contact_section('followed by', _follow_con, mod_follows(_profile.followed_by));
+            render_contact_section('follows', _contact_con, _profile.contacts, _profile['contact_count']);
+            render_contact_section('followed by', _follow_con, mod_follows(_profile.followed_by), _profile['follow_count']);
         }
 
-        function render_contact_section(label, con, profiles){
+        function render_contact_section(label, con, profiles, count){
             let args = {
                 'label': label,
-                'count': profiles.length,
+                'count': count,
                 'images' : []
             },
             to_show_max = profiles.length,
@@ -1911,9 +1906,10 @@ APP.nostr.gui.profile_about = function(){
 
                 APP.remote.load_profile({
                     'pub_k': _pub_k,
-                    'include_followers': _show_follow_section,
-                    'include_contacts': _show_follow_section,
-                    'full_profiles' : _show_follow_section,
+                    'include_follows': _show_follow_section ? 'full' : null,
+                    'include_follows_limit': MAX_PREVIEW_PROFILES,
+                    'include_contacts': _show_follow_section ? 'full' : null,
+                    'include_contacts_limit': MAX_PREVIEW_PROFILES,
                     'success' : function(data){
                         if(data.error!==undefined){
                             // probably we don't have the profile (or it doesn't exist it's not a requirement to post)
@@ -4883,14 +4879,16 @@ APP.nostr.gui.request_private_key_modal = function(){
     https://pypi.org/project/robohash/ which is the source for the website
 */
 APP.nostr.gui.robo_images = function(){
-//    let _root_url = 'https://robohash.org/';
-    let _root_url = '/robo_images';
+    const _state = APP.nostr.data.state;
+
+    let _root_url = _state.get('profiles_url');
+
     return {
         // change the server that we're getting robos from
-        'set_root': function(url){
+        set_root(url){
             _root_url = url;
         },
-        'get_url': function(args){
+        get_url(args){
             let text = args.text;
                 // got rid of size as it seems to be included in the hash which means you get a different robo with different
                 // size val

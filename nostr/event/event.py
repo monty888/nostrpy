@@ -2,6 +2,7 @@ from datetime import datetime
 import base64
 from enum import Enum
 import json
+import logging
 from json import JSONDecodeError
 import secp256k1
 import hashlib
@@ -132,6 +133,82 @@ class Event:
                 ret = True
             except:
                 pass
+        return ret
+
+    @staticmethod
+    def merge(*args):
+        """
+        from []... of events return a single [] with only the unique events
+        :param args: [Events], [Events] events can either be as Event or {}
+        but if they're mixed they'll be mixed in the ret too
+        :return: [Events]
+        """
+        ret = []
+        have = set()
+        c_evt: Event
+        for c_evt_set in args:
+            for c_evt in c_evt_set:
+                if isinstance(c_evt, Event):
+                    id = c_evt.id
+                else:
+                    id = c_evt['id']
+
+                if id not in have:
+                    ret.append(c_evt)
+                    have.add(id)
+        return ret
+
+    @staticmethod
+    def sort(evts: [], reverse=True, inplace=False):
+        """
+        :param evts:    events to be sorted either {} or Event
+        :param reverse: True is newest first which is default
+        :param inplace: act on evts or create new []
+        :return:
+        """
+        # sort events newest to oldest
+        def sort_func(evt: Event):
+            if isinstance(evt, Event):
+                ret = evt.created_at
+            else:
+                ret = evt['created_at']
+            return ret
+
+        # default same arr
+        if inplace:
+            evts.sort(key=sort_func, reverse=reverse)
+        else:
+            evts = sorted(evts, key=sort_func, reverse=reverse)
+        return evts
+
+    @staticmethod
+    def latest_events_only(evts: [], kind=None):
+        """
+        use with events where only the latest event matters for example contact, profile updates
+        the relay may do this (probably should have) but just incase
+        where kind is not supplied it;ll be taken from the first event
+        :param evts:
+        :param kind: the kind we're interested in
+        :return:
+        """
+        if not evts:
+            return []
+
+        sorted = Event.sort(evts, inplace=False)
+        if kind is None:
+            kind = evts[0].kind
+
+        ret = []
+        since_lookup = set()
+
+        c_evt: Event
+        for c_evt in sorted:
+            if c_evt.kind == kind and c_evt.pub_key not in since_lookup:
+                since_lookup.add(c_evt.pub_key)
+                ret.append(c_evt)
+            elif c_evt.kind == kind:
+                logging.debug('latest_events_only: ignore superceeded event %s' % c_evt)
+
         return ret
 
     def __init__(self, id=None, sig=None, kind=None, content=None, tags=None, pub_key=None, created_at=None):
@@ -328,10 +405,6 @@ class Event:
         of this but might do something to make this clear 
 
     """
-
-
-
-
 
     @property
     def pub_key(self):

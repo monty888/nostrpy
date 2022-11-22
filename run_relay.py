@@ -4,6 +4,8 @@
     (unless user gives another dir for file)
 
 """
+from gevent import monkey
+monkey.patch_all()
 import logging
 import getopt
 import sys

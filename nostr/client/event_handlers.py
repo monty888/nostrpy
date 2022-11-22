@@ -5,32 +5,21 @@
 
 """
 from __future__ import annotations
-
-import sys
-import time
 from typing import TYPE_CHECKING
-
-import gevent
-
 if TYPE_CHECKING:
-    from nostr.ident.persist import ProfileStoreInterface
+    from nostr.ident.event_handlers import ProfileEventHandler
 
-from json import JSONDecodeError
+
 from nostr.ident.profile import ProfileList, Profile, Contact, ContactList
 from abc import ABC, abstractmethod
 import base64
 import logging
 import json
 from collections import OrderedDict
-# from gevent.lock import BoundedSemaphore
 from threading import BoundedSemaphore
-
-# from nostr.client.persist import ClientEventStoreInterface
-from nostr.event.persist import ClientEventStoreInterface
 from nostr.encrypt import SharedEncrypt
 from nostr.util import util_funcs
 from nostr.event.event import Event
-from app.post import PostApp
 
 class EventAccepter(ABC):
 
@@ -128,9 +117,8 @@ class PrintEventHandler(EventHandler):
         # single line basic evt info, override this if you want something more
         profile_name = evt.pub_key
         if self._profile_handler is not None:
-            profile_name = self._profile_handler.profiles.get_profile(profile_name,
-                                                                      create_type=ProfileList.CREATE_PUBLIC).display_name()
-
+            profile_name = self._profile_handler.get_profiles(pub_ks=profile_name,
+                                                              create_missing=True)[0].display_name()
         print('%s: %s - %s' % (evt.created_at,
                                util_funcs.str_tails(profile_name, 4),
                                evt.content))
@@ -208,6 +196,7 @@ class EventTimeHandler:
     def do_event(self, sub_id, evt, relay):
         self._callback(evt['created_at'])
 
+
 class RepostEventHandler:
     """
     reposts events seen  on to given Client/ClientPool object
@@ -224,7 +213,7 @@ class RepostEventHandler:
         self._max_dedup = max_dedup
         self._lock = BoundedSemaphore()
 
-    def do_event(self, sub_id, evt:Event, relay):
+    def do_event(self, sub_id, evt: Event, relay):
         do_send = False
         with self._lock:
             if evt.id not in self._duplicates:

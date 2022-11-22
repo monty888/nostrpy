@@ -5,7 +5,7 @@ from db.db import SQLiteDatabase
 class SettingStoreInterface(ABC):
 
     @abstractmethod
-    def get(self, key, recurse=False, default=None):
+    def get(self, key, default=None,  recurse=False):
         """
         :param key:
         :param recurse:
@@ -41,7 +41,7 @@ class SQLSettingsStore(SettingStoreInterface):
     def __init__(self, db):
         self._db = db
 
-    def get(self, key, recurse=False, default=None):
+    def get(self, key, default=None, recurse=False):
         ret = default
         sql = 'select value from settings where name=%s' % self._db.placeholder
         args = [key]
