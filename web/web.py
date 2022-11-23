@@ -634,7 +634,7 @@ class NostrWeb(StaticServer):
             raise NostrWebException('id is required')
 
         self._check_key(channel_id, 'id')
-        the_channel = self._channel_handler.channels.channel(channel_id)
+        the_channel = self._channel_handler.channel(channel_id)
         # similar to profiles not having hte channel info doesn't mean there might not be messages for a given
         # channel key
         if the_channel is None:
@@ -1020,18 +1020,18 @@ class NostrWeb(StaticServer):
         # restrict only to followers
         if for_str and use_profile:
             if for_str == 'followersplus':
-                followers = use_profile.load_contacts(self._profile_store).follow_keys()
+                followers = self._profile_handler.load_contacts(use_profile).follow_keys()
                 c_p: Profile
                 all_follows = set(followers)
                 for k in followers:
-                    c_p = self._profile_handler.profiles.lookup_pub_key(k)
+                    c_p = self._profile_handler.get_pub_k(k)
                     if c_p:
-                        all_follows = all_follows.union(set(c_p.load_contacts(self._profile_store).follow_keys()))
+                        all_follows = all_follows.union(set(self._profile_handler.load_contacts(c_p).follow_keys()))
 
                 ret = list(all_follows)
 
             if for_str == 'followers':
-                ret = use_profile.load_contacts(self._profile_store).follow_keys()
+                ret = self._profile_handler.load_contacts(use_profile).follow_keys()
             elif for_str =='self':
                 ret = [use_profile.public_key]
 
@@ -1190,8 +1190,10 @@ class NostrWeb(StaticServer):
                 if authors:
                     filter['authors'] = authors
                 else:
-                    # so nothing will match
-                    filter['authors'] = [' ']
+                    # nothing should match
+                    return {
+                        'events': []
+                    }
 
             search_str = ' '.join(search_str.split())
 
@@ -1357,8 +1359,7 @@ class NostrWeb(StaticServer):
         event_id = request.query.event_id
         self._check_event_id(event_id)
 
-        reaction = self._event_handler.reaction_lookup(request.query.reaction)
-
+        reaction = request.query.reaction
         active = request.query.active.lower() == 'true'
 
         # get event we're reacting to
@@ -1387,7 +1388,8 @@ class NostrWeb(StaticServer):
         to_del = []
         for c_evt in react_events:
             e_tags = EventTags(c_evt['tags']).e_tags
-            if e_tags and e_tags[len(e_tags)-1] == event_id and reaction == self._event_handler.reaction_lookup(c_evt['content']):
+            if e_tags and e_tags[len(e_tags)-1] == event_id \
+                    and self._event_handler.reaction_lookup(reaction) == self._event_handler.reaction_lookup(c_evt['content']):
                 to_del.append(['e', c_evt['id']])
 
         del_evt: Event = Event(kind=Event.KIND_DELETE,

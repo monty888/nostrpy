@@ -2,6 +2,8 @@ import time
 from nostr.event.event import Event
 from nostr.channels.persist import ChannelStoreInterface, Channel, ChannelList
 from nostr.util import util_funcs
+from nostr.client.client import Client
+from gevent import Greenlet
 import logging
 
 
@@ -122,4 +124,70 @@ class ChannelEventHandler:
         return self._channels.matches(m_str=m_str,
                                       max_match=max_match,
                                       search_about=False)
+
+
+class NetworkedChannelEventHandler(ChannelEventHandler):
+
+    def __init__(self,
+                 channel_store: ChannelStoreInterface,
+                 client: Client,
+                 on_channel_update=None,
+                 max_insert_batch=500):
+
+        self._client = client
+        super().__init__(channel_store=channel_store,
+                         on_channel_update=on_channel_update,
+                         max_insert_batch=max_insert_batch)
+
+    def fetch_channel_creates(self, keys):
+        if isinstance(keys, str):
+            keys = keys.split(',')
+
+        evts = self._client.query({
+            'kinds': [Event.KIND_CHANNEL_CREATE],
+            'ids': keys
+        })
+        ret = []
+        c_evt: Event
+        if evts:
+            # return chanels we found
+            ret = [Channel.from_event(c_evt) for c_evt in evts]
+            Greenlet(util_funcs.get_background_task(self._do_creates, ret)).start_later(0)
+
+        return ret
+
+    def channel(self, channel_id) -> Channel:
+        ret = self._channels.channel(channel_id)
+        if ret is None:
+            fetched = self.fetch_channel_creates(channel_id)
+            if fetched:
+                ret = fetched[0]
+
+        return ret
+
+    # def get_channels(self, pub_ks: [str], create_missing=True) -> ProfileList:
+    #     if isinstance(pub_ks, str):
+    #         pub_ks = [pub_ks]
+    #     ret = super().get_profiles(pub_ks, create_missing=False)
+    #     to_fetch = [k for k in pub_ks if ret.lookup_pub_key(k) is None]
+    #
+    #     ret = ret.profiles
+    #
+    #     if to_fetch:
+    #         to_fetch.sort()
+    #         ret = ret + self.fetch_profile_events(','.join(to_fetch))
+    #
+    #     p: Profile
+    #     if len(ret) != len(pub_ks) and create_missing:
+    #         got = set([p.public_key for p in ret])
+    #         for k in pub_ks:
+    #             if k not in got:
+    #                 empty_profile = Profile(pub_k=k)
+    #                 ret.append(empty_profile)
+    #                 # so we won't continually be trying to fetch
+    #                 # on seeing a meta event it'll get updated anyhow
+    #                 self._profiles.put(empty_profile)
+    #
+    #     return ProfileList(ret)
+
 

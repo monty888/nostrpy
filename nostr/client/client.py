@@ -32,6 +32,9 @@ class RunState(Enum):
     stopped = 3
 
 
+class QueryTimeoutException(Exception):
+    pass
+
 class Client:
 
     @classmethod
@@ -259,9 +262,13 @@ class Client:
 
         self._reset_status()
 
-    def query(self, filters: object = [], do_event: object = None, wait_connect: object = True) -> [Event]:
+    def query(self, filters: object = [],
+              do_event: object = None,
+              wait_connect: object = True,
+              timeout=None) -> [Event]:
         """
         do simple one of queries to a given relay
+        :param timeout:
         :rtype: object
         :param filters:
         :param do_event: 
@@ -280,14 +287,24 @@ class Client:
 
             is_done = True
 
+        def cleanup():
+            self.unsubscribe(sub_id)
+
         sub_id = self.subscribe(filters=filters, wait_connect=wait_connect, eose_func=my_done)
 
+        sleep_time = 0.1
+        total_time = 0
+
         while is_done is False:
-            time.sleep(0.1)
+            time.sleep(sleep_time)
             if self.connected is False:
                 raise Exception('Client::query - lost connection during query')
+            total_time += sleep_time
+            if timeout and total_time >= timeout:
+                cleanup()
+                raise QueryTimeoutException('Client::query - %s' % self.url)
 
-        self.unsubscribe(sub_id)
+        cleanup()
 
         return ret
 
@@ -787,7 +804,11 @@ class ClientPool:
 
         return sub_id
 
-    def query(self, filters=[], do_event=None, wait_connect=False, emulate_single=True):
+    def query(self, filters=[],
+              do_event=None,
+              wait_connect=False,
+              emulate_single=True,
+              timeout=None):
         """
         similar to the query func, if you don't supply a ret_func we try and act in the same way as a single
         client would but wait for all clients to return and merge results into a single result with duplicate
@@ -810,10 +831,13 @@ class ClientPool:
                     
                     ret[the_client.url] = the_client.query(filters,
                                                            do_event=do_event,
-                                                           wait_connect=wait_connect)
+                                                           wait_connect=wait_connect,
+                                                           timeout=timeout)
                     # ret_func(the_client, the_client.query(filters, wait_connect=False))
+                except QueryTimeoutException as toe:
+                    logging.debug('ClientPool::query timout - %s ' % toe)
                 except Exception as e:
-                    logging.debug('ClientPool::query - %s' % e)
+                    logging.debug('ClientPool::query exception - %s' % e)
                 client_wait -= 1
             return my_func
 
@@ -901,3 +925,10 @@ class ClientPool:
     def __getitem__(self, i):
         # row at i
         return self._clients[i]
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.end()

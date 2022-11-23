@@ -264,9 +264,10 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
                          on_contact_update=on_contact_update,
                          max_insert_batch=max_insert_batch)
 
-    @lru_cache(maxsize=100)
     def fetch_profile_events(self, keys):
-        keys = keys.split(',')
+
+        if isinstance(keys, str):
+            keys = keys.split(',')
 
         evts = self._client.query({
             'kinds': [Event.KIND_META],
@@ -275,15 +276,14 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
         ret = []
         if evts:
             ret = [Profile.from_event(c_evt) for c_evt in evts]
-            # start update, this will update local cache and the profile store
-            # the meta events are not currently persisted when we fetch this way
-            # Greenlet(self._get_profiles_update(evts)).start()
-            self._do_profiles_update(evts)
+            Greenlet(util_funcs.get_background_task(self._do_profiles_update, evts)).start_later(0)
 
         return ret
 
     def fetch_contact_events(self, keys):
-        keys = keys.split(',')
+
+        if isinstance(keys, str):
+            keys = keys.split(',')
 
         evts = self._client.query({
             'kinds': [Event.KIND_CONTACT_LIST],
@@ -292,10 +292,7 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
         ret = []
         if evts:
             ret = [ContactList.from_event(c_evt) for c_evt in evts]
-            # start update, this will update local cache and the profile store
-            # the meta events are not currently persisted when we fetch this way
-            # Greenlet(self._get_profiles_update(evts)).start()
-            self._do_contacts_update(evts)
+            Greenlet(util_funcs.get_background_task(self._do_contacts_update, evts)).start_later(0)
 
         return ret
 
@@ -340,11 +337,15 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
             got = set([p.public_key for p in ret])
             for k in pub_ks:
                 if k not in got:
-                    ret.append(Profile(pub_k=k))
+                    empty_profile = Profile(pub_k=k)
+                    ret.append(empty_profile)
+                    # so we won't continually be trying to fetch
+                    # on seeing a meta event it'll get updated anyhow
+                    self._profiles.put(empty_profile)
 
         return ProfileList(ret)
 
-    def load_contacts(self, p: Profile, reload=False):
+    def load_contacts(self, p: Profile, reload=False) -> ContactList:
         if not p.contacts_is_set() or reload:
             p.contacts = ContactList(self._store.select_contacts({
                 'owner': p.public_key

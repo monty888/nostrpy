@@ -325,7 +325,7 @@ class NetworkedEventHandler(EventHandler):
             return []
 
         evt: Event
-        ret = [evt.event_data() for evt in self._client.query(filter, self.do_event)]
+        ret = [evt.event_data() for evt in self._client.query(filter, self.do_event, timeout=3)]
 
         # add key to cache so we qon't requery
         self._query_cache[query_key] = True

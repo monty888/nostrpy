@@ -27,7 +27,7 @@ from nostr.ident.profile import Profile, ContactList
 from nostr.ident.persist import SQLiteProfileStore, ProfileStoreInterface, MemoryProfileStore
 from nostr.ident.event_handlers import ProfileEventHandler, NetworkedProfileEventHandler
 from nostr.channels.persist import SQLiteSQLChannelStore, ChannelStoreInterface
-from nostr.channels.event_handlers import ChannelEventHandler
+from nostr.channels.event_handlers import ChannelEventHandler, NetworkedChannelEventHandler
 from nostr.settings.persist import SQLiteSettingsStore, SettingStoreInterface
 from nostr.settings.handler import Settings
 from nostr.util import util_funcs
@@ -287,7 +287,6 @@ def run_web(clients,
     until_me = 365
     # until_follows = 365
 
-    my_ceh = ChannelEventHandler(channel_store)
     my_settings = Settings(settings_store)
 
     # called on connect and any reconnect
@@ -470,10 +469,10 @@ def run_web(clients,
                            on_status=my_status,
                            on_eose=my_eose)
 
-    # evt_persist = EventHandler(event_store, spam_handler=my_spam)
+
     evt_persist = NetworkedEventHandler(event_store, client=my_client, spam_handler=my_spam)
     my_peh = NetworkedProfileEventHandler(profile_store, client=my_client)
-    # my_peh = ProfileEventHandler(profile_store)
+    my_ceh = NetworkedChannelEventHandler(channel_store, client=my_client)
 
     def _do_profile_fill(the_client: Client, evts: [Event]):
         evt_persist.do_event(None, evts, the_client.url)
@@ -630,16 +629,24 @@ def run():
                 until=until,
                 fill_size=fill_size)
 
+
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
     run()
-    # with Client('wss://relay.damus.io') as c:
+
+    # pstore = SQLiteProfileStore(WORK_DIR + 'nostrpy-client.db')
+    # ps = pstore.select_profiles()
+    # p: Profile
+    #
+    # with ClientPool('wss://relay.damus.io') as c:
     #     evt = c.query({
     #         'limit': 10,
-    #         'kinds': [Event.KIND_TEXT_NOTE]
-    #     })
-    #     print(len(evt))
-    #     print(len(evt[:10]))
+    #         'kinds': [Event.KIND_TEXT_NOTE],
+    #         'authors': [p.public_key for p in ps]
+    #     }, timeout=1)
+    #
+    #     print(evt)
+
 
 
 
