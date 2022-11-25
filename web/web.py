@@ -1226,6 +1226,11 @@ class NostrWeb(StaticServer):
             #         ref_copy
             #     ]
 
+        # this stops the network fetcher looking for addtional events even where we don't hit the limit
+        # we do this because somethings just don't work over relay fetch e.g. content search
+        # but also things like requesting to many authors are a problem and this just makes it easier to be consistant
+        # search only searches local data
+        filter['no-fetch'] = True
         evts = self._get_events(filter, use_profile)
 
         return {

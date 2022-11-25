@@ -71,7 +71,7 @@ class ChannelEventHandler:
 
         # we only keep those for which we know the channel
         ret = [c_evt for c_evt in ret
-               if self.channel(self._get_channel_id(c_evt))]
+               if self.channels.channel(self._get_channel_id(c_evt))]
 
         return ret
 

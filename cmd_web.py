@@ -37,6 +37,7 @@ from nostr.spam_handlers.spam_handlers import ContentBasedDespam
 # TODO: also postgres
 # defaults here if no config given???
 WORK_DIR = '%s/.nostrpy/' % Path.home()
+DEFAULT_UNTIL = 365
 # DB = SQLiteDatabase('%s/nostr-client.db' % WORK_DIR)
 # EVENT_STORE = ClientSQLEventStore(DB)
 # # EVENT_STORE = TransientEventStore()
@@ -268,6 +269,30 @@ class ProfileBackfiller:
                     self._settings.put(self._get_state_key(c_client, c_k), until)
 
 
+def get_until_days(settings: Settings, until):
+    stored_until = settings.get('backfill.until', None)
+
+    # user supplied a val
+    if until is not None:
+        # TODO: - add some stuff here, specifically if the user reduced... in future this will likely
+        #  end with events getting pruned
+        if stored_until:
+            pass
+        settings.put('backfill.until', until)
+        ret = until
+    # used stored val or default if never stored (first run?)
+    else:
+        if stored_until is None:
+            stored_until = DEFAULT_UNTIL
+            settings.put('backfill.until', stored_until)
+        else:
+            stored_until = int(stored_until)
+
+        ret = stored_until
+
+    return ret
+
+
 def run_web(clients,
             event_store: ClientEventStoreInterface,
             profile_store: ProfileStoreInterface,
@@ -276,7 +301,7 @@ def run_web(clients,
             web_dir: str,
             host: str = 'localhost',
             port: int = 8080,
-            until: int = 365,
+            until: int = None,
             until_me: int = 365,
             fill_size: int = 10):
 
@@ -286,8 +311,8 @@ def run_web(clients,
     start_time = datetime.now()
     until_me = 365
     # until_follows = 365
-
     my_settings = Settings(settings_store)
+    until = get_until_days(my_settings, until)
 
     # called on connect and any reconnect
     def my_connect(the_client: Client):
@@ -469,15 +494,25 @@ def run_web(clients,
                            on_status=my_status,
                            on_eose=my_eose)
 
+    def _event_profile_prefetch(evts: [Event]):
+        my_peh.get_profiles(list({c_evt.pub_key for c_evt in evts}))
 
-    evt_persist = NetworkedEventHandler(event_store, client=my_client, spam_handler=my_spam)
+    evt_persist = NetworkedEventHandler(event_store,
+                                        client=my_client,
+                                        spam_handler=my_spam,
+                                        settings=my_settings,
+                                        on_fetch=_event_profile_prefetch)
     my_peh = NetworkedProfileEventHandler(profile_store, client=my_client)
     my_ceh = NetworkedChannelEventHandler(channel_store, client=my_client)
+    # my_ceh = ChannelEventHandler(channel_store)
 
     def _do_profile_fill(the_client: Client, evts: [Event]):
         evt_persist.do_event(None, evts, the_client.url)
         my_peh.do_event(None, evts, the_client.url)
         my_ceh.do_event(None, evts, the_client.url)
+
+
+        # print('channels done')
 
     my_profile_backfill = ProfileBackfiller(client=my_client,
                                             profile_handler=my_peh,

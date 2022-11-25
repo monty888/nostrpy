@@ -171,7 +171,8 @@
                 view.events = view.events.concat(data.events);
                 view.append_notes(data.events);
             }
-            view.maybe_more = data.events.length === _chunk_size;
+            // add 1 as when we fallback to relay some seem to do to limit -1
+            view.maybe_more = data.events.length >= _chunk_size-1;
         }
         view.loading = false;
     }

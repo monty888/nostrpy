@@ -3,10 +3,12 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from nostr.ident.profile import Profile
     from nostr.client.client import Client
+    from nostr.settings.handler import Settings
 
 import copy
 import json
 import time
+from datetime import datetime, timedelta
 from collections import OrderedDict
 from functools import lru_cache
 from nostr.event.event import Event, EventTags
@@ -293,10 +295,15 @@ class NetworkedEventHandler(EventHandler):
                  store: ClientEventStoreInterface,
                  client: Client,
                  max_insert_batch=500,
-                 spam_handler: SpamHandlerInterface = None):
+                 spam_handler: SpamHandlerInterface = None,
+                 settings: Settings = None,
+                 on_fetch=None):
         self._client = client
         self._query_cache = OrderedDict()
         self._max_query_cache = 100
+        self._settings = settings
+        self._on_fetch = on_fetch
+        self._timeout = 5
 
         super().__init__(store=store,
                          max_insert_batch=max_insert_batch,
@@ -324,15 +331,35 @@ class NetworkedEventHandler(EventHandler):
         if query_key in self._query_cache:
             return []
 
-        evt: Event
-        ret = [evt.event_data() for evt in self._client.query(filter, self.do_event, timeout=3)]
+        ret = {}
+        complete = False
+
+        def _do_event(sub_id, evt, relay):
+            nonlocal ret
+            ret[relay] = [c_evt.event_data() for c_evt in evt]
+            c_evt: Event
+            self.do_event(sub_id, evt, relay)
+            if self._on_fetch:
+                self._on_fetch(evt)
+
+        def _complete():
+            nonlocal complete
+            complete = True
+
+        self._client.query(filter, _do_event,
+                           timeout=self._timeout,
+                           emulate_single=False,
+                           on_complete=_complete)
+
+        while complete is False or len(ret)==0:
+            time.sleep(0.1)
 
         # add key to cache so we qon't requery
         self._query_cache[query_key] = True
         if len(self._query_cache) >= self._max_query_cache:
             self._query_cache.popitem(last=False)
 
-        return ret
+        return Event.merge(*ret.values())
 
     @lru_cache(maxsize=100)
     def _get_events_by_ids(self, ids):
@@ -360,13 +387,60 @@ class NetworkedEventHandler(EventHandler):
         :param filter:
         :return:
         """
+
+        # if filters always as for ids, #e then we can put a max time that we need to be able to look back
+        # most likely looking at event/event thread
+        def _can_restrict_events():
+            ret = True
+            for c_f in filter:
+                # sad
+                if not '#e' in c_f and not 'ids' in c_f:
+                    ret = False
+                    break
+            return ret
+
+        def _get_min_until():
+            c_evt: Event
+            event_lookup = dict([(c_evt['id'], c_evt) for c_evt in events])
+            r_evts = []
+            ret = None
+            try:
+                for c_f in filter:
+                    if 'ids' in c_f:
+                        for c_id in c_f['ids']:
+                            r_evts.append(event_lookup[c_id])
+                    if '#e' in c_f:
+                        for c_id in c_f['#e']:
+                            r_evts.append(event_lookup[c_id])
+
+                Event.sort(r_evts, inplace=True)
+                # allow 2 hours out for clocks, maybe they'll
+                ret = r_evts[0]['created_at'] - 60*60*2
+            except KeyError:
+                print('what the actual fuck')
+                pass
+
+            return ret
+
         ret = False
         if limit and len(events) < limit:
             ret = True
 
-            # text search is only possible on local events
-            if 'content' in filter[0]:
+            # set by event search, there are some queries we could pass on but for now we restrict to only local search
+            if 'no-fetch' in filter[0]:
                 ret = False
+
+            # if filter is for names ids, we have all those ids and we have all those events
+            # then as long as there create_at plus so wobble is in our backfill time
+            # events that refer to them can be older than this date so we should have already fetched them if they
+            # exist
+            elif self._settings and _can_restrict_events():
+                min_date = _get_min_until()
+                backfill_until = util_funcs.date_as_ticks(datetime.now() -
+                                                          timedelta(days=int(self._settings.get('backfill.until'))))
+
+                if min_date and min_date > backfill_until:
+                    ret = False
 
         return ret
 

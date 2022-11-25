@@ -30,6 +30,7 @@ class RunState(Enum):
     starting = 1
     stopping = 2
     stopped = 3
+    failed = 4
 
 
 class QueryTimeoutException(Exception):
@@ -283,8 +284,7 @@ class Client:
             nonlocal ret
             ret = events
             if do_event is not None:
-                Greenlet(util_funcs.get_background_task(do_event, sub_id, events, the_client.url)).start()
-
+                Greenlet(util_funcs.get_background_task(do_event, sub_id, events, the_client.url)).start_later(0)
             is_done = True
 
         def cleanup():
@@ -300,7 +300,7 @@ class Client:
             if self.connected is False:
                 raise Exception('Client::query - lost connection during query')
             total_time += sleep_time
-            if timeout and total_time >= timeout:
+            if ret is None and timeout and total_time >= timeout:
                 cleanup()
                 raise QueryTimeoutException('Client::query - %s' % self.url)
 
@@ -808,7 +808,8 @@ class ClientPool:
               do_event=None,
               wait_connect=False,
               emulate_single=True,
-              timeout=None):
+              timeout=None,
+              on_complete=None):
         """
         similar to the query func, if you don't supply a ret_func we try and act in the same way as a single
         client would but wait for all clients to return and merge results into a single result with duplicate
@@ -816,6 +817,11 @@ class ClientPool:
         probably better to supply a ret func though in which case it'll be called with the client and that clients
         results as they come in
 
+        :param on_complete:
+        :param do_event:
+        :param timeout:
+        :param emulate_single:
+        :param wait_connect:
         :param filters:
         :param ret_func:
         :return:
@@ -828,7 +834,7 @@ class ClientPool:
             def my_func():
                 nonlocal client_wait
                 try:
-                    
+
                     ret[the_client.url] = the_client.query(filters,
                                                            do_event=do_event,
                                                            wait_connect=wait_connect,
@@ -839,6 +845,10 @@ class ClientPool:
                 except Exception as e:
                     logging.debug('ClientPool::query exception - %s' % e)
                 client_wait -= 1
+
+                if client_wait == 0 and on_complete:
+                    on_complete()
+
             return my_func
 
         for c_client in self:
@@ -874,7 +884,7 @@ class ClientPool:
         if relay not in self._clients:
             raise Exception('ClientPool::do_event received event from unexpected relay - %s WTF?!?' % relay)
 
-        # only do anyhting if relay read is True
+        # only do anything if relay read is True
         if self._clients[relay].read:
             # note no de-duplication is done here, you might see the same event from mutiple relays
             if sub_id in self._handlers:
