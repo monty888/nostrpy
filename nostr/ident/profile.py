@@ -131,12 +131,12 @@ class Profile:
     def followed_by(self) -> []:
         if self._followed_by is None:
             raise Exception(
-                'Profile::followed_by - load contacts hasn\'t been called yet for contact %s' % self.display_name())
+                'Profile::followed_by - load follows hasn\'t been called yet for contact %s' % self.display_name())
         return self._followed_by
 
     @followed_by.setter
-    def followed_by(self, contacts: []):
-        self._followed_by = contacts
+    def followed_by(self, follow_keys: []):
+        self._followed_by = follow_keys
 
     @property
     def name(self):
@@ -513,6 +513,10 @@ class ProfileList:
 
     def __len__(self):
         return len(self._profiles)
+
+    def __iter__(self):
+        for c_p in self._profiles:
+            yield c_p
 
     def sort(self, reverse=False):
         return ProfileList.sort_profiles(self,

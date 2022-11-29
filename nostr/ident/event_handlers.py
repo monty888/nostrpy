@@ -296,16 +296,19 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
 
         return ret
 
-    def fetch_follows(self, key):
+    def fetch_follows(self, keys):
+        if isinstance(keys, str):
+            keys = keys.split(',')
+
         evts = self._client.query({
             'kinds': [Event.KIND_CONTACT_LIST],
-            '#p': [key]
+            '#p': keys
         })
         ret = []
         if evts:
             evts = Event.latest_events_only(evts)
             # we'll be returning a list of pub_ks
-            ret = [c_evt.pub_key for c_evt in evts]
+            ret = [ContactList.from_event(c_evt) for c_evt in evts]
             # think it's better not to update contacts list here
             # Greenlet(util_funcs.get_background_task(self._do_contacts_update, evts)).start_later(0)
 
@@ -346,18 +349,36 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
         return ProfileList(ret)
 
     def load_contacts(self, p: Profile, reload=False) -> ContactList:
-        if not p.contacts_is_set() or reload:
-            p.contacts = ContactList(self._store.select_contacts({
-                'owner': p.public_key
-            }), owner_pub_k=p.public_key)
-            if len(p.contacts) == 0:
-                contacts = self.fetch_contact_events(p.public_key)
-                if contacts:
-                    p.contacts = contacts[0]
+        if not hasattr(p, '__iter__'):
+            p = [p]
+
+        # get keys to load contacts for
+        c_p: Profile
+        if reload:
+            request_keys = [c_p.public_key for c_p in p]
+        else:
+            request_keys = []
+            for c_p in p:
+                if not c_p.contacts_is_set():
+                    c_p.contacts = ContactList(self._store.select_contacts({
+                        'owner': c_p.public_key
+                    }), owner_pub_k=c_p.public_key)
+                if len(c_p.contacts) == 0:
+                    request_keys.append(c_p.public_key)
+
+        # go fecth them if any
+        if request_keys:
+            contacts_lists = self.fetch_contact_events(request_keys)
+            c_l: ContactList
+            lookup = dict([(c_l.owner_public_key, c_l) for c_l in contacts_lists])
+            for_p = [c_p for c_p in p if c_p.public_key in set(request_keys)]
+
+            for c_p in for_p:
+                if c_p.public_key in lookup:
+                    c_p.contacts = lookup[c_p.public_key]
                 else:
-                    p.contacts = ContactList(contacts=[],
-                                             owner_pub_k=p.public_key)
-        return p.contacts
+                    c_p.contacts = ContactList(contacts=[],
+                                               owner_pub_k=c_p.public_key)
 
     def load_followers(self, p: Profile, reload=False):
         """ because follows is made up by looking at all contact events where p is mentioned
@@ -368,9 +389,25 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
         :param reload:
         :return:
         """
-        if not p.follows_by_is_set() or reload:
-            p.followed_by = self.fetch_follows(p.public_key)
-        return p.followed_by
+        if not hasattr(p, '__iter__'):
+            p = [p]
 
+        request_keys = [c_p.public_key for c_p in p
+                        if reload or not c_p.follows_by_is_set()]
 
+        if request_keys:
+            contact_lists = self.fetch_follows(request_keys)
+            c_l: ContactList
+            c_c: Contact
+            for_p = [c_p for c_p in p if c_p.public_key in set(request_keys)]
+            lookup = dict([(c_p.public_key, set([])) for c_p in for_p])
+            for c_l in contact_lists:
+                for c_c in c_l:
+                    if c_c.contact_public_key in lookup:
+                        lookup[c_c.contact_public_key].add(c_l.owner_public_key)
 
+            for c_p in for_p:
+                if c_p.public_key in lookup:
+                    c_p.followed_by = list(lookup[c_p.public_key])
+                else:
+                    c_p.followed_by = []

@@ -31,6 +31,7 @@ from nostr.channels.event_handlers import ChannelEventHandler, NetworkedChannelE
 from nostr.settings.persist import SQLiteSettingsStore, SettingStoreInterface
 from nostr.settings.handler import Settings
 from nostr.util import util_funcs
+from nostr.backfill.backfill import RangeBackfill
 from web.web import NostrWeb
 from nostr.spam_handlers.spam_handlers import ContentBasedDespam
 
@@ -373,93 +374,13 @@ def run_web(clients,
         my_do_events(the_client, sub_id, events)
 
         # now we're upto date we can start the backfill/resync process
-        do_backfill(the_client)
-
-
-    def do_backfill(the_client: Client):
-        until_dt = start_time - timedelta(days=until)
-        ukeys = set()
-
-        # if we already did a backfill for this relay we should have saved the backfilled to date
-        backfill_date = my_settings.get(the_client.url + '.backfilltime')
-        if backfill_date:
-            backfill_date = int(backfill_date)
-
-        for c_kind in [Event.KIND_META,
-                       Event.KIND_CONTACT_LIST,
-                       Event.KIND_CHANNEL_CREATE,
-                       Event.KIND_TEXT_NOTE,
-                       Event.KIND_CHANNEL_MESSAGE,
-                       Event.KIND_RELAY_REC,
-                       Event.KIND_ENCRYPT,
-                       Event.KIND_REACTION,
-                       Event.KIND_DELETE]:
-
-            if backfill_date is not None:
-                c_oldest = util_funcs.ticks_as_date(backfill_date)
-            else:
-                # no choice but to work back from now
-                c_oldest = datetime.now()
-
-            # if we already have events <= util_date then no more import is required
-            if c_oldest <= until_dt:
-                print('%s no backfill required for kind: %s' % (the_client.url,
-                                                                c_kind))
-                continue
-            else:
-                print('%s backfill for kind %s starting at: %s until: %s with %s days chunks' % (the_client.url,
-                                                                                                 c_kind,
-                                                                                                 c_oldest,
-                                                                                                 until_dt.date(),
-                                                                                                 fill_size))
-
-            for c in range(0, until, fill_size):
-                c_until = c_oldest - timedelta(days=c)
-                c_since = c_oldest - timedelta(days=c+fill_size)
-                if c_since < until_dt:
-                    c_since = until_dt
-
-                print('%s backfilling kind %s %s - %s' % (the_client.url,
-                                                          c_kind,
-                                                          c_until,
-                                                          c_since))
-                got_chunk = False
-                while not got_chunk:
-                    try:
-                        evts = the_client.query(filters=[
-                            {
-                                'kinds': [c_kind],
-                                'since': util_funcs.date_as_ticks(c_since),
-                                'until': util_funcs.date_as_ticks(c_until)
-                            }
-                        ])
-                        # evt_persist.do_event(None, evts, the_client.url)
-                        # my_ceh.do_event(None, evts, the_client.url)
-                        # my_peh.do_event(None, evts, the_client.url)
-                        my_do_events(the_client,None, evts)
-
-                        got_chunk = True
-
-                        c_evt: Event
-                        {c_evt.pub_key for c_evt in evts}.union(ukeys)
-
-                    except Exception as e:
-                        logging.debug('do_backfill: %s error fetching range %s - %s, %s' % (the_client.url,
-                                                                                            c_until,
-                                                                                            c_since,
-                                                                                            e))
-                        time.sleep(1)
-
-                print('%s recieved %s kind %s events ' % (the_client.url,
-                                                          len(evts),
-                                                          c_kind))
-
-            my_peh.get_profiles(list(ukeys))
-
-        # update back fill time
-        my_settings.put(the_client.url + '.backfilltime', util_funcs.date_as_ticks(until_dt))
-        print('%s backfill is complete' % the_client.url)
-
+        RangeBackfill(client=the_client,
+                      settings=my_settings,
+                      start_dt=start_time,
+                      until_ndays=until,
+                      day_chunk=fill_size,
+                      do_event=my_do_events,
+                      profile_handler=my_peh).run()
 
     # so server can send out client status messages
     def my_status(status):
@@ -675,12 +596,11 @@ if __name__ == "__main__":
     #
     # with ClientPool('wss://relay.damus.io') as c:
     #     evt = c.query({
-    #         'limit': 10,
-    #         'kinds': [Event.KIND_TEXT_NOTE],
-    #         'authors': [p.public_key for p in ps]
+    #         'kinds': [Event.KIND_CONTACT_LIST],
+    #         '#p': ['5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f']
     #     }, timeout=1)
     #
-    #     print(evt)
+    # print(len(evt))
 
 
 

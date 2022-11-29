@@ -361,10 +361,12 @@ class NostrWeb(StaticServer):
             raise NostrWebException('no profile found for pub_k - %s' % pub_k)
 
         # make contacts
-        cons = [c.contact_public_key for c in p.load_contacts(self._profile_store)]
+        self._profile_handler.load_contacts(p)
+        cons = [c.contact_public_key for c in p.contacts]
 
-        # make followers'
-        fols = [c.owner_public_key for c in p.load_followers(self._profile_store)]
+        # make followers
+        self._profile_handler.load_followers(p)
+        fols = p.followed_by
 
         # finally create ret set with ourself included
         ret = set([pub_k])
@@ -521,7 +523,8 @@ class NostrWeb(StaticServer):
         # the same but for follows, we may need to think about this with our changed db structure
         # load contacts/follows should be changed to take profile helper
         if get_follow is not None:
-            follow_keys = self._profile_handler.load_followers(the_profile)
+            self._profile_handler.load_followers(the_profile)
+            follow_keys = the_profile.followed_by
             ret['follow_count'] = len(follow_keys)
             # return either keys or profile info up to limit
             if get_follow != 'count':
