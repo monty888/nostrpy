@@ -327,7 +327,8 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
         if isinstance(pub_ks, str):
             pub_ks = [pub_ks]
         ret = super().get_profiles(pub_ks, create_missing=False)
-        to_fetch = [k for k in pub_ks if ret.lookup_pub_key(k) is None]
+        to_fetch = [k for k in pub_ks if ret.lookup_pub_key(k) is None
+                    and not k.replace(' ', '') == '']
 
         ret = ret.profiles
 

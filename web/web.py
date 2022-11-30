@@ -637,7 +637,7 @@ class NostrWeb(StaticServer):
             raise NostrWebException('id is required')
 
         self._check_key(channel_id, 'id')
-        the_channel = self._channel_handler.channel(channel_id)
+        the_channel = self._channel_handler.get_id(channel_id)
         # similar to profiles not having hte channel info doesn't mean there might not be messages for a given
         # channel key
         if the_channel is None:
@@ -1023,18 +1023,21 @@ class NostrWeb(StaticServer):
         # restrict only to followers
         if for_str and use_profile:
             if for_str == 'followersplus':
-                followers = self._profile_handler.load_contacts(use_profile).follow_keys()
+                self._profile_handler.load_followers(use_profile)
+                followers = use_profile.followed_by
                 c_p: Profile
                 all_follows = set(followers)
                 for k in followers:
                     c_p = self._profile_handler.get_pub_k(k)
                     if c_p:
-                        all_follows = all_follows.union(set(self._profile_handler.load_contacts(c_p).follow_keys()))
+                        self._profile_handler.load_contacts(c_p)
+                        all_follows = all_follows.union(set(c_p.contacts.follow_keys()))
 
                 ret = list(all_follows)
 
             if for_str == 'followers':
-                ret = self._profile_handler.load_contacts(use_profile).follow_keys()
+                self._profile_handler.load_contacts(use_profile)
+                ret = use_profile.contacts.follow_keys()
             elif for_str =='self':
                 ret = [use_profile.public_key]
 

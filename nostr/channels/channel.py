@@ -1,15 +1,15 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from nostr.event.event import Event
+    pass
 
+import logging
 from threading import BoundedSemaphore
 from datetime import datetime
 import json
 from json import JSONDecodeError
 from nostr.util import util_funcs
-
-import logging
+from nostr.event.event import Event
 
 
 class Channel:
@@ -27,6 +27,20 @@ class Channel:
                        create_pub_k=evt.pub_key,
                        attrs=evt.content,
                        created_at=util_funcs.date_as_ticks(evt.created_at))
+
+    @staticmethod
+    def get_msg_channel_id(evt: Event):
+        """
+        for given channel message event returns the channel id that that msg is in
+        :param evt:
+        :return:
+        """
+        ret = None
+        if evt.kind == Event.KIND_CHANNEL_MESSAGE:
+            e_tags = evt.e_tags
+            if e_tags:
+                ret = e_tags[0]
+        return ret
 
     def __init__(self, event_id: str, create_pub_k: str, attrs=None,
                  created_at: int = None, updated_at: int = None,
@@ -71,7 +85,10 @@ class Channel:
 
     @property
     def name(self):
-        return self.get_attr('name')
+        ret = self.get_attr('name')
+        if ret is None:
+            ret = '?unknown?'
+        return ret
 
     @property
     def picture(self):
@@ -123,11 +140,12 @@ class Channel:
     def last_post(self, evt: Event):
         self._last_post = evt
 
-    def __str__(self):
-        name = self.name
-        if name is None:
-            name = '?'
+    def do_post(self, evt: Event):
+        # as last_post except it'll only update _last_post if the given evt is actually newer
+        if self._last_post is None or evt.created_at_ticks > self.last_post.created_at_ticks:
+            self._last_post = evt
 
+    def __str__(self):
         return '%s[%s]' % (self.name[0:15].ljust(18), self.event_id)
 
     def __lt__(self, other):
@@ -194,6 +212,10 @@ class ChannelList:
         if channel_id in self._lookup:
             ret = self._lookup[channel_id]
         return ret
+
+    @property
+    def channels(self):
+        return self._channels
 
     def sort(self):
         def keyFunc(c: Channel):

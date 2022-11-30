@@ -350,7 +350,6 @@ def run_web(clients,
     def my_do_events(the_client: Client, sub_id:str, events: [Event]):
         Event.sort(events, inplace=True)
         events_by_kind = split_events(events)
-        Event.sort(events, inplace=True)
 
         for c_kind in events_by_kind.keys():
             kind_events = events_by_kind[c_kind]
@@ -360,7 +359,6 @@ def run_web(clients,
                 kind_events = Event.latest_events_only(evts=kind_events,
                                                        kind=c_kind)
 
-            #
             if c_kind in (Event.KIND_META, Event.KIND_CONTACT_LIST):
                 my_peh.do_event(sub_id, kind_events, the_client.url)
             elif c_kind in (Event.KIND_CHANNEL_CREATE, Event.KIND_CHANNEL_MESSAGE):
@@ -380,7 +378,8 @@ def run_web(clients,
                       until_ndays=until,
                       day_chunk=fill_size,
                       do_event=my_do_events,
-                      profile_handler=my_peh).run()
+                      profile_handler=my_peh,
+                      channel_handler=my_ceh).run()
 
     # so server can send out client status messages
     def my_status(status):
@@ -595,12 +594,16 @@ if __name__ == "__main__":
     # p: Profile
     #
     # with ClientPool('wss://relay.damus.io') as c:
-    #     evt = c.query({
-    #         'kinds': [Event.KIND_CONTACT_LIST],
-    #         '#p': ['5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f']
-    #     }, timeout=1)
+    #     # evt = c.query({
+    #     #     'kinds': [Event.KIND_CHANNEL_CREATE]
+    #     # }, timeout=1)
     #
-    # print(len(evt))
+    #     from nostr.channels.persist import SQLiteSQLChannelStore
+    #     my_ceh = NetworkedChannelEventHandler(SQLiteSQLChannelStore(WORK_DIR + 'nostrpy-client.db'),client=c)
+    #     # my_ceh.do_event(None,evt,None)
+    #
+    #     print(my_ceh.get_channels('6793194b103abd9369dc831a990d3c9e94a824abd8c11dc84108bf8b7db3e27b')[0])
+
 
 
 
