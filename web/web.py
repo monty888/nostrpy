@@ -848,7 +848,8 @@ class NostrWeb(StaticServer):
         check_keys(follow_list)
         check_keys(unfollow_list)
 
-        my_contacts = self._profile_handler.load_contacts(profile)
+        self._profile_handler.load_contacts(profile)
+        my_contacts = profile.contacts
 
         con: Contact
         actually_followed = []

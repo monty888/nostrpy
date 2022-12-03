@@ -28,6 +28,14 @@ class ProfileEventHandler:
         atleast until we see a newer event ourself...
     """
 
+    @staticmethod
+    def import_profile_info(profile_handler: ProfileEventHandler, for_keys):
+        # some relays limit the n of keys so keep this reasonable
+        for k_chunk in util_funcs.chunk(list(for_keys), 250):
+            ps = profile_handler.get_profiles(k_chunk)
+            profile_handler.load_contacts(ps)
+            profile_handler.load_followers(ps)
+
     def __init__(self,
                  profile_store: ProfileStoreInterface,
                  on_profile_update=None,

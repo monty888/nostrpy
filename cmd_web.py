@@ -31,7 +31,7 @@ from nostr.channels.event_handlers import ChannelEventHandler, NetworkedChannelE
 from nostr.settings.persist import SQLiteSettingsStore, SettingStoreInterface
 from nostr.settings.handler import Settings
 from nostr.util import util_funcs
-from nostr.backfill.backfill import RangeBackfill
+from nostr.backfill.backfill import RangeBackfill, ProfileBackfiller
 from web.web import NostrWeb
 from nostr.spam_handlers.spam_handlers import ContentBasedDespam
 
@@ -200,76 +200,6 @@ def run_tor(clients,
             shutil.rmtree(hidden_service_dir)
 
 
-class ProfileBackfiller:
-
-    def __init__(self, client: Client,
-                 profile_handler: ProfileEventHandler,
-                 settings: Settings,
-                 store_func
-                 ):
-
-        self._client = client
-        self._settings = settings
-        self._profile_handler = profile_handler
-        self._store_func = store_func
-
-    def _get_state_key(self, the_client: Client, pub_k: str):
-        return '%s.%s.profile-backfill' % (the_client.url,
-                                           pub_k)
-
-    def _get_authors(self, p: Profile,
-                     c: Client,
-                     until: int,
-                     include_followers,
-                     include_followers_of_followers):
-        ret = []
-
-        def add_key(k):
-            f_date = self._settings.get(self._get_state_key(c, k))
-
-            return f_date is None or int(f_date) > until
-
-        if add_key(p.public_key):
-            ret.append(p.public_key)
-        if include_followers:
-            self._profile_handler.load_contacts(p)
-            ret = ret + [k for k in p.contacts.follow_keys() if add_key(k)]
-
-        return ret
-
-    def do_backfill(self, p: Profile, until: int,
-                    include_followers=True,
-                    include_followers_of_followers=False):
-
-        c_client: Client
-
-        for c_client in self._client:
-            authors = self._get_authors(p=p,
-                                        c=c_client,
-                                        until=until,
-                                        include_followers=include_followers,
-                                        include_followers_of_followers=include_followers_of_followers)
-
-            if authors:
-                evts = c_client.query({
-                    'authors': authors,
-                    'kinds': [
-                        Event.KIND_META,
-                        Event.KIND_CONTACT_LIST,
-                        Event.KIND_TEXT_NOTE,
-                        Event.KIND_REACTION,
-                        Event.KIND_RELAY_REC,
-                        Event.KIND_CHANNEL_CREATE,
-                        Event.KIND_CHANNEL_MESSAGE,
-                        Event.KIND_ENCRYPT
-                    ],
-                    'since': until
-                })
-                self._store_func(c_client, evts)
-                for c_k in authors:
-                    self._settings.put(self._get_state_key(c_client, c_k), until)
-
-
 def get_until_days(settings: Settings, until):
     stored_until = settings.get('backfill.until', None)
 
@@ -366,6 +296,17 @@ def run_web(clients,
 
             evt_persist.do_event(sub_id, kind_events, the_client.url)
 
+            # some extra pre caching
+            # for each unique public_k import the profile/contact info
+            if c_kind != Event.KIND_META:
+                ProfileEventHandler.import_profile_info(profile_handler=my_peh,
+                                                        for_keys={c_evt.pub_key for c_evt in kind_events})
+
+            # for each channel msg import the channel meta
+            if c_kind == Event.KIND_CHANNEL_MESSAGE:
+                ChannelEventHandler.import_channel_info(channel_handler=my_ceh,
+                                                        events=kind_events)
+
     def my_eose(the_client: Client, sub_id: str, events: [Event]):
         c_evt: Event
         print('eose relay %s %s events' % (the_client.url, len(events)))
@@ -378,8 +319,7 @@ def run_web(clients,
                       until_ndays=until,
                       day_chunk=fill_size,
                       do_event=my_do_events,
-                      profile_handler=my_peh,
-                      channel_handler=my_ceh).run()
+                      profile_handler=my_peh).run()
 
     # so server can send out client status messages
     def my_status(status):
@@ -405,6 +345,7 @@ def run_web(clients,
                 # probably this should just be flag for those that know what they're doing
                 ret = ['wss://relay.damus.io',
                        'wss://nostr-pub.wellorder.net/']
+                # ret = ['wss://relay.damus.io']
 
         return ret
 
@@ -434,31 +375,27 @@ def run_web(clients,
 
         # print('channels done')
 
+    # profile fill doesn't need to do anything in before time as it's handled by the range fill
+    def p_fill_start_dt():
+        return start_time - timedelta(until)
+
     my_profile_backfill = ProfileBackfiller(client=my_client,
+                                            do_event=my_do_events,
                                             profile_handler=my_peh,
                                             settings=my_settings,
-                                            store_func=_do_profile_fill)
+                                            store_func=_do_profile_fill,
+                                            start_dt=p_fill_start_dt,
+                                            user_until=until_me)
 
     def on_profile_update(n_profile: Profile,
                           o_profile: Profile):
-
-        if n_profile.private_key and o_profile.private_key is None:
-            def start_p_back_fill():
-                until_dt = start_time - timedelta(days=until_me)
-                my_profile_backfill.do_backfill(n_profile, util_funcs.date_as_ticks(until_dt))
-
-            Greenlet(start_p_back_fill).start()
+        my_profile_backfill.profile_update(n_profile, o_profile)
 
     def on_contact_update(p: Profile,
                           n_c: ContactList,
                           o_c: ContactList):
-
-        def start_p_back_fill():
-            until_dt = start_time - timedelta(days=until_me)
-            my_profile_backfill.do_backfill(p, util_funcs.date_as_ticks(until_dt))
-
-        if p and p.private_key:
-            Greenlet(start_p_back_fill).start()
+        pass
+        # my_profile_backfill.contact_update(p, n_c, o_c)
 
     my_peh.set_on_profile_update(on_profile_update)
     my_peh.set_on_contact_update(on_contact_update)

@@ -1,3 +1,4 @@
+from __future__ import annotations
 import time
 from nostr.event.event import Event
 from nostr.channels.persist import ChannelStoreInterface, Channel, ChannelList
@@ -11,6 +12,29 @@ class ChannelEventHandler:
     """
         similar to the profile event handler but for channels
     """
+
+    @staticmethod
+    def import_channel_info(channel_handler: ChannelEventHandler, events: [Event]):
+        # just incase , make sure sorted newest first else last posts will be incorrect
+        evts = Event.sort(events, inplace=False)
+
+        last_posts = {}
+        for_keys = set([])
+
+        for c_evt in evts:
+            k = Channel.get_msg_channel_id(c_evt)
+            # important uses .channels.channel as this won't attempt ot fetch missing
+            if k and k not in for_keys and channel_handler.channels.channel(k) is None:
+                for_keys.add(k)
+                last_posts[k] = c_evt
+
+            # chunk same reason as profiles
+            for k_chunk in util_funcs.chunk(list(for_keys), 250):
+                channels = channel_handler.get_channels(k_chunk, create_missing=True)
+                c_chn: Channel
+                # now update the last post we the msg that triggered us to create the channel
+                for c_chn in channels:
+                    c_chn.do_post(last_posts[c_chn.event_id])
 
     def __init__(self,
                  channel_store: ChannelStoreInterface,
@@ -186,11 +210,12 @@ class NetworkedChannelEventHandler(ChannelEventHandler):
 
         c: Channel
         if len(ret) != len(channel_ids) and create_missing:
-            got = set([c.create_pub_k for c in ret])
+            got = set([c.event_id for c in ret])
             for k in channel_ids:
                 if k not in got:
                     empty_channel = Channel(event_id=k,
-                                            create_pub_k=None)
+                                            # sub the same as we have no idea what the pub_k is
+                                            create_pub_k='')
                     ret.append(empty_channel)
                     # so we won't continually be trying to fetch
                     # on seeing a meta event it'll get updated anyhow

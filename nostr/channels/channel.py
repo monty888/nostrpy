@@ -169,6 +169,7 @@ class ChannelList:
         self._lock = BoundedSemaphore()
 
     def matches(self, m_str, max_match=None, search_about=False):
+        self.sort()
         if m_str.replace(' ', '') == '':
             ret = self._channels
             if max_match:
