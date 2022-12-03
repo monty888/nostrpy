@@ -367,10 +367,10 @@ def run_web(clients,
     my_ceh = NetworkedChannelEventHandler(channel_store, client=my_client)
     # my_ceh = ChannelEventHandler(channel_store)
 
-    def _do_profile_fill(the_client: Client, evts: [Event]):
-        evt_persist.do_event(None, evts, the_client.url)
-        my_peh.do_event(None, evts, the_client.url)
-        my_ceh.do_event(None, evts, the_client.url)
+    # def _do_profile_fill(the_client: Client, evts: [Event]):
+    #     evt_persist.do_event(None, evts, the_client.url)
+    #     my_peh.do_event(None, evts, the_client.url)
+    #     my_ceh.do_event(None, evts, the_client.url)
 
 
         # print('channels done')
@@ -383,13 +383,12 @@ def run_web(clients,
                                             do_event=my_do_events,
                                             profile_handler=my_peh,
                                             settings=my_settings,
-                                            store_func=_do_profile_fill,
                                             start_dt=p_fill_start_dt,
                                             user_until=until_me)
 
     def on_profile_update(n_profile: Profile,
                           o_profile: Profile):
-        my_profile_backfill.profile_update(n_profile, o_profile)
+        Greenlet(util_funcs.get_background_task(my_profile_backfill.profile_update, n_profile, o_profile)).start_later(0)
 
     def on_contact_update(p: Profile,
                           n_c: ContactList,

@@ -118,7 +118,6 @@ class ProfileBackfiller:
                  do_event,
                  profile_handler: ProfileEventHandler,
                  settings: Settings,
-                 store_func,
                  start_dt: datetime,
                  user_until: int,
                  follower_until=None,
@@ -128,7 +127,6 @@ class ProfileBackfiller:
 
         self._client = client
         self._settings = settings
-        self._store_func = store_func
         self._day_chunk = day_chunk
         self._start_dt = start_dt
         self._user_until = user_until
