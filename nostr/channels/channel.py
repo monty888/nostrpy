@@ -203,7 +203,7 @@ class ChannelList:
         else:
             o_c = self._lookup[c.event_id]
             if c.updated_at > o_c.updated_at:
-                self._channels = ChannelList([c_c for c_c in self._channels if c_c.event_id != c.event_id])
+                self._channels = [c_c for c_c in self._channels if c_c.event_id != c.event_id]
                 self._lookup[c.event_id] = c
                 ret = True
         return ret

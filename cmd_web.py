@@ -240,8 +240,8 @@ def run_web(clients,
     # we'll persist events, not done automatically by nostrweb
     my_spam = ContentBasedDespam()
     start_time = datetime.now()
-    until_me = 365
-    # until_follows = 365
+    until_me = None
+    until_follows = 365
     my_settings = Settings(settings_store)
     until = get_until_days(my_settings, until)
 
@@ -384,7 +384,9 @@ def run_web(clients,
                                             profile_handler=my_peh,
                                             settings=my_settings,
                                             start_dt=p_fill_start_dt,
-                                            user_until=until_me)
+                                            user_until=until_me,
+                                            follow_until=until_follows,
+                                            day_chunk=fill_size)
 
     def on_profile_update(n_profile: Profile,
                           o_profile: Profile):
@@ -434,7 +436,7 @@ def run():
     # default we'll fetch any event back to this point
     until = 365
     # backfill chunk sizes, events wll be fetched in fill_size days back until max_until
-    fill_size = 10
+    fill_size = 90
     # backfill rescan starts from here if not supplied it starts from the oldest event/kind for each relay
     rescan_from = None
     # if given then when we reach we'll skip, we'll skip up until oldest event/kind for realy or just
