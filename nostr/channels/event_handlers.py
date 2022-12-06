@@ -28,13 +28,13 @@ class ChannelEventHandler:
                 for_keys.add(k)
                 last_posts[k] = c_evt
 
-            # chunk same reason as profiles
-            for k_chunk in util_funcs.chunk(list(for_keys), 250):
-                channels = channel_handler.get_channels(k_chunk, create_missing=True)
-                c_chn: Channel
-                # now update the last post we the msg that triggered us to create the channel
-                for c_chn in channels:
-                    c_chn.do_post(last_posts[c_chn.event_id])
+        # chunk same reason as profiles
+        for k_chunk in util_funcs.chunk(list(for_keys), 250):
+            channels = channel_handler.get_channels(k_chunk, create_missing=True)
+            c_chn: Channel
+            # now update the last post we the msg that triggered us to create the channel
+            for c_chn in channels:
+                c_chn.do_post(last_posts[c_chn.event_id])
 
     def __init__(self,
                  channel_store: ChannelStoreInterface,

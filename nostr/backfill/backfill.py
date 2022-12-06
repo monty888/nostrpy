@@ -170,26 +170,6 @@ class ProfileBackfiller:
         return '%s.%s.profile-backfill' % (the_client.url,
                                            pub_k)
 
-    # def _get_authors(self, p: Profile,
-    #                  c: Client,
-    #                  until: int,
-    #                  include_followers,
-    #                  include_followers_of_followers):
-    #     ret = []
-    #
-    #     def add_key(k):
-    #         f_date = self._settings.get(self._get_state_key(c, k))
-    #
-    #         return f_date is None or int(f_date) > until
-    #
-    #     if add_key(p.public_key):
-    #         ret.append(p.public_key)
-    #     if include_followers:
-    #         self._profile_handler.load_contacts(p)
-    #         ret = ret + [k for k in p.contacts.follow_keys() if add_key(k)]
-    #
-    #     return ret
-
     def _get_start_date(self, c: Client, pub_k: str):
         # get the start date we'll actually run from, either _start_dt as given or
         # further back if we already ran
@@ -271,7 +251,22 @@ class ProfileBackfiller:
 
         print('backfill is complete - %s' % client.url)
 
-    def _backfill_profile(self, p: Profile, until=None):
+    def _do_backfill_chunked(self, client: Client, authors, newest: int, oldest: int):
+        """
+        just _do_backfill called but with the authors chunked so we don't get error from relays
+        :param client:
+        :param authors:
+        :param newest:
+        :param oldest:
+        :return:
+        """
+        for c_authors in util_funcs.chunk(authors,250):
+            self._do_backfill(client=client,
+                              authors=c_authors,
+                              newest=newest,
+                              oldest=oldest)
+
+    def _backfill_profile(self, p: Profile):
         # no profile backfill
         if self._user_until == 0:
             logging.info('ProfileBackfiller::_backfill_profile _user_until is 0, no backfill requested')
@@ -282,8 +277,8 @@ class ProfileBackfiller:
             newest = self._get_start_date(c_client, p.public_key)
             # as far back as we want to fill
             oldest = None
-            if until:
-                oldest = datetime.now() - timedelta(days=until)
+            if self._user_until:
+                oldest = datetime.now() - timedelta(days=self._user_until)
 
             logging.info('ProfileBackfiller::_backfill_profile starting profile backfill for %s from client %s'
                          % (p.display_name(), c_client.url))
@@ -293,50 +288,80 @@ class ProfileBackfiller:
                               oldest=oldest,
                               authors=p.public_key)
 
-    def _backfill_followers(self, p:Profile, until=None):
-        # no follower backfill
-        if self._follow_until == 0:
-            logging.info('ProfileBackfiller::_backfill_profile _user_until is 0, no backfill requested')
-            return
-
-
+    def _get_authors(self, p: Profile,
+                     follow_follows=False):
+        """
+        returns pub_ks ok profiles p follows or if follow_follows is True then the of those they follow
+        excluding keys of the profiles p follows
+        :param p:
+        :param follow_follows:
+        :return:
+        """
         self._profile_handler.load_contacts(p)
         c_c: Contact
+        c_p: Profile
+        follow_keys = set([c_c.contact_public_key for c_c in p.contacts])
+        if follow_follows:
+            # force profiles to exist
+            self._profile_handler.get_profiles(follow_keys)
+            ret = []
+            for c_k in follow_follows:
+                c_p = self._profile_handler.get_pub_k(c_k)
+                if c_p:
+                    self._profile_handler.load_contacts(c_p)
+                    ret += [c_c.contact_public_key for c_c in c_p.contacts
+                            if c_c.contact_public_key not in follow_keys]
+
+        else:
+            ret = list(follow_keys)
+
+        return ret
+
+    def _backfill_followers(self, p: Profile, follow_follow=False):
+        until = self._follow_until
+        if follow_follow:
+            until = self._follow_follow_until
+
+        # no follower backfill
+        if until == 0:
+            logging.info('ProfileBackfiller::_backfill_followers until is 0, no backfill requested')
+            return
+
         c_newest = None
-        authors = []
+        authors = self._get_authors(p, follow_follow)
         # as far back as we want to fill
         oldest = None
         if until:
             oldest = datetime.now() - timedelta(days=until)
 
         for c_client in self._client:
-            for c_c in p.contacts:
-                c_pk = c_c.contact_public_key
+            for c_pk in self._get_authors(p):
                 p_newest = self._get_start_date(c_client, c_pk)
                 if c_newest is None or c_newest == p_newest:
                     c_newest = p_newest
                     authors.append(c_pk)
                 else:
-                    self._do_backfill(c_client,
-                                      authors=authors,
-                                      newest=c_newest,
-                                      oldest=oldest)
+                    self._do_backfill_chunked(c_client,
+                                              authors=authors,
+                                              newest=c_newest,
+                                              oldest=oldest)
                     authors = 0
                     c_newest = p_newest
 
-        # any still to do, will be all if their all on same start date
-        if authors:
-            self._do_backfill(c_client,
-                              authors=authors,
-                              newest=c_newest,
-                              oldest=oldest)
+            # any still to do, will be all if their all on same start date
+            if authors:
+                self._do_backfill_chunked(c_client,
+                                          authors=authors,
+                                          newest=c_newest,
+                                          oldest=oldest)
 
     def _backfill_user(self, p: Profile):
         # do our ourself
-        self._backfill_profile(p, until=self._user_until)
+        self._backfill_profile(p)
         # our follows
-        self._backfill_followers(p, until=self._follow_until)
+        self._backfill_followers(p, follow_follow=False)
         # folows of our follows
+        self._backfill_followers(p, follow_follow=True)
 
     def profile_update(self, n_profile: Profile, o_profile: Profile):
         # just linked to a profile, we'll start a backfill for this profile
