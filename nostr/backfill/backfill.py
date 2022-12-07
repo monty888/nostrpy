@@ -235,8 +235,8 @@ class ProfileBackfiller:
                                                                                         e))
                     time.sleep(1)
 
-                print('%s recieved %s events ' % (client.url,
-                                                  len(evts)))
+                logging.debug('%s recieved %s events ' % (client.url,
+                                                          len(evts)))
 
             c_start = c_end
             # update back fill time
@@ -249,7 +249,7 @@ class ProfileBackfiller:
 
                 self._settings.put(state_k, filled_to)
 
-        print('backfill is complete - %s' % client.url)
+        logging.info('ProfileBackfiller::event backfill is complete - %s' % client.url)
 
     def _do_backfill_chunked(self, client: Client, authors, newest: int, oldest: int):
         """
@@ -288,6 +288,44 @@ class ProfileBackfiller:
                               oldest=oldest,
                               authors=p.public_key)
 
+            self._backfill_dms(client=c_client,
+                               for_user=p)
+
+    def _backfill_dms(self, client: Client, for_user: Profile):
+        # we never give up on a chunk, we probably should fail out at somepoint...
+        got_chunk = False
+        while got_chunk is False:
+            try:
+                evts = client.query(
+                    [
+                        {
+                            'kinds': [Event.KIND_ENCRYPT],
+                            'authors': [for_user.public_key],
+                        }
+                    ],
+                    [
+                        {
+                            'kinds': [Event.KIND_ENCRYPT],
+                            '#p': [for_user.public_key]
+                        }
+                    ]
+                )
+                self._do_event(client, None, evts)
+                key = '%s.%s.dms' % (client.url,
+                                     for_user.public_key)
+                self._settings.put(key, 'true')
+
+                got_chunk = True
+
+            except Exception as e:
+                logging.debug('ProfileBackfiller::_backfill_dms: %s error fetching dms for %s - %s' % (client.url,
+                                                                                                       for_user.public_key,
+                                                                                                       e))
+                time.sleep(1)
+
+            logging.info('%s got dms for %s events ' % (client.url,
+                                                        len(evts)))
+
     def _get_authors(self, p: Profile,
                      follow_follows=False):
         """
@@ -304,13 +342,16 @@ class ProfileBackfiller:
         if follow_follows:
             # force profiles to exist
             self._profile_handler.get_profiles(follow_keys)
-            ret = []
-            for c_k in follow_follows:
+            ret = set([])
+            for c_k in follow_keys:
                 c_p = self._profile_handler.get_pub_k(c_k)
                 if c_p:
                     self._profile_handler.load_contacts(c_p)
-                    ret += [c_c.contact_public_key for c_c in c_p.contacts
-                            if c_c.contact_public_key not in follow_keys]
+                    for c_c in c_p.contacts:
+                        c_pub_k = c_c.contact_public_key
+                        if c_pub_k not in follow_keys and c_pub_k not in ret:
+                            ret.add(c_pub_k)
+            ret = list(ret)
 
         else:
             ret = list(follow_keys)
@@ -334,24 +375,29 @@ class ProfileBackfiller:
         if until:
             oldest = datetime.now() - timedelta(days=until)
 
+        authors_to_fetch = []
         for c_client in self._client:
-            for c_pk in self._get_authors(p):
+            for c_pk in authors:
+                # we already have older data
+                if c_newest and c_newest < oldest:
+                    continue
+
                 p_newest = self._get_start_date(c_client, c_pk)
                 if c_newest is None or c_newest == p_newest:
                     c_newest = p_newest
-                    authors.append(c_pk)
+                    authors_to_fetch.append(c_pk)
                 else:
                     self._do_backfill_chunked(c_client,
                                               authors=authors,
                                               newest=c_newest,
                                               oldest=oldest)
-                    authors = 0
+                    authors_to_fetch = []
                     c_newest = p_newest
 
             # any still to do, will be all if their all on same start date
             if authors:
                 self._do_backfill_chunked(c_client,
-                                          authors=authors,
+                                          authors=authors_to_fetch,
                                           newest=c_newest,
                                           oldest=oldest)
 

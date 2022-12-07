@@ -233,15 +233,15 @@ def run_web(clients,
             host: str = 'localhost',
             port: int = 8080,
             until: int = None,
-            until_me: int = 365,
+            until_me: int = None,
+            until_follow: int = 365,
+            until_follow_follow: int = 180,
             fill_size: int = 10):
 
     print('events until: %s' % (datetime.now()-timedelta(days=until)).date())
     # we'll persist events, not done automatically by nostrweb
     my_spam = ContentBasedDespam()
     start_time = datetime.now()
-    until_me = None
-    until_follows = 365
     my_settings = Settings(settings_store)
     until = get_until_days(my_settings, until)
 
@@ -277,6 +277,19 @@ def run_web(clients,
             ret[c_evt.kind].append(c_evt)
         return ret
 
+    def get_my_messages(evts: [Event]):
+        ret = []
+        c_evt: Event
+        c_p: Profile
+
+        my_profiles = my_peh.local_profiles()
+        for c_evt in evts:
+            for c_p in my_profiles:
+                if c_p.is_my_encrypt(c_evt):
+                    ret.append(c_evt)
+                    break
+        return ret
+
     def my_do_events(the_client: Client, sub_id:str, events: [Event]):
         Event.sort(events, inplace=True)
         events_by_kind = split_events(events)
@@ -294,7 +307,12 @@ def run_web(clients,
             elif c_kind in (Event.KIND_CHANNEL_CREATE, Event.KIND_CHANNEL_MESSAGE):
                 my_ceh.do_event(sub_id, kind_events, the_client.url)
 
-            evt_persist.do_event(sub_id, kind_events, the_client.url)
+            # for encrypted msgs we only keep those which we can decrypt, so either to or from
+            # accounts that we have
+            if c_kind == Event.KIND_ENCRYPT:
+                evt_persist.do_event(sub_id, get_my_messages(kind_events), the_client.url)
+            else:
+                evt_persist.do_event(sub_id, kind_events, the_client.url)
 
             # some extra pre caching
             # for each unique public_k import the profile/contact info
@@ -385,7 +403,8 @@ def run_web(clients,
                                             settings=my_settings,
                                             start_dt=p_fill_start_dt,
                                             user_until=until_me,
-                                            follow_until=until_follows,
+                                            follow_until=until_follow,
+                                            follow_follow_until=until_follow_follow,
                                             day_chunk=fill_size)
 
     def on_profile_update(n_profile: Profile,

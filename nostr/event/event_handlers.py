@@ -334,13 +334,14 @@ class NetworkedEventHandler(EventHandler):
         ret = {}
         complete = False
 
-        def _do_event(sub_id, evt, relay):
+        def _do_event(the_client: Client, sub_id: str, evts):
             nonlocal ret
-            ret[relay] = [c_evt.event_data() for c_evt in evt]
+            relay = the_client.url
+            ret[relay] = [c_evt.event_data() for c_evt in evts]
             c_evt: Event
-            self.do_event(sub_id, evt, relay)
+            self.do_event(sub_id, evts, relay)
             if self._on_fetch:
-                self._on_fetch(evt)
+                self._on_fetch(evts)
 
         def _complete():
             nonlocal complete

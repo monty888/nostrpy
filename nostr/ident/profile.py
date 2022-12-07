@@ -111,6 +111,15 @@ class Profile:
     #
     #     return self._followed_by
 
+    def is_my_encrypt(self, evt: Event):
+        """
+        return true if evt is a encrypted msg for this profile
+        :param evt: the NIP4 event
+        :return:
+        """
+        return evt.kind == Event.KIND_ENCRYPT and (evt.pub_key == self._pub_k
+                                                   or self._pub_k in evt.e_tags)
+
     def contacts_is_set(self):
         return self._contacts is not None
 

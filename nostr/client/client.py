@@ -284,7 +284,7 @@ class Client:
             nonlocal ret
             ret = events
             if do_event is not None:
-                Greenlet(util_funcs.get_background_task(do_event, sub_id, events, the_client.url)).start_later(0)
+                Greenlet(util_funcs.get_background_task(do_event, the_client, sub_id, events)).start_later(0)
             is_done = True
 
         def cleanup():
