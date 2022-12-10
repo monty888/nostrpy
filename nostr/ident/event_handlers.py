@@ -9,7 +9,7 @@ from gevent import Greenlet
 from functools import lru_cache
 import logging
 from nostr.ident.persist import ProfileStoreInterface
-from nostr.ident.profile import Profile, ProfileList, Contact, ContactList
+from nostr.ident.profile import Profile, ProfileList, Contact, ContactList, Keys
 from .persist import ProfileType
 from nostr.util import util_funcs
 from nostr.event.event import Event
@@ -336,7 +336,7 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
             pub_ks = [pub_ks]
         ret = super().get_profiles(pub_ks, create_missing=False)
         to_fetch = [k for k in pub_ks if ret.lookup_pub_key(k) is None
-                    and not k.replace(' ', '') == '']
+                    and Keys.is_key(k)]
 
         ret = ret.profiles
 

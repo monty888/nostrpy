@@ -1077,26 +1077,7 @@ APP.nostr.gui.event_view = function(){
         _goto = APP.nostr.goto;
 
     function get_event_parent(evt){
-        let parent = null,
-            tag;
-
-        // reactions not considered for ordering
-        if(evt.kind===7){
-            return null;
-        }
-
-        for(let j=0;j<evt.tags.length;j++){
-            tag = evt.tags[j];
-            if(tag[0]==='e'){
-                if(tag[1]!==undefined){
-                    // we have a parent
-                    parent = tag[1];
-                }
-                return parent;
-            }
-        }
-        // no parent
-        return null;
+        return evt.get_parent();
     };
 
     function create(args){
@@ -1165,7 +1146,7 @@ APP.nostr.gui.event_view = function(){
             note_content = _gui.get_note_content_for_render(render_note, _enable_media),
             preview_url,
             to_add = {
-                'is_parent' : the_note.is_parent,
+                'is_parent' : the_note.is_parent && !the_note.is_child && !the_note.missing_parent,
                 'missing_parent' : the_note.missing_parent,
                 'reaction_txt': the_note.interpretation,
                 'is_liked' : render_note.react_like,
@@ -1389,86 +1370,62 @@ APP.nostr.gui.event_view = function(){
             */
             let roots = {},
                 ret = [],
-                notes_arr_copy = [];
+                notes_arr_copy = [],
+                evt_lookup={};
 
             function add_children(evt){
-                // reverse the children so newest are first
-                evt.children.reverse();
-                evt.children.forEach(function(c_evt,j){
-                    c_evt.is_child = true;
+                if(evt.children===undefined){
+                    return;
+                }
+                evt.children.forEach((c_evt,i)=>{
                     ret.push(c_evt);
+                    if(c_evt.children!==undefined){
+                        add_children(c_evt);
+                    }
                 });
             }
 
-            // 1. look through all events and [] those that have the same parent
-            notes_arr.forEach(function(c_evt,i){
-                let tag,j,parent;
-                // everything is done on a copy of the event as we're going to add some of
-                // our own fields
-                c_evt = c_evt.copy();
+            //make a copy and a lookup
+            notes_arr.forEach((c_evt,i) =>{
+                let copy_evt = c_evt.copy();
+                notes_arr_copy.push(copy_evt);
+                evt_lookup[copy_evt.id] = copy_evt;
+            });
 
-                notes_arr_copy.push(c_evt);
-                parent = get_event_parent(c_evt);
 
-                if(parent!==null){
-                    if(roots[parent]===undefined){
-                        roots[parent] = {
-                            'children' : []
-                        }
+            // 1. look through all events, if we have it attach to their parent
+            notes_arr_copy.forEach((c_evt,i) => {
+                // null is unattached, we'll call this root
+                let parent_id = get_event_parent(c_evt) ?? 'root',
+                    parent_evt = evt_lookup[parent_id];
+
+                // we have a root to attach this event to
+                if(parent_evt!==undefined){
+                    parent_evt.is_parent = true;
+                    if(parent_evt.children===undefined){
+                        parent_evt.children = [];
                     }
-                    roots[parent].children.push(c_evt);
-                }else{
-                    if(roots[c_evt.id]!==undefined){
-                        roots[c_evt.id]['event'] = c_evt;
-                    }else{
-                        roots[c_evt.id] = {
-                            'event' : c_evt,
-                            'children': []
-                        }
-                    }
+                    c_evt.is_child = true;
+                    parent_evt.children.push(c_evt);
+                }else if(parent_id!=='root'){
+                    c_evt.missing_parent = true;
                 }
             });
 
-            // 3. now create the ordered version
-            notes_arr_copy.forEach(function(c_evt,i){
-                let parent = get_event_parent(c_evt);
+            //2. sort all the child arrays oldest to newest
+            notes_arr_copy.forEach((c_evt,i) =>{
+                if(c_evt.children!==undefined){
+                    c_evt.children.reverse();
+                }
+            });
 
-                // parent, draw it and any children
-                if(roots[c_evt.id]!==undefined && roots[c_evt.id].added!==true){
-                    if(roots[c_evt.id].children.length>0){
-                        c_evt.is_parent = true;
-                    }
-
+            // 3 add from notes_arr in order we want displayed on screen
+            notes_arr_copy.forEach((c_evt,i)=>{
+                if((c_evt.is_child===undefined)||(c_evt.missing_parent===true)){
                     ret.push(c_evt);
-                    add_children(roots[c_evt.id]);
-
-                    roots[c_evt.id].added=true;
-                // child of a parent, draw parent if we have it and all children
-                }else if(parent!==null && roots[parent].added!==true){
-                    // do we have parent event
-                    if(roots[parent].event){
-                        roots[parent].event.is_parent = true;
-                        ret.push(roots[parent].event);
-                    }
-                    add_children(roots[parent]);
-
-                    roots[parent].added=true;
+                    add_children(c_evt);
                 }
-
             });
-//            alert(order_arr.length)
-//            alert(_notes_arr.length)
-// 2. mark those missing a parent and those that are the last child we have
-            for(let j in roots){
-                if(roots[j].event===undefined){
-                    roots[j].children[0].missing_parent=true;
-//                    alert(roots[j].children[0].id);
-                }
-            }
-
-
-
-            // 4. switch note_arr for the order_arr we created
             return ret;
         }
 
@@ -4864,12 +4821,139 @@ APP.nostr.gui.request_private_key_modal = function(){
 
     }
 
-
-
     return {
         'show' : show
     }
 }();
+
+//APP.nostr.gui.request_private_key_modal = function(){
+//    /* modal window with yexy input for npub/hex public key of a profile which will then force server to go to relays
+//    to fetch the profile (unless it already has it locally)
+//    */
+//    let _uid = APP.nostr.gui.uid(),
+//        _gui = APP.nostr.gui;
+//
+//    function show(args){
+//        const content = [
+//        '{{> profile}}',
+//        '<div class="form-group">',
+//            '<label for="profile-key">profile key</label>',
+//            '<input autocomplete="off" class="form-control" id="profile_key" aria-describedby="profile key text input" placeholder="enter npub/hex public key for profile" value="" >',
+//            '<div id="pk_modal_error_con"></div>',
+//        '</div>'
+//        ].join('');
+//
+//
+//        let link_profile = args.link_profile || {},
+//            user_link_profile = null,
+//            on_link = args.on_link;
+//
+//        let priv_in,
+//            last_val,
+//            error_con,
+//            uid = APP.nostr.gui.uid(),
+//            link_given_profile =function(priv_k, pub_k){
+//                APP.remote.link_profile({
+//                    'priv_k' : priv_k,
+//                    'pub_k' : pub_k,
+//                    'success' : function(data){
+//                        if(data.error!==undefined){
+//                            error_con.html(data.error);
+//                        }else{
+//                            APP.nostr.gui.modal.hide();
+//                            APP.nostr.gui.notification({
+//                                'text' : APP.nostr.util.short_key(pub_k)+' linked successfully!!!'
+//                            });
+//                            if(typeof(on_link)==='function'){
+//                                on_link(data);
+//                            }
+//                        }
+//                    }
+//                });
+//            },
+//            link_priv_key_profile = function(key){
+//                APP.remote.load_profile({
+//                    'priv_k' : key,
+//                    'success' : function(data){
+//                        if(data.error!==undefined){
+//                            user_link_profile = null;
+//                            error_con.html(data.error);
+//                            APP.nostr.gui.modal.hide_ok();
+//                        }else{
+//                            error_con.html('');
+//                            user_link_profile = data;
+//                            data.picture = data.attrs.picture;
+//                            data.name = data.attrs.name;
+//                            data.about = data.attrs.about;
+//                            data.priv_k = key;
+//                            _('#'+uid+'-'+'pk-modal-profile').html(Mustache.render(APP.nostr.gui.templates.get('profile-list'),data));
+//                            APP.nostr.gui.modal.show_ok();
+//                        }
+//                    }
+//                })
+//            };
+//
+//        // set the modal as we want it
+//        let render_obj = _.extend({
+//                'uid' : uid,
+//            },link_profile);
+//        if(render_obj.pub_k===undefined){
+//            render_obj.pub_k = 'pk-modal-profile'
+//        }
+//
+//        APP.nostr.gui.modal.create({
+//            'title' : 'enter private key to link',
+//            'content' : Mustache.render(content,render_obj,{
+//                'profile' : APP.nostr.gui.templates.get('profile-list')
+//            }),
+//            'on_hide' : function(){
+//                if(user_link_profile!==null && APP.nostr.gui.modal.was_ok()){
+//                    link_given_profile(user_link_profile.priv_k, user_link_profile.pub_k);
+//                }
+//            },
+//            'ok_hide': true,
+//            'ok_text' : 'ok'
+//        });
+//
+//
+//        // show it
+//        APP.nostr.gui.modal.show();
+//
+//        // grab el
+//        priv_in = _('#private-key');
+//        error_con = _('#pk_modal_error_con');
+//
+//        priv_in.on('keyup', function(e){
+//            let val = e.target.value,
+//                p;
+//
+//            if(val!==last_val){
+//                if(/[0-9A-Fa-f]{64}/g.test(val)){
+//                    if(link_profile.pub_k!==undefined){
+//                        link_given_profile(val, link_profile.pub_k)
+//                    }else{
+//                        // no particular profile to link to, will look up the priv_k and show the user what
+//                        // we get for them to ok on
+//                        link_priv_key_profile(val)
+//                    }
+//                }else{
+//                    if(link_profile.pub_k===undefined){
+//                        user_link_profile = null;
+//                        APP.nostr.gui.modal.hide_ok();
+//                    }
+//                }
+//            }
+//
+//
+//            last_val = val
+//        });
+//
+//    }
+//    return {
+//        'show' : show
+//    }
+//}();
+
 
 
 

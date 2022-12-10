@@ -18,6 +18,7 @@
         _chunk_size = 100,
         _my_tabs,
         _filter_but,
+        _fetch_but,
         _tab_objs = [
             {
                 'title' : 'people',
@@ -35,11 +36,16 @@
             }
         ],
         _tool_html = [
-            '<div class="input-group mb-2" >',
+            '<div class="input-group mb-3" >',
                 '<input style="max-width:10em" placeholder="search" type="text" class="form-control" id="search-in">',
-                '<button disabled style="padding-top:0px" id="filter_but" type="button" class="btn btn-primary" >' +
+                '<button disabled style="padding-top:0px;margin-right:0px;" id="filter_but" type="button" class="btn btn-primary" >' +
                 '<svg class="nbi-btn" >',
                     '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#filter-square"/>',
+                '</svg>',
+                '</button>',
+                '<button style="padding-top:0px;" id="fetch_but" type="button" class="btn btn-primary" >' +
+                '<svg class="nbi-btn" >',
+                    '<use xlink:href="/bootstrap_icons/bootstrap-icons.svg#plus-circle-fill"/>',
                 '</svg>',
                 '</button>',
             '</span>'
@@ -234,6 +240,21 @@
 
                 });
             }
+
+            _fetch_but = _('#fetch_but');
+            _fetch_but.on('click', (e)=>{
+                let c_tab = _my_tabs.get_selected_index();
+                if(c_tab===0){
+                    alert('fetch profile');
+//                    APP.nostr.gui.profile_search_filter_modal.show(args);
+                }else{
+                    alert('fetch channel');
+//                    APP.nostr.gui.channel_search_filter_modal.show(args);
+                }
+
+            });
+
+
         }
 
         function init_search(){

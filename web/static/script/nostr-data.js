@@ -1,3 +1,5 @@
+'use strict';
+
 APP.nostr.data.state = function(){
     // todo
 
@@ -504,7 +506,8 @@ APP.nostr.data.profiles = function(){
                 load_start_count = 0,
                 // those we need to load for ourself
                 load_arr = [],
-                p_slot;
+                p_slot,
+                p;
 
             _pub_ks.forEach(function(pub_k){
                 p_slot = _lookup[pub_k];
@@ -679,30 +682,68 @@ APP.nostr.data.local_profiles = function(){
 */
 APP.nostr.data.nostr_event = function(event){
     const TEXT = 1,
+        REACTION = 7,
         ENCRYPT = 4;
 
     let _data = event;
 
+    function get_tags_type(name){
+        let ret = [];
+        _data.tags.forEach((tag,i) =>{
+            if(tag.length>1 && tag[0]===name){
+                ret.push(tag)
+            }
+        });
+        return ret;
+    }
+
+    function get_parent(){
+        // reactions not considered for ordering
+        if(_data.kind===REACTION){
+            return null;
+        }
+        let ret = null,
+            e_tags = get_tags_type('e'),
+            c_tag;
+        // original style to fullback on, the parent is the first mentioned e tag
+        if(e_tags.length>0){
+            ret = e_tags[0][1];
+        }
+
+        // see if we can do better
+        for(let i=0;i<e_tags.length;i++){
+            c_tag = e_tags[i];
+            // root, if multiple we'll use the last one
+            if(c_tag[3]==='root'){
+                ret = c_tag[1];
+            // reply is our preferred match so we'll exit now
+            }else if(c_tag[3]==='reply'){
+                ret = c_tag[1];
+                break;
+            }
+        }
+        return ret;
+    }
+
     function get_tag_values(name, test_func, break_on_match){
         let ret = [],
-            tags = _data.tags,
+            tags = get_tags_type(name),
             is_match,
+            c_tag,
             val;
         break_on_match = break_on_match===undefined ? false : break_on_match;
 
         for(let i=0;i<tags.length;i++){
             c_tag = tags[i];
-            if(c_tag.length>1 && c_tag[0]===name){
-                is_match = true;
-                val = c_tag[1];
-                if(typeof(test_func)==='function'){
-                    is_match = test_func(val);
-                }
-                if(is_match){
-                    ret.push(val);
-                    if(break_on_match){
-                        break;
-                    }
+            is_match = true;
+            val = c_tag[1];
+            if(typeof(test_func)==='function'){
+                is_match = test_func(val);
+            }
+            if(is_match){
+                ret.push(val);
+                if(break_on_match){
+                    break;
                 }
             }
         }
@@ -719,11 +760,12 @@ APP.nostr.data.nostr_event = function(event){
         is_encrypt(){
             return _data.kind === ENCRYPT;
         },
-        'get_tag_values' : get_tag_values,
-//        get_p_tag_values(test_func, break_on_match){
-//            return get_p_tag_values(test_func, break_on_match);
-//        },
-        'get_first_tag_value' : get_first_tag_value,
+        get_tag_values(name, test_func, break_on_match){
+            return get_tag_values(name, test_func, break_on_match)
+        },
+        get_first_tag_value(name, test_func){
+            return get_first_tag_value(name, test_func);
+        },
         get_first_p_tag_value(test_func){
             return get_first_tag_value('p', test_func);
         },
@@ -732,8 +774,10 @@ APP.nostr.data.nostr_event = function(event){
         },
         copy(){
             return APP.nostr.data.nostr_event(_.extend({},_data));
+        },
+        get_parent(){
+            return get_parent();
         }
-
     }, _data);
 
     if(_data.react_event){
