@@ -585,7 +585,7 @@ APP.nostr.data.profiles = function(){
         // clean the profile obj to what we expect
         _clean_profile(p);
 
-        c_val = _lookup[p.pub_k] = {
+        let c_val = _lookup[p.pub_k] = {
             'profile' : p,
             'state': 'loaded'
         };

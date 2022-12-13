@@ -179,7 +179,6 @@
                     'profile': _profile,
                     'show_follows': false
                 });
-
                 // hack to make contact profiles available by lookup, should be transparent to use really
                 APP.nostr.data.profiles.put(_profile);
                 _profile.contacts.forEach(function(c_p){
@@ -191,6 +190,7 @@
                     follow_tab= _my_tab.get_tab(1);
 
                 // create list objs
+
                 _contacts_list = APP.nostr.gui.profile_list.create({
                     'con': contact_tab['content-con'],
                     'data': _profile.contacts,
@@ -201,8 +201,6 @@
                     'data': _profile.followed_by,
                     'view_type': 'followers'
                 });
-
-
             }
         });
 
