@@ -10,7 +10,7 @@ some stuff written in python for the nostr protocol developed against python v3.
 # Install
 > cd nostrpy  
 > python3 -m venv venv  
-> source venv/bin/activate
+> source venv/bin/activate  
 > pip install -r requirements.txt
 
 ## Web interface ##
