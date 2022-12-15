@@ -15,7 +15,8 @@ APP.nostr.data.state = function(){
             // not stored for session
             if(ret===null){
                 // did we get in the /state/js that the server sent us
-                if(APP.nostr.data.server_state[name]!==undefined){
+                let server_state = APP.nostr.data.server_state;
+                if(server_state!=undefined && server_state[name]!==undefined){
                     ret = APP.nostr.data.server_state[name];
                 // else default val or null
                 }else{
@@ -685,7 +686,8 @@ APP.nostr.data.nostr_event = function(event){
         REACTION = 7,
         ENCRYPT = 4;
 
-    let _data = event;
+    let _data = event,
+        _links;
 
     function get_tags_type(name){
         let ret = [];
@@ -697,31 +699,71 @@ APP.nostr.data.nostr_event = function(event){
         return ret;
     }
 
+    // TO GO?
     function get_parent(){
-        // reactions not considered for ordering
-        if(_data.kind===REACTION){
-            return null;
+        get_links();
+        return _links['reply'] || _links['root'];
+    }
+
+    function get_root(){
+        get_links();
+        return _links['root'];
+    }
+
+    function get_reply(){
+        get_links();
+        return _links['reply'];
+    }
+
+
+    /*
+        from the event tags returns information for this event in a way we can use more easily
+        {
+            'root': id      - topmost event if not set we are a root event not referring linking to anyother
+            'reply': id     - id that we're replying to if any, may match root if were only 1 deep
+            'mentions': []  - events tagged as mention as yet we don't do anything special with them
         }
-        let ret = null,
-            e_tags = get_tags_type('e'),
-            c_tag;
-        // original style to fullback on, the parent is the first mentioned e tag
-        if(e_tags.length>0){
-            ret = e_tags[0][1];
+    */
+    function get_links(){
+        // already done
+        if(_links!==undefined){
+            return _links;
         }
 
-        // see if we can do better
+        let ret = {
+                'root': null,
+                'reply': null,
+                'mentions': []
+            },
+            e_tags = get_tags_type('e'),
+            //p_tags = get_tags_type('e'), future?
+            c_tag;
+
+        // fullback original style first e is root/parent (as long as not defined as mention)
+        // only root exists in this case, reply to event that was under another  exist in this case...
+        if(e_tags.length>0 && e_tags[0][2]!=='mention'){
+            ret['root'] = e_tags[0][1];
+            ret['reply'] = e_tags[0][1];
+        }
+
+        // see if we can do better, note where multiple the last root/reply is the one used
+        // good clients should do that...
         for(let i=0;i<e_tags.length;i++){
             c_tag = e_tags[i];
             // root, if multiple we'll use the last one
             if(c_tag[3]==='root'){
-                ret = c_tag[1];
+                ret['root'] = c_tag[1];
             // reply is our preferred match so we'll exit now
             }else if(c_tag[3]==='reply'){
-                ret = c_tag[1];
-                break;
+                ret['root'] = c_tag[1];
+            }else if(c_tag[3]==='mention'){
+                ret['mentions'].push(c_tag[1]);
             }
         }
+
+        // we won't look through tags
+        _links = ret;
+
         return ret;
     }
 
@@ -777,7 +819,17 @@ APP.nostr.data.nostr_event = function(event){
         },
         get_parent(){
             return get_parent();
+        },
+        get_links(){
+            return get_links();
+        },
+        get_root(){
+            return get_root();
+        },
+        get_reply(){
+            return get_reply();
         }
+
     }, _data);
 
     if(_data.react_event){

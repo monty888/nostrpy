@@ -10,8 +10,10 @@
         _params = new URLSearchParams(window.location.search),
         // event we want to look at
         _event_id = _params.get('id'),
-        // where we clicked to this page and the root wasn't visible we add it so
-        // hopefully to put the post in somesort of context
+        // optional reply and root, these should be those on event_id e_tags
+        // we do like this instead of just flagging load _reply/root because this means we can just fetch
+        // via standard filters (or via 2 requests)
+        _reply_id = _params.get('reply'),
         _root_id = _params.get('root'),
         // main container where we'll draw out the events
         _main_con,
@@ -20,27 +22,42 @@
         _my_filter;
 
     function create_filter(){
-        let filter = [
+            // events we'll fetch directly
+        let ids = [_event_id],
+            // events that have these events in thier tags will also be fetched
+            tagged_ids = [_event_id],
+            // our nostr filter
+            filter = [
             {
                 'kinds' : [1,4],
-                'ids' : [_event_id]
+                'ids' : ids
             },
             {
                 'kinds' : [1,4],
-                '#e' : [_event_id]
+                '#e' : tagged_ids
             }
         ];
 
-        if(_root_id!==null){
-            filter.push({
-                'kinds' : [1,4],
-                'ids' : [_root_id]
-            });
-            filter.push({
-                'kinds' : [1,4],
-                '#e' : [_root_id]
-            });
+        if(_reply_id!==null){
+            ids.push(_reply_id);
+            tagged_ids.push(_reply_id);
         }
+
+        if(_root_id!==null){
+            ids.push(_root_id);
+            tagged_ids.push(_root_id);
+        }
+
+//        if(_root_id!==null){
+//            filter.push({
+//                'kinds' : [1,4],
+//                'ids' : [_root_id]
+//            });
+//            filter.push({
+//                'kinds' : [1,4],
+//                '#e' : [_root_id]
+//            });
+//        }
         _my_filter = APP.nostr.data.filter.create(filter);
     }
 

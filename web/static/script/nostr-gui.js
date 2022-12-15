@@ -1077,6 +1077,8 @@ APP.nostr.gui.event_view = function(){
         _goto = APP.nostr.goto;
 
     function get_event_parent(evt){
+        evt.get_links();
+
         return evt.get_parent();
     };
 
@@ -1373,57 +1375,102 @@ APP.nostr.gui.event_view = function(){
                 notes_arr_copy = [],
                 evt_lookup={};
 
-            function add_children(evt){
-                if(evt.children===undefined){
-                    return;
-                }
-                evt.children.forEach((c_evt,i)=>{
-                    ret.push(c_evt);
-                    if(c_evt.children!==undefined){
-                        add_children(c_evt);
-                    }
-                });
-            }
-
-            //make a copy and a lookup
+            // copy events and make a lookup
             notes_arr.forEach((c_evt,i) =>{
                 let copy_evt = c_evt.copy();
-                notes_arr_copy.push(copy_evt);
                 evt_lookup[copy_evt.id] = copy_evt;
             });
 
+            function get_parent_id(evt){
+                if(evt.is_stubb===true){
+                    return null;
+                }
 
-            // 1. look through all events, if we have it attach to their parent
+                let root_id = evt.get_root(),
+                    reply_id = evt.get_reply(),
+                    ret = null;
+
+                if(reply_id!==null){
+                    ret = reply_id;
+                    if(evt_lookup[reply_id]===undefined){
+                        if(evt_lookup[root_id]!==undefined){
+                            ret = root_id
+                        }
+                    }
+                }
+                return ret;
+            }
+
+            // make the copy arr with added stubb events for missing parents
+            notes_arr.forEach((c_evt,i) =>{
+                let parent_id=get_parent_id(c_evt),
+                    stubb_evt;
+                // use the copy from our lookup
+                c_evt = evt_lookup[c_evt.id];
+                if(parent_id!==null && evt_lookup[parent_id]===undefined){
+                    stubb_evt = {
+                        'id': parent_id,
+                        'is_stubb': true
+                    };
+                    evt_lookup[parent_id] = stubb_evt;
+                    notes_arr_copy.push(stubb_evt);
+                };
+                notes_arr_copy.push(c_evt);
+            });
+
+            // look through all events, if we have it attach to their parent, if we don't have their
             notes_arr_copy.forEach((c_evt,i) => {
                 // null is unattached, we'll call this root
-                let parent_id = get_event_parent(c_evt) ?? 'root',
-                    parent_evt = evt_lookup[parent_id];
+                let parent_id = get_parent_id(c_evt),
+                    parent_evt;
 
                 // we have a root to attach this event to
-                if(parent_evt!==undefined){
+                if(parent_id!==null){
+                    parent_evt = evt_lookup[parent_id];
                     parent_evt.is_parent = true;
+                    parent_evt.newest = c_evt.created_at;
                     if(parent_evt.children===undefined){
                         parent_evt.children = [];
                     }
                     c_evt.is_child = true;
                     parent_evt.children.push(c_evt);
-                }else if(parent_id!=='root'){
-                    c_evt.missing_parent = true;
                 }
             });
 
-            //2. sort all the child arrays oldest to newest
+            // sort all the child arrays oldest to newest
             notes_arr_copy.forEach((c_evt,i) =>{
                 if(c_evt.children!==undefined){
                     c_evt.children.reverse();
+                    if(c_evt.is_stubb===true){
+                        c_evt.children[0].missing_parent=true;
+                    }
                 }
             });
 
-            // 3 add from notes_arr in order we want displayed on screen
-            notes_arr_copy.forEach((c_evt,i)=>{
-                if((c_evt.is_child===undefined)||(c_evt.missing_parent===true)){
-                    ret.push(c_evt);
-                    add_children(c_evt);
+            // add from notes_arr in order we want displayed on screen
+            let _added_nodes = {};
+
+            function _add_node(evt){
+                if(_added_nodes[evt.id]!==undefined){
+                    return;
+                }
+                _added_nodes[evt.id] = true;
+
+                if(evt.is_stubb!==true){
+                    ret.push(evt);
+                }
+
+                if(evt.children!==undefined){
+                    evt.children.forEach(_add_node)
+                }
+            }
+
+            // we draw with braches that have newest hoiseted to the top
+            notes_arr_copy.forEach((c_evt)=>{
+                if(!c_evt.is_child){
+                    _add_node(c_evt);
+                }else{
+                    _add_node(evt_lookup[get_parent_id(c_evt)]);
                 }
             });
             return ret;
