@@ -312,7 +312,6 @@ def run_watch(config):
         # note in the case of wss://rsslay.fiatjaf.com it looks like author is required to receive anything
         if the_client.url == 'wss://rsslay.fiatjaf.com':
             e_filter['authors'] = [p.public_key for p in view_profiles]
-
         the_client.subscribe(handlers=[profile_handler, my_printer], filters=[
             p_filter,
             e_filter

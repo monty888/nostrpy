@@ -30,11 +30,9 @@ class ProfileEventHandler:
 
     @staticmethod
     def import_profile_info(profile_handler: ProfileEventHandler, for_keys):
-        # some relays limit the n of keys so keep this reasonable
-        for k_chunk in util_funcs.chunk(list(for_keys), 250):
-            ps = profile_handler.get_profiles(k_chunk)
-            profile_handler.load_contacts(ps)
-            profile_handler.load_followers(ps)
+        ps = profile_handler.get_profiles(for_keys)
+        profile_handler.load_contacts(ps)
+        profile_handler.load_followers(ps)
 
     def __init__(self,
                  profile_store: ProfileStoreInterface,
@@ -277,14 +275,20 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
         if isinstance(keys, str):
             keys = keys.split(',')
 
-        evts = self._client.query({
-            'kinds': [Event.KIND_META],
-            'authors': keys
-        })
         ret = []
-        if evts:
-            ret = [Profile.from_event(c_evt) for c_evt in evts]
-            Greenlet(util_funcs.get_background_task(self._do_profiles_update, evts)).start_later(0)
+
+        if keys:
+            # some relays limit the n of keys, but seems to work if we just use mutiple qs
+            q = []
+            for k_chunk in util_funcs.chunk(keys, 250):
+                q.append({
+                    'kinds': [Event.KIND_META],
+                    'authors': k_chunk
+                })
+            evts = self._client.query(q)
+            if evts:
+                ret = [Profile.from_event(c_evt) for c_evt in evts]
+                Greenlet(util_funcs.get_background_task(self._do_profiles_update, evts)).start_later(0)
 
         return ret
 
