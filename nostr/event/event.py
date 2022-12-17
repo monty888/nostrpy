@@ -169,7 +169,7 @@ class Event:
         # sort events newest to oldest
         def sort_func(evt: Event):
             if isinstance(evt, Event):
-                ret = evt.created_at
+                ret = evt.created_at_ticks
             else:
                 ret = evt['created_at']
             return ret
@@ -221,7 +221,6 @@ class Event:
             self._created_at = util_funcs.date_as_ticks(datetime.now())
         elif isinstance(self._created_at, datetime):
             self._created_at = util_funcs.date_as_ticks(self._created_at)
-
 
         self._content = content
 

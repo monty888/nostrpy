@@ -318,7 +318,7 @@ def run_web(clients,
             # for each unique public_k import the profile/contact info
             if c_kind != Event.KIND_META:
                 ProfileEventHandler.import_profile_info(profile_handler=my_peh,
-                                                        for_keys={c_evt.pub_key for c_evt in kind_events})
+                                                        for_keys=list({c_evt.pub_key for c_evt in kind_events}))
 
             # for each channel msg import the channel meta
             if c_kind == Event.KIND_CHANNEL_MESSAGE:
@@ -361,9 +361,11 @@ def run_web(clients,
                 # fallback first run an no relay defined... hardcoded relays
                 # change this so that just relay list is pulled from hardcoded and then user has to select
                 # probably this should just be flag for those that know what they're doing
-                ret = ['wss://relay.damus.io',
-                       'wss://nostr-pub.wellorder.net/']
-                # ret = ['wss://relay.damus.io']
+                # ret = ['wss://relay.damus.io',
+                #        'wss://nostr-pub.wellorder.net/']
+                # ret = ['wss://relay.nostr.info']
+                ret = ['wss://nostr.zebedee.cloud']
+                # ret = ['ws://localhost:8081']
 
         return ret
 
@@ -550,10 +552,30 @@ if __name__ == "__main__":
     # ps = pstore.select_profiles()
     # p: Profile
     #
-    # with ClientPool('wss://relay.damus.io') as c:
-    #     # evt = c.query({
-    #     #     'kinds': [Event.KIND_CHANNEL_CREATE]
-    #     # }, timeout=1)
+    with ClientPool('wss://relay.nostr.info') as c:
+        followers = c.query({
+            'kinds': [Event.KIND_CONTACT_LIST],
+            '#p': ['3efdaebb1d8923ebd99c9e7ace3b4194ab45512e2be79c1b7d68d9243e0d2681']
+        })
+
+        ufs = {ContactList.from_event(c).owner_public_key for c in followers}
+
+        # this will timeout
+        metas1 = c.query({
+            'kinds': [Event.KIND_META],
+            'authors': list(ufs)
+        }, timeout=5)
+
+        # this will return ok in damus
+        q = []
+        for k in util_funcs.chunk(list(ufs),250):
+            q.append({
+                'kinds': [Event.KIND_META],
+                'authors': k
+            })
+        metas2 = c.query(q, timeout=5)
+        print(len(metas1) == len(metas2))
+
     #
     #     from nostr.channels.persist import SQLiteSQLChannelStore
     #     my_ceh = NetworkedChannelEventHandler(SQLiteSQLChannelStore(WORK_DIR + 'nostrpy-client.db'),client=c)

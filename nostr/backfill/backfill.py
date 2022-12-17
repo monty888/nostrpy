@@ -38,7 +38,7 @@ class RangeBackfill:
         self._start_dt = start_dt
         self._until_days = until_ndays
         self._day_chunk = day_chunk
-
+        self._timeout = 30
         self._do_event = do_event
         self._profile_handler = profile_handler
 
@@ -86,7 +86,7 @@ class RangeBackfill:
                             'since': util_funcs.date_as_ticks(c_end),
                             'until': util_funcs.date_as_ticks(c_start)
                         }
-                    ])
+                    ], timeout=self._timeout)
                     # just incase make sure we have newest first, mostly we don't care but _import_channel_info
                     # wants sorted newest to oldest
                     Event.sort(evts, inplace=True)
@@ -102,8 +102,8 @@ class RangeBackfill:
                                                                                         e))
                     time.sleep(1)
 
-                print('%s recieved %s events ' % (self._client.url,
-                                                  len(evts)))
+            print('%s recieved %s events ' % (self._client.url,
+                                              len(evts)))
 
             c_start = c_end
             # update back fill time
@@ -129,6 +129,7 @@ class ProfileBackfiller:
         self._settings = settings
         self._day_chunk = day_chunk
         self._start_dt = start_dt
+        self._timeout = 30
 
         def _get_max(a,b):
             ret = a
@@ -223,10 +224,12 @@ class ProfileBackfiller:
 
                     c_query[0]['authors'] = authors
 
-                    evts = client.query(filters=c_query)
+                    evts = client.query(filters=c_query, timeout=self._timeout)
                     self._do_event(client, None, evts)
 
                     got_chunk = True
+                    logging.debug('%s recieved %s events ' % (client.url,
+                                                              len(evts)))
 
                 except Exception as e:
                     logging.debug('do_backfill: %s error fetching range %s - %s, %s' % (client.url,
@@ -235,8 +238,7 @@ class ProfileBackfiller:
                                                                                         e))
                     time.sleep(1)
 
-                logging.debug('%s recieved %s events ' % (client.url,
-                                                          len(evts)))
+
 
             c_start = c_end
             # update back fill time
@@ -260,7 +262,7 @@ class ProfileBackfiller:
         :param oldest:
         :return:
         """
-        for c_authors in util_funcs.chunk(authors,250):
+        for c_authors in util_funcs.chunk(authors, 250):
             self._do_backfill(client=client,
                               authors=c_authors,
                               newest=newest,

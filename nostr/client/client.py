@@ -195,7 +195,7 @@ class Client:
         logging.debug('Client::subscribe - %s', the_req)
 
         # caller only passed in single handler
-        if not hasattr(handlers, '__iter__'):
+        if handlers and not hasattr(handlers, '__iter__'):
             handlers = [handlers]
         self._subs[sub_id] = {
             'handlers': handlers,
@@ -248,10 +248,16 @@ class Client:
         # if subscribed, should we error if unknown sub_id?
         # FIXME: this probably needs to be wrapped in a lock
         if sub_id in self._subs:
-            self._ws.send(json.dumps(['CLOSE', sub_id]))
+            try:
+                self._ws.send(json.dumps(['CLOSE', sub_id]))
+                self._reset_status()
+            except WebSocketConnectionClosedException as we:
+                logging.debug('Client::unsubscribe - error unsubscribing %s - %s' % (sub_id, we))
+
+            # remove ths sub our side anyhow
             del self._subs[sub_id]
-            self._reset_status()
-        self._reset_status()
+
+
 
     def publish(self, evt: Event):
         if self.write:
@@ -322,7 +328,8 @@ class Client:
                 self._do_events(sub_id, message)
         elif type == 'NOTICE':
             # creator should probably be able to suppliy a notice handler
-            logging.debug('NOTICE!! %s' % sub_id)
+            logging.debug('NOTICE!! %s - %s' % (sub_id,
+                                                message))
         elif type == 'EOSE':
             # if relay support nip15 you get this event after the relay has sent the last stored event
             # at the moment a single function but might be better to add as option to subscribe
@@ -501,6 +508,7 @@ class Client:
 
     def wait_connect(self):
         while not self.connected:
+            print('waiting connection...')
             time.sleep(0.1)
 
     # so where appropriate can use with syntax, exit function probably needs to do more...

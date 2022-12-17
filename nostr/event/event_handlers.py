@@ -417,8 +417,7 @@ class NetworkedEventHandler(EventHandler):
                 Event.sort(r_evts, inplace=True)
                 # allow 2 hours out for clocks, maybe they'll
                 ret = r_evts[0]['created_at'] - 60*60*2
-            except KeyError:
-                print('what the actual fuck')
+            except KeyError as ke:
                 pass
 
             return ret

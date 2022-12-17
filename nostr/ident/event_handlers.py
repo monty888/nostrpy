@@ -30,9 +30,10 @@ class ProfileEventHandler:
 
     @staticmethod
     def import_profile_info(profile_handler: ProfileEventHandler, for_keys):
-        ps = profile_handler.get_profiles(for_keys)
-        profile_handler.load_contacts(ps)
-        profile_handler.load_followers(ps)
+        for chunk_keys in util_funcs.chunk(for_keys, 250):
+            ps = profile_handler.get_profiles(chunk_keys)
+            profile_handler.load_contacts(ps)
+            profile_handler.load_followers(ps)
 
     def __init__(self,
                  profile_store: ProfileStoreInterface,
@@ -265,6 +266,7 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
                  max_insert_batch=500):
 
         self._client = client
+        self._timeout = 5
         super().__init__(profile_store=profile_store,
                          on_profile_update=on_profile_update,
                          on_contact_update=on_contact_update,
@@ -285,7 +287,7 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
                     'kinds': [Event.KIND_META],
                     'authors': k_chunk
                 })
-            evts = self._client.query(q)
+            evts = self._client.query(q, timeout=self._timeout)
             if evts:
                 ret = [Profile.from_event(c_evt) for c_evt in evts]
                 Greenlet(util_funcs.get_background_task(self._do_profiles_update, evts)).start_later(0)
@@ -297,14 +299,21 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
         if isinstance(keys, str):
             keys = keys.split(',')
 
-        evts = self._client.query({
-            'kinds': [Event.KIND_CONTACT_LIST],
-            'authors': keys
-        })
         ret = []
-        if evts:
-            ret = [ContactList.from_event(c_evt) for c_evt in evts]
-            Greenlet(util_funcs.get_background_task(self._do_contacts_update, evts)).start_later(0)
+        if keys:
+            # some relays limit the n of keys, but seems to work if we just use mutiple qs
+            q = []
+            for k_chunk in util_funcs.chunk(keys, 250):
+                q.append({
+                    'kinds': [Event.KIND_CONTACT_LIST],
+                    'authors': k_chunk
+                })
+
+            evts = self._client.query(q, timeout=self._timeout)
+
+            if evts:
+                ret = [ContactList.from_event(c_evt) for c_evt in evts]
+                Greenlet(util_funcs.get_background_task(self._do_contacts_update, evts)).start_later(0)
 
         return ret
 
@@ -312,17 +321,24 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
         if isinstance(keys, str):
             keys = keys.split(',')
 
-        evts = self._client.query({
-            'kinds': [Event.KIND_CONTACT_LIST],
-            '#p': keys
-        })
+        # as meta and follows chunk
         ret = []
-        if evts:
-            evts = Event.latest_events_only(evts)
-            # we'll be returning a list of pub_ks
-            ret = [ContactList.from_event(c_evt) for c_evt in evts]
-            # think it's better not to update contacts list here
-            # Greenlet(util_funcs.get_background_task(self._do_contacts_update, evts)).start_later(0)
+        if keys:
+            q = []
+            for k_chunk in util_funcs.chunk(keys, 250):
+                q.append({
+                    'kinds': [Event.KIND_CONTACT_LIST],
+                    '#p': k_chunk
+                })
+
+            evts = self._client.query(q, timeout=self._timeout)
+
+            if evts:
+                evts = Event.latest_events_only(evts)
+                # we'll be returning a list of pub_ks
+                ret = [ContactList.from_event(c_evt) for c_evt in evts]
+                # think it's better not to update contacts list here
+                # Greenlet(util_funcs.get_background_task(self._do_contacts_update, evts)).start_later(0)
 
         return ret
 
