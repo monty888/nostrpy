@@ -191,7 +191,7 @@ class EventHandler:
 
         def _use_event(the_evt):
             ret = the_evt
-            if the_evt['kind'] == Event.KIND_REACTION and the_evt['react_event']:
+            if the_evt['kind'] == Event.KIND_REACTION and 'react_event' in the_evt:
                 ret = the_evt['react_event']
             return ret
 

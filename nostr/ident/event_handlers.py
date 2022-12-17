@@ -31,7 +31,7 @@ class ProfileEventHandler:
     @staticmethod
     def import_profile_info(profile_handler: ProfileEventHandler, for_keys):
         for chunk_keys in util_funcs.chunk(for_keys, 250):
-            ps = profile_handler.get_profiles(chunk_keys)
+            ps = profile_handler.get_profiles(chunk_keys, create_missing=False)
             profile_handler.load_contacts(ps)
             profile_handler.load_followers(ps)
 

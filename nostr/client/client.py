@@ -198,6 +198,9 @@ class Client:
         # caller only passed in single handler
         if handlers and not hasattr(handlers, '__iter__'):
             handlers = [handlers]
+        else:
+            handlers = []
+
         self._subs[sub_id] = {
             'handlers': handlers,
             # if we have eose function then the caller will receive all stored events via the EOSE func
@@ -248,13 +251,14 @@ class Client:
     def unsubscribe(self, sub_id):
         # if subscribed, should we error if unknown sub_id?
         # FIXME: this probably needs to be wrapped in a lock
-        if sub_id in self._subs:
-            try:
-                self._ws.send(json.dumps(['CLOSE', sub_id]))
-                self._reset_status()
-            except WebSocketConnectionClosedException as we:
-                logging.debug('Client::unsubscribe - error unsubscribing %s - %s' % (sub_id, we))
 
+        try:
+            self._ws.send(json.dumps(['CLOSE', sub_id]))
+            self._reset_status()
+        except WebSocketConnectionClosedException as we:
+            logging.debug('Client::unsubscribe - error unsubscribing %s - %s' % (sub_id, we))
+
+        if sub_id in self._subs:
             # remove ths sub our side anyhow
             del self._subs[sub_id]
 
@@ -336,6 +340,7 @@ class Client:
             # at the moment a single function but might be better to add as option to subscribe
             if not self._have_sub(sub_id):
                 logging.debug('Client::_on_message EOSE event for unknown sub_id?!??!! - %s' % sub_id)
+                self.unsubscribe(sub_id)
 
             # done in thread because greenlets don't work here for some reason...
             # eose defined for this sub
@@ -509,6 +514,9 @@ class Client:
         self._run = False
         if self._ws:
             self._ws.close()
+        self._state = RunState.stopped
+        self._ws = None
+        self._is_connected = False
 
     def wait_connect(self):
         while not self.connected:
@@ -802,7 +810,7 @@ class ClientPool:
         self._state = RunState.stopping
         for c_client in self:
             c_client.end()
-        self._state = RunState.stopping
+        self._state = RunState.stopped
 
     def subscribe(self, sub_id=None, handlers=None, filters={}):
         for c_client in self:

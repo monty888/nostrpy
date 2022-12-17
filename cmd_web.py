@@ -314,8 +314,7 @@ def run_web(clients,
             else:
                 evt_persist.do_event(sub_id, kind_events, the_client.url)
 
-            # some extra pre caching
-            # for each unique public_k import the profile/contact info
+            # is this ok to do?!?!?
             if c_kind != Event.KIND_META:
                 ProfileEventHandler.import_profile_info(profile_handler=my_peh,
                                                         for_keys=list({c_evt.pub_key for c_evt in kind_events}))
@@ -362,10 +361,12 @@ def run_web(clients,
                 # change this so that just relay list is pulled from hardcoded and then user has to select
                 # probably this should just be flag for those that know what they're doing
                 # ret = ['wss://relay.damus.io',
-                #        'wss://nostr-pub.wellorder.net/']
+                #        'wss://nostr-pub.wellorder.net/',
+                #        'wss://nostr.zebedee.cloud']
                 # ret = ['wss://relay.nostr.info']
-                ret = ['wss://nostr.zebedee.cloud']
-                # ret = ['ws://localhost:8081']
+                # ret = ['wss://nostr.zebedee.cloud']
+                ret = ['wss://relay.nostr.info', 'wss://nostr.zebedee.cloud']
+                # ret = ['wss://relay.damus.io']
 
         return ret
 
@@ -457,7 +458,7 @@ def run():
     # default we'll fetch any event back to this point
     until = 365
     # backfill chunk sizes, events wll be fetched in fill_size days back until max_until
-    fill_size = 90
+    fill_size = 10
     # backfill rescan starts from here if not supplied it starts from the oldest event/kind for each relay
     rescan_from = None
     # if given then when we reach we'll skip, we'll skip up until oldest event/kind for realy or just
@@ -552,11 +553,11 @@ if __name__ == "__main__":
     # ps = pstore.select_profiles()
     # p: Profile
     #
-    with ClientPool('wss://relay.nostr.info') as c:
+    with ClientPool('wss://nostr-pub.wellorder.net/') as c:
         followers = c.query({
             'kinds': [Event.KIND_CONTACT_LIST],
             '#p': ['3efdaebb1d8923ebd99c9e7ace3b4194ab45512e2be79c1b7d68d9243e0d2681']
-        })
+        }, timeout=5)
 
         ufs = {ContactList.from_event(c).owner_public_key for c in followers}
 
@@ -566,15 +567,26 @@ if __name__ == "__main__":
             'authors': list(ufs)
         }, timeout=5)
 
+        n=0
+        while n<10:
+            print(n)
+            n+=1
+            time.sleep(1)
+
+
+        followers = c.query({
+            'kinds': [Event.KIND_CONTACT_LIST],
+            '#p': ['3efdaebb1d8923ebd99c9e7ace3b4194ab45512e2be79c1b7d68d9243e0d2681']
+        }, timeout=5)
         # this will return ok in damus
-        q = []
-        for k in util_funcs.chunk(list(ufs),250):
-            q.append({
-                'kinds': [Event.KIND_META],
-                'authors': k
-            })
-        metas2 = c.query(q, timeout=5)
-        print(len(metas1) == len(metas2))
+        # q = []
+        # for k in util_funcs.chunk(list(ufs),250):
+        #     q.append({
+        #         'kinds': [Event.KIND_META],
+        #         'authors': k
+        #     })
+        # metas2 = c.query(q, timeout=5)
+        # print(len(metas1) == len(metas2))
 
     #
     #     from nostr.channels.persist import SQLiteSQLChannelStore
