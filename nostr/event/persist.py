@@ -461,6 +461,20 @@ class SQLEventStore(EventStoreInterface):
                 sql_arr.append(e_sql)
                 args = args + t_filter
 
+            # def do_authors():
+            #     nonlocal args
+            #     nonlocal arg_str
+            #     auth_arr = filter['authors']
+            #     if not hasattr(auth_arr, '__iter__') or isinstance(auth_arr, str):
+            #         auth_arr = [auth_arr]
+            #
+            #     arg_str = 'or '.join(['pubkey like ' + placeholder] * len(auth_arr))
+            #     sql_arr.append(' %s (%s)' % (join, arg_str))
+            #     for c_arg in auth_arr:
+            #         args.append(c_arg + '%')
+
+
+
             # deleted isnull to filter deleted if in flag delete mode
             sql_arr = ["""
                 select 
@@ -490,6 +504,7 @@ class SQLEventStore(EventStoreInterface):
                 sql_arr.append(' %s kind in(%s)' % (join, arg_str))
                 args = args + kind_arr
             if 'authors' in filter:
+                # do_authors()
                 auth_arr = filter['authors']
                 if not hasattr(auth_arr, '__iter__') or isinstance(auth_arr, str):
                     auth_arr = [auth_arr]

@@ -119,7 +119,7 @@ class Client:
         self._url = relay_url
         self._subs = {}
         self._run = False
-        self._ws = None
+        self._ws: websocket.WebSocketApp = None
         self._last_con = None
         self._last_err = None
         self._con_fail_count = 0
@@ -133,6 +133,7 @@ class Client:
         # NIP11 info for the relay we're connected to
         self._relay_info = None
         self._state = RunState.init
+
 
     @property
     def url(self):
@@ -388,7 +389,7 @@ class Client:
                     sub_id, message))
             return
 
-        if sub_id in self._subs and self._check_eose(sub_id, message):
+        if self._have_sub(sub_id) and self._check_eose(sub_id, message):
             try:
                 the_evt = Event.from_JSON(message[2])
                 for c_handler in self._subs[sub_id]['handlers']:
@@ -469,6 +470,9 @@ class Client:
                 except WebSocketConnectionClosedException as wsc:
                     print('Client::my_thread %s\n lost connection to %s '
                           'should try to reestablish but for now it dead!' % (wsc, self._url))
+                except Exception as e:
+                    print('Client::my_thread %s\n - %s ' % (e, self._url))
+
                 time.sleep(1)
                 self._ws = None
                 self._con_fail_count += 1
