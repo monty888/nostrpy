@@ -365,8 +365,9 @@ def run_web(clients,
                 #        'wss://nostr.zebedee.cloud']
                 # ret = ['wss://relay.nostr.info']
                 # ret = ['wss://nostr.zebedee.cloud']
-                ret = ['wss://relay.nostr.info', 'wss://nostr.zebedee.cloud']
+                # ret = ['wss://relay.nostr.info', 'wss://nostr.zebedee.cloud']
                 # ret = ['wss://relay.damus.io']
+                ret = ['ws://localhost:8081']
 
         return ret
 

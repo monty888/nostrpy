@@ -195,11 +195,11 @@ class Client:
         the_req = json.dumps(the_req)
         logging.debug('Client::subscribe - %s', the_req)
 
-        # caller only passed in single handler
-        if handlers and not hasattr(handlers, '__iter__'):
-            handlers = [handlers]
-        else:
+        # make sure handler is list
+        if handlers is None:
             handlers = []
+        elif not hasattr(handlers, '__iter__'):
+            handlers = [handlers]
 
         self._subs[sub_id] = {
             'handlers': handlers,
