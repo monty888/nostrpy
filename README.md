@@ -1,11 +1,16 @@
+WIP!!
+NOTE: now split into monstr and monstr_terminal and eventually monstr_web
+
 # nostrpy
 some stuff written in python for the nostr protocol developed against python v3.8.10  
 
 - cmd_web, python client with web front end
-- relay, relay implementation - basically working not really tested
-- client, client pool - classes that implement the client side part of the nostr protocol for apps to be built on - very rough but working
-- cmd_chat, example currently 1-1 cli chat app, partially implemented
-- mirror_relay, mirror nostr events from one set of nostr relays to another
+- relay, relay implementation - basically working not really tested - NOW in monstr_terminal
+- client, client pool - classes that implement the client side part of the nostr protocol for apps to be built on - very rough but working - NOW base monstr
+- cmd_chat, example currently 1-1 cli chat app, partially implemented - will be monstr_terminal
+- mirror_relay, mirror nostr events from one set of nostr relays to another - will be monstr_terminal
+- event_view, view nostr events from the cmd line - NOW monstr_terminal
+- poster, make posts from the cmd line - NOW monstr terminal
 
 # Install
 > cd nostrpy  
