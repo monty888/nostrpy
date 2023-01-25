@@ -1,8 +1,8 @@
 No longer being developed.
-moved to WIP projects 
-monty888/monstr
-monty888/monstr_terminal
-monty888/monstr_web   - TODO
+# moved to WIP projects:   
+- monty888/monstr  
+- monty888/monstr_terminal  
+- monty888/monstr_web   - TODO  
 
 # nostrpy
 some stuff written in python for the nostr protocol developed against python v3.8.10  
